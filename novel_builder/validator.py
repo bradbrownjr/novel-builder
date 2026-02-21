@@ -93,6 +93,26 @@ def _line(index, *path_parts):
     return index.get(key)
 
 
+def _iget(d, *keys):
+    """Case-insensitive dict get. Returns the value for the first matching key.
+
+    Checks each key as-is first, then lowercased against lowercased dict keys.
+    Returns None if nothing matches or d is not a dict.
+    """
+    if not isinstance(d, dict):
+        return None
+    for key in keys:
+        # Exact match first (fast path)
+        if key in d:
+            return d[key]
+        # Case-insensitive fallback
+        key_lower = key.lower()
+        for k, v in d.items():
+            if isinstance(k, str) and k.lower() == key_lower:
+                return v
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Outline validation
 # ---------------------------------------------------------------------------
@@ -319,19 +339,19 @@ def validate_characters(data, raw_yaml_str=""):
                 line=_line(idx, base))
             continue
 
-        if not cdata.get("Name") and not cdata.get("name"):
+        if not _iget(cdata, "Name", "name"):
             err(f"characters.{cid}.Name",
                 f"Character '{cid}' is missing Name.",
                 "Add: Name: \"Full Name\"",
                 line=_line(idx, base, "Name") or _line(idx, base))
 
-        if not cdata.get("vibe"):
+        if not _iget(cdata, "vibe"):
             warn(f"characters.{cid}.vibe",
                  f"Character '{cid}' is missing vibe — this has the highest impact on output quality.",
                  "Add: vibe: \"How this character feels to the reader in one sentence.\"",
                  line=_line(idx, base, "vibe") or _line(idx, base))
 
-        if not cdata.get("role"):
+        if not _iget(cdata, "role"):
             warn(f"characters.{cid}.role",
                  f"Character '{cid}' is missing role — used in scene reminders.",
                  "Add: role: \"Protagonist\" (or Antagonist, Supporting, etc.)",
@@ -381,7 +401,7 @@ def validate_locations(data, raw_yaml_str=""):
         if not isinstance(ldata, dict):
             continue
         base = f"setting.{lid}"
-        if not ldata.get("atmosphere") and not ldata.get("description"):
+        if not _iget(ldata, "atmosphere") and not _iget(ldata, "description"):
             warn(f"setting.{lid}",
                  f"Location '{lid}' has no atmosphere or description — the AI will have minimal context.",
                  "Add: atmosphere: \"Sensory impression of the space.\"",
