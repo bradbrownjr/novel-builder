@@ -68,6 +68,26 @@ FILE_ROLES = {
 }
 
 
+def _normalize_host(host):
+    """Normalize an Ollama host string to a full URL.
+
+    Accepts bare IPs (10.6.26.2), IP:port (10.6.26.2:11434),
+    or full URLs (http://10.6.26.2:11434).  Mirrors the same
+    normalization the CLI applies interactively.
+    """
+    if not host:
+        return host
+    host = host.strip().rstrip("/")
+    if not host.startswith("http://") and not host.startswith("https://"):
+        # Bare IP or IP:port — add scheme
+        if ":" not in host:
+            # No port either — add default Ollama port
+            host = f"http://{host}:11434"
+        else:
+            host = f"http://{host}"
+    return host
+
+
 # ---------------------------------------------------------------------------
 # Server-side generation state
 # ---------------------------------------------------------------------------
@@ -298,7 +318,7 @@ def _start_generation(web_config):
 
     # Build args namespace matching what CLI produces
     args = SimpleNamespace(
-        host=web_config.get("host", ""),
+        host=_normalize_host(web_config.get("host", "")),
         model=web_config.get("model", "gemma3:12b"),
         summary_model=web_config.get("summary_model", "gemma3:1b"),
         retries=int(web_config.get("retries", 3)),
@@ -404,6 +424,8 @@ def api_config():
     for key in allowed:
         if key in data:
             cfg[key] = data[key]
+    if "host" in data:
+        cfg["host"] = _normalize_host(cfg["host"])
     _save_web_config(cfg)
     return jsonify({"ok": True, "config": cfg})
 
@@ -700,7 +722,7 @@ def api_stop():
 def api_ollama_health():
     """Ping the Ollama server to check connectivity and list models."""
     cfg = _load_web_config()
-    host = cfg.get("host", "").rstrip("/")
+    host = _normalize_host(cfg.get("host", ""))
     if not host:
         return jsonify({"ok": False, "error": "No host configured"})
 
