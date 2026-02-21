@@ -17,7 +17,7 @@ LLMs lose coherence over long outputs. They forget characters, repeat themselves
 - **Smart character handling** — full bios on first appearance, slim reminders after; evolution notes, heritage traits, probability-gated catch phrases
 - **Story memory** — auto-tracks minor characters, world facts, and commitments across scenes
 - **Checkpoint & resume** — saves after every scene; crashes lose at most one scene
-- **Anti-pattern suppression** — blocks AI clichés you define in YAML
+- **Anti-pattern suppression** — built-in defaults block purple prose, emoji, em-dashes, and common AI clichés; add your own in YAML (duplicates are automatically skipped)
 - **Web UI** — upload files, configure models, watch scenes generate live from any device
 - **CLI** — scriptable, with dry-run, selective generation, and interactive host prompt
 

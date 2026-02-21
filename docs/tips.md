@@ -91,4 +91,19 @@ characters:
 
 ---
 
+## 11. Anti-patterns have built-in defaults
+
+You don't need to add common problems like purple prose, emoji, or em-dashes to your `anti_patterns` list — they're suppressed by default in every prompt. Only add patterns specific to your project:
+
+```yaml
+anti_patterns:
+  - "shiver down * spine"    # Your addition
+  - "a wave of *"            # Your addition
+  # No need to add "delve", emoji, em-dashes, etc. — already covered
+```
+
+If you do add a duplicate, it's automatically skipped to save tokens.
+
+---
+
 ← [Back to README](../README.md)

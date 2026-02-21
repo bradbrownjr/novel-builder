@@ -88,13 +88,21 @@ def apply_anti_patterns(text, patterns=None):
     if not text:
         return text, []
 
+    # Merge user patterns with defaults so built-in checks always run
     if patterns is None:
-        patterns = _DEFAULT_ANTI_PATTERNS
+        merged = list(_DEFAULT_ANTI_PATTERNS)
+    else:
+        # Deduplicate: add user patterns that aren't already in defaults
+        default_set = set(p.lower() for p in _DEFAULT_ANTI_PATTERNS)
+        merged = list(_DEFAULT_ANTI_PATTERNS)
+        for p in patterns:
+            if p.lower().strip() not in default_set:
+                merged.append(p)
 
     warnings = []
     lines = text.split("\n")
 
-    for pattern_str in patterns:
+    for pattern_str in merged:
         try:
             pattern = re.compile(pattern_str, re.IGNORECASE)
         except re.error:
