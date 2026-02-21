@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Background -->
+  <rect width="32" height="32" rx="6" fill="#111827"/>
+
+  <!-- Open book (two pages) -->
+  <path d="M4 22 C4 20 6 19 8 19 L15 20 L15 28 L8 27 C6 27 4 26 4 24 Z" fill="#2d3d55"/>
+  <path d="M28 22 C28 20 26 19 24 19 L17 20 L17 28 L24 27 C26 27 28 26 28 24 Z" fill="#2d3d55"/>
+  <line x1="16" y1="20" x2="16" y2="28" stroke="#4a6080" stroke-width="0.8"/>
+
+  <!-- Quill — diagonal, top-right to bottom-left toward book spine -->
+  <!-- Right vane -->
+  <path d="M27 2 C24 4 19 9 16 16 L18.5 18 C21 12 25 6 27 2Z" fill="#f5e6c0"/>
+  <!-- Left vane -->
+  <path d="M27 2 C22 6 17 12 15.5 17.5 L16 16 C19 9 24 4 27 2Z" fill="#e0c98a"/>
+  <!-- Shaft -->
+  <line x1="27" y1="2" x2="15" y2="19" stroke="#c8a84b" stroke-width="0.9"/>
+  <!-- Nib -->
+  <path d="M15 19 L13 23 L17 21 Z" fill="#c8a84b"/>
+
+  <!-- Ink drop at nib tip — accent color -->
+  <circle cx="13.5" cy="23.5" r="1.2" fill="#e94560"/>
+</svg>
