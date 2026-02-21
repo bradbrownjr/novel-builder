@@ -2,7 +2,7 @@
 
 ## Product Purpose
 
-Novel Builder is a **Python CLI tool** for **authors and storytellers** who want to use local LLMs (via Ollama) to generate **long-form fiction** — chapter by chapter, scene by scene — without overwhelming the model's context window. It feeds the AI only the information relevant to each scene (active characters, setting, recent context) to produce high-quality, flowing narrative that reads like a real novel, not a summarized outline.
+Novel Builder is a **Python tool** (CLI + web UI) for **authors and storytellers** who want to use local LLMs (via Ollama) to generate **long-form fiction** — chapter by chapter, scene by scene — without overwhelming the model's context window. It feeds the AI only the information relevant to each scene (active characters, setting, recent context) to produce high-quality, flowing narrative that reads like a real novel, not a summarized outline. It can be run from the command line or through a browser-based web interface that streams progress in real time via SSE.
 
 ## User Experience Requirements
 

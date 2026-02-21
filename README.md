@@ -1,10 +1,14 @@
 # Novel Builder
 
-A Python CLI tool that uses local LLMs (via [Ollama](https://ollama.com)) to generate long-form fiction — chapter by chapter, scene by scene — without overwhelming the model's context window.
+A Python tool that uses local LLMs (via [Ollama](https://ollama.com)) to generate long-form fiction — chapter by chapter, scene by scene — without overwhelming the model's context window.
+
+Run it from the **command line** or through a **browser-based web UI** that lets you upload files, configure models, and watch scenes generate in real time from any device on your network.
 
 You feed it a story outline, character descriptions, and location details in YAML. It writes a full narrative, one scene at a time, passing only the relevant context to each generation call. The result is a Markdown file that reads like a novel, not a summarized outline.
 
 ## Features
+
+### Story Engine
 
 - **Scene-by-scene generation** — Each scene gets only the characters, setting, and recent context it needs. No bloated prompts.
 - **AI-powered continuity** — After each scene, a fast summarization pass creates a token-efficient recap that feeds into the next scene's prompt.
@@ -12,11 +16,35 @@ You feed it a story outline, character descriptions, and location details in YAM
 - **Heritage system** — Define shared traits for species, professions, factions, or social classes. Characters inherit and can override.
 - **Story memory** — Automatically tracks minor characters, world facts, and commitments the AI establishes, so they're remembered across scenes.
 - **Catch phrase control** — Probability-gated injection prevents overuse. Phrases appear naturally, not mechanically.
-- **Checkpoint & resume** — Progress saves after every scene. Timeouts or crashes lose at most one scene of work.
-- **Retry with backoff** — Ollama API failures retry automatically (configurable attempts and timeout).
 - **Anti-pattern suppression** — Configurable list of AI clichés to block in both prompts and post-processing.
 - **Flexible YAML input** — Separate files or a single combined file. Your choice.
-- **Dry run mode** — Validate your YAML and see the generation plan without calling the LLM.
+
+### Resilience
+
+- **Checkpoint & resume** — Progress saves after every scene. Timeouts or crashes lose at most one scene of work.
+- **Retry with backoff** — Ollama API failures retry automatically (configurable attempts and timeout).
+- **Graceful shutdown** — Ctrl+C (CLI) or the Stop button (web) finishes the current scene and saves.
+
+### CLI Mode
+
+- Interactive prompt for Ollama host if not set in environment
+- Dry run mode — validate YAML and preview the generation plan without LLM calls
+- Generate specific chapters or individual scenes
+- Configurable via command-line flags or environment variables
+
+### Web UI Mode
+
+- **Upload, drag-drop, paste, or type** YAML files and custom style prompts
+- **Configure everything from the browser** — Ollama host, models, retries, timeout (persists across restarts)
+- **Real-time progress** via Server-Sent Events — progress bar, model activity indicators, live logs
+- **Live output viewer** — scenes appear as they're written, with auto-scroll
+- **Ollama connection indicator** — shows connectivity and available models, auto-refreshes
+- **Parsed YAML preview** — see loaded characters, chapters, scenes, and locations before generating
+- **Export & download** — grab the output `.md` or any uploaded YAML file
+- **New Story** button — clears the workspace for a fresh start (with confirmation)
+- **Dark mode default** with light toggle
+- **Survives browser close** — generation runs server-side; reconnect from any device to see current state
+- **LAN accessible** — binds to `0.0.0.0:8080` by default, works behind reverse proxies
 
 ## Requirements
 
@@ -139,47 +167,85 @@ The tool writes each scene to `full_story.md` as it generates and prints progres
 
 ## Web UI
 
-Novel Builder includes a browser-based interface for managing stories remotely — useful for headless servers or when you want to monitor generation from a phone or tablet.
+Novel Builder includes a full browser-based interface for managing stories remotely — useful for headless servers, or when you want to monitor generation from a phone, tablet, or another machine on your network.
+
+### Launching
 
 ```bash
 source .venv/bin/activate
 python -m novel_builder --web
 ```
 
-This launches a Flask server on `http://0.0.0.0:8080`. Open it from any device on your LAN.
-
-**Features:**
-
-- Upload, drag-drop, paste, or type YAML files and custom style prompts
-- Configure Ollama host, models, retries, and timeout from the browser
-- Start/stop generation with real-time progress (SSE streaming)
-- Live output viewer — scenes appear as they're written
-- Ollama connection indicator with model status (generating / summarizing / idle)
-- Parsed YAML preview — see loaded characters, chapters, scenes, locations before generating
-- Download the output `.md` or export any YAML file
-- "New Story" button clears the workspace for a fresh start
-- Dark mode default with light toggle
-- Survives browser close — generation runs server-side, reconnect to see current state
+This starts a Flask server on `http://0.0.0.0:8080`. Open it from any device on your LAN.
 
 ```bash
 # Custom port:
 python -m novel_builder --web --port 9090
-
-# Behind a reverse proxy (Caddy, nginx, etc.):
-# Just proxy to http://localhost:8080 — SSE works over HTTP/1.1 and HTTP/2
 ```
 
-## Usage
+### Setup Tab
+
+- **Ollama Host** — Enter the IP/URL of your Ollama server (e.g., `http://10.6.26.3:11434`). This is saved to `workspace/web_config.json` and persists across server restarts — you only set it once.
+- **Model selection** — Choose your generation model and summary model.
+- **Retries & timeout** — Configure retry attempts and timeout per request.
+- **File upload** — Upload, drag-drop, paste, or type YAML files for your story outline, characters, locations, and custom style prompt. Each file shows its status, size, and timestamp.
+- **Edit / Export / Delete** — Edit any uploaded file in the browser, export it back as a download, or remove it.
+- **Parsed data preview** — After uploading, see a summary of what's loaded: story title, chapter/scene tree, character names with trait icons, locations, and heritage groups. Confirms everything parsed correctly before you commit to a generation run.
+- **New Story** — Clears all uploaded files, output, and checkpoint from the workspace (with a confirmation dialog). Does not touch your config.
+
+### Output Tab
+
+- **Live viewer** — Scenes appear in real time as they're generated, with auto-scroll.
+- **Refresh** — Pull the full output from disk at any time.
+- **Download** — Grab the `.md` file directly from the browser.
+
+### Logs Tab
+
+- Timestamped log feed of every generation event — chapter/scene progress, character detection, errors, warnings.
+- Persists server-side, so reconnecting shows the full history.
+
+### Status Bar
+
+- **Generation status** — Idle / Running (animated) / Completed / Paused / Error
+- **Ollama connection** — Live health indicator; shows connected model count or error. Pings every 30 seconds and re-checks when you change the host.
+- **Model activity** — Shows which model is currently active (generation model, summary model, or idle).
+- **Progress** — Percentage and scene count (e.g., "42% — Scene 5/12").
+
+### Resilience
+
+- **Reconnect-safe** — Generation runs in a server-side background thread. Close your browser, switch devices, lose wifi — when you reconnect, the page restores full state (progress, logs, output, config) from the server.
+- **Stop button** — Graceful stop that finishes the current scene, saves checkpoint, and allows resume.
+- **SSE streaming** — Real-time updates via Server-Sent Events with auto-reconnect. No WebSocket dependency. Works behind reverse proxies (Caddy, nginx, etc.) over HTTP/1.1 and HTTP/2.
+
+### Reverse Proxy
+
+If you're running Novel Builder behind Caddy, nginx, or similar:
+
+```
+# Caddy example
+novelbuilder.example.com {
+    reverse_proxy localhost:8080
+}
+```
+
+SSE works without special configuration on most proxies. If you see buffering issues with nginx, add:
+
+```nginx
+proxy_buffering off;
+proxy_cache off;
+```
+
+## CLI Usage
 
 ```
 python -m novel_builder [OPTIONS]
 
-Options:
-  --host HOST              Ollama host URL (default: $OLLAMA_HOST or prompted)
+Generation options:
+  --host HOST              Ollama host URL (default: $OLLAMA_HOST, or prompted interactively)
   --model MODEL            Generation model (default: gemma3:12b)
   --summary-model MODEL    Summarization model (default: gemma3:1b)
-  --outline FILE           Story outline YAML (default: story_outline.yaml)
-  --characters FILE        Character YAML (default: characters.yaml)
+  --outline FILE           Story outline YAML (default: auto-discovered)
+  --characters FILE        Character YAML (default: auto-discovered)
   --locations FILE         Locations/settings YAML (default: auto-discovered)
   --output FILE            Output Markdown file (default: full_story.md)
   --resume                 Resume from checkpoint without prompting
@@ -190,9 +256,15 @@ Options:
   --dry-run                Parse YAML and show the generation plan, don't generate
   --chapter N              Generate only chapter N
   --scene N.M              Generate only chapter N, scene M
+
+Web UI options:
   --web                    Launch the web UI instead of CLI generation
   --port PORT              Web UI port (default: 8080)
 ```
+
+If `OLLAMA_HOST` is not set and `--host` is not passed, the CLI will prompt you for the Ollama server address interactively. You can enter a bare IP (e.g., `10.6.26.3`) and it will auto-format to `http://10.6.26.3:11434`.
+
+In web mode, the Ollama host is configured in the browser and **persists to disk** — you set it once and it remembers.
 
 ### Environment Variables
 
