@@ -581,13 +581,23 @@ def api_parse_yaml():
         try:
             with open(outline_path, "r", encoding="utf-8") as f:
                 data = _yaml.safe_load(f) or {}
-            chapters = data.get("chapters", [])
+            if not isinstance(data, dict):
+                raise ValueError(f"Expected a YAML mapping at the top level, got {type(data).__name__}")
+            chapters = data.get("chapters") or []
+            if not isinstance(chapters, list):
+                chapters = []
             scene_list = []
             for ch in chapters:
+                if not isinstance(ch, dict):
+                    continue
                 ch_num = ch.get("chapter_number", "?")
                 ch_title = ch.get("title", "Untitled")
-                scenes = ch.get("scenes", [])
+                scenes = ch.get("scenes") or []
+                if not isinstance(scenes, list):
+                    scenes = []
                 for sc in scenes:
+                    if not isinstance(sc, dict):
+                        continue
                     sc_num = sc.get("scene_number", "?")
                     sc_title = sc.get("title", "")
                     scene_list.append({
@@ -595,7 +605,7 @@ def api_parse_yaml():
                         "chapter": ch_num,
                         "title": sc_title or f"Ch{ch_num} Sc{sc_num}",
                         "setting": sc.get("setting", ""),
-                        "characters": sc.get("characters", []),
+                        "characters": sc.get("characters_present", sc.get("characters", [])),
                     })
             result["outline"] = {
                 "story_title": data.get("story_title", "Untitled"),
@@ -604,20 +614,20 @@ def api_parse_yaml():
                 "total_scenes": len(scene_list),
                 "chapters": [
                     {
-                        "number": ch.get("chapter_number", i + 1),
-                        "title": ch.get("title", "Untitled"),
-                        "scenes": len(ch.get("scenes", [])),
+                        "number": ch.get("chapter_number", i + 1) if isinstance(ch, dict) else i + 1,
+                        "title": ch.get("title", "Untitled") if isinstance(ch, dict) else "Untitled",
+                        "scenes": len(ch.get("scenes") or []) if isinstance(ch, dict) else 0,
                     }
                     for i, ch in enumerate(chapters)
                 ],
                 "scenes": scene_list,
                 "style_directives": data.get("style_directives", ""),
-                "anti_patterns": data.get("anti_patterns", []),
+                "anti_patterns": data.get("anti_patterns") or [],
                 "narrative_hooks": [
-                    (h.get("name", h) if isinstance(h, dict) else h)
-                    for h in data.get("narrative_hooks", [])
+                    (h.get("hook", h.get("name", str(h))) if isinstance(h, dict) else str(h))
+                    for h in (data.get("narrative_hooks") or [])
                 ],
-                "overall_arc": data.get("overall_arc", {}),
+                "overall_arc": data.get("overall_arc") or {},
             }
         except Exception as e:
             result["outline"] = {"error": str(e)}

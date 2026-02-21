@@ -798,6 +798,12 @@ function showEditor(role) {
   document.getElementById('editor-content').value = '';
   document.getElementById('modal-editor').classList.add('show');
   document.getElementById('editor-content').focus();
+  // If a file is already loaded for this role, preload its content
+  api('/api/file-content/' + role).then(r => {
+    if (r && r.ok && r.content) {
+      document.getElementById('editor-content').value = r.content;
+    }
+  });
 }
 
 async function editFile(role) {
