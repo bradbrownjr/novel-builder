@@ -254,7 +254,7 @@ textarea {
 }
 .drop-zone.drag-over { border-color: var(--accent); background: rgba(233,69,96,0.08); }
 .drop-zone input[type="file"] {
-  position: absolute; inset: 0; opacity: 0; cursor: pointer;
+  display: none;
 }
 .drop-zone .icon { font-size: 1.5rem; margin-bottom: .3rem; }
 .file-status {
@@ -476,7 +476,7 @@ textarea {
     <div class="drop-zone" id="drop-outline">
       <input type="file" accept=".yaml,.yml" onchange="handleFile(this,'outline')">
       <div class="icon">📄</div>
-      Upload, drag & drop, or <a href="#" onclick="showEditor('outline');return false;">paste/type</a> your story_outline.yaml
+      Upload, drag & drop, or <a href="#" onclick="showEditor('outline');event.stopPropagation();return false;">paste/type</a> your story_outline.yaml
     </div>
     <div class="file-status empty" id="fstat-outline">No file loaded</div>
     <div class="file-actions" id="factions-outline" style="display:none;">
@@ -492,7 +492,7 @@ textarea {
     <div class="drop-zone" id="drop-characters">
       <input type="file" accept=".yaml,.yml" onchange="handleFile(this,'characters')">
       <div class="icon">👥</div>
-      Upload, drag & drop, or <a href="#" onclick="showEditor('characters');return false;">paste/type</a> your characters.yaml
+      Upload, drag & drop, or <a href="#" onclick="showEditor('characters');event.stopPropagation();return false;">paste/type</a> your characters.yaml
     </div>
     <div class="file-status empty" id="fstat-characters">No file loaded</div>
     <div class="file-actions" id="factions-characters" style="display:none;">
@@ -508,7 +508,7 @@ textarea {
     <div class="drop-zone" id="drop-locations">
       <input type="file" accept=".yaml,.yml" onchange="handleFile(this,'locations')">
       <div class="icon">🏔</div>
-      Upload, drag & drop, or <a href="#" onclick="showEditor('locations');return false;">paste/type</a> your locations.yaml
+      Upload, drag & drop, or <a href="#" onclick="showEditor('locations');event.stopPropagation();return false;">paste/type</a> your locations.yaml
     </div>
     <div class="file-status empty" id="fstat-locations">No file loaded</div>
     <div class="file-actions" id="factions-locations" style="display:none;">
@@ -524,7 +524,7 @@ textarea {
     <div class="drop-zone" id="drop-style">
       <input type="file" accept=".txt,.yaml,.yml" onchange="handleFile(this,'style')">
       <div class="icon">✍</div>
-      Upload, drag & drop, or <a href="#" onclick="showEditor('style');return false;">paste/type</a> style directives
+      Upload, drag & drop, or <a href="#" onclick="showEditor('style');event.stopPropagation();return false;">paste/type</a> style directives
     </div>
     <div class="file-status empty" id="fstat-style">No file loaded</div>
     <div class="file-actions" id="factions-style" style="display:none;">
@@ -1231,8 +1231,37 @@ function startHealthPolling() {
 }
 
 /* ==========================================================
+   Drop zone wiring — click to open picker, drag & drop
+   ========================================================== */
+function setupDropZones() {
+  document.querySelectorAll('.drop-zone').forEach(zone => {
+    const role = zone.id.replace('drop-', '');
+    const input = zone.querySelector('input[type="file"]');
+
+    // Click on zone (but not on a link) opens the file picker
+    zone.addEventListener('click', e => {
+      if (e.target.tagName === 'A' || e.target.closest('a')) return;
+      input.click();
+    });
+
+    zone.addEventListener('dragover', e => {
+      e.preventDefault();
+      zone.classList.add('drag-over');
+    });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      zone.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file) uploadFile(file, role);
+    });
+  });
+}
+
+/* ==========================================================
    Boot
    ========================================================== */
+setupDropZones();
 init();
 startHealthPolling();
 </script>
