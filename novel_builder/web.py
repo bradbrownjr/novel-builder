@@ -28,6 +28,7 @@ from flask import (
 )
 
 import yaml as _yaml
+from .validator import validate_all as _validate_all
 import requests as _requests
 
 # Lazy imports to avoid circular imports at module level
@@ -569,18 +570,22 @@ def api_parse_yaml():
     """Parse uploaded YAML files and return a summary of loaded data.
 
     Returns character names/roles, chapter/scene counts, locations,
-    heritage groups, and other key metadata — so the user can verify
-    what the system has loaded before starting generation.
+    heritage groups, validation results, and other key metadata.
     """
     _ensure_workspace()
-    result = {"ok": True, "outline": None, "characters": None, "locations": None}
+    result = {"ok": True, "outline": None, "characters": None, "locations": None, "validation": []}
+
+    outline_raw = char_raw = loc_raw = ""
+    outline_data = char_data = loc_data = None
 
     # --- Outline ---
     outline_path = os.path.join(WORKSPACE_DIR, FILE_ROLES["outline"])
     if os.path.exists(outline_path):
         try:
             with open(outline_path, "r", encoding="utf-8") as f:
-                data = _yaml.safe_load(f) or {}
+                outline_raw = f.read()
+            data = _yaml.safe_load(outline_raw) or {}
+            outline_data = data
             if not isinstance(data, dict):
                 raise ValueError(f"Expected a YAML mapping at the top level, got {type(data).__name__}")
             chapters = data.get("chapters") or []
@@ -591,7 +596,6 @@ def api_parse_yaml():
                 if not isinstance(ch, dict):
                     continue
                 ch_num = ch.get("chapter_number", "?")
-                ch_title = ch.get("title", "Untitled")
                 scenes = ch.get("scenes") or []
                 if not isinstance(scenes, list):
                     scenes = []
@@ -637,7 +641,9 @@ def api_parse_yaml():
     if os.path.exists(char_path):
         try:
             with open(char_path, "r", encoding="utf-8") as f:
-                data = _yaml.safe_load(f) or {}
+                char_raw = f.read()
+            data = _yaml.safe_load(char_raw) or {}
+            char_data = data
             chars = data.get("characters", data)
             if not isinstance(chars, dict):
                 chars = {}
@@ -678,7 +684,9 @@ def api_parse_yaml():
     if os.path.exists(loc_path):
         try:
             with open(loc_path, "r", encoding="utf-8") as f:
-                data = _yaml.safe_load(f) or {}
+                loc_raw = f.read()
+            data = _yaml.safe_load(loc_raw) or {}
+            loc_data = data
             locs = data.get("setting", data.get("locations", data))
             if not isinstance(locs, dict):
                 locs = {}
@@ -697,6 +705,20 @@ def api_parse_yaml():
             result["locations"] = {"total": len(loc_list), "locations": loc_list}
         except Exception as e:
             result["locations"] = {"error": str(e)}
+
+    # --- Validation ---
+    try:
+        vresults = _validate_all(
+            outline_raw, outline_data,
+            char_raw, char_data,
+            loc_raw, loc_data,
+        )
+        result["validation"] = [v.to_dict() for v in vresults]
+    except Exception as e:
+        result["validation"] = [{"level": "error", "source": "validator",
+                                  "field": "(internal)", "line": None,
+                                  "message": f"Validator error: {e}",
+                                  "suggestion": None}]
 
     return jsonify(result)
 

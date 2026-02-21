@@ -388,6 +388,27 @@ textarea {
 .modal-actions { display: flex; gap: .5rem; justify-content: flex-end; }
 
 /* =========================================================
+   Validation results
+   ========================================================= */
+.validation-results { margin-top: .6rem; display: flex; flex-direction: column; gap: .3rem; }
+.vitem {
+  font-size: .78rem;
+  padding: .35rem .55rem;
+  border-radius: calc(var(--radius) - 2px);
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+}
+.vitem.error   { background: rgba(233,69,96,0.10);  border-left: 3px solid var(--red);    }
+.vitem.warning { background: rgba(240,192,64,0.10); border-left: 3px solid var(--yellow); }
+.vitem.info    { background: rgba(78,200,163,0.08); border-left: 3px solid var(--green);  }
+.vitem-top { display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap; }
+.vitem-msg { font-weight: 500; color: var(--text); }
+.vitem-field { font-family: var(--mono); color: var(--text-dim); font-size: .7rem; }
+.vitem-line  { font-family: var(--mono); color: var(--text-dim); font-size: .7rem; }
+.vitem-suggestion { color: var(--text-dim); font-size: .74rem; margin-top: .1rem; }
+
+/* =========================================================
    Responsive
    ========================================================= */
 @media (max-width: 640px) {
@@ -486,6 +507,7 @@ textarea {
       <button class="btn btn-sm btn-danger" onclick="deleteFile('outline')">✕</button>
     </div>
     <div class="data-summary" id="summary-outline"></div>
+    <div class="validation-results" id="vresults-outline"></div>
   </div>
 
   <div class="card" id="card-characters">
@@ -502,6 +524,7 @@ textarea {
       <button class="btn btn-sm btn-danger" onclick="deleteFile('characters')">✕</button>
     </div>
     <div class="data-summary" id="summary-characters"></div>
+    <div class="validation-results" id="vresults-characters"></div>
   </div>
 
   <div class="card" id="card-locations">
@@ -518,6 +541,7 @@ textarea {
       <button class="btn btn-sm btn-danger" onclick="deleteFile('locations')">✕</button>
     </div>
     <div class="data-summary" id="summary-locations"></div>
+    <div class="validation-results" id="vresults-locations"></div>
   </div>
 
   <div class="card" id="card-style">
@@ -539,6 +563,7 @@ textarea {
   <div class="card" id="card-loaded" style="display:none;">
     <h3>📊 Loaded Data Overview</h3>
     <div id="loaded-overview"></div>
+    <div class="validation-results" id="vresults-cross"></div>
   </div>
 
   <!-- Action buttons -->
@@ -944,6 +969,49 @@ async function refreshParsed() {
     overview.innerHTML = html;
   } else {
     overviewCard.style.display = 'none';
+  }
+
+  // Validation results
+  renderValidation(r.validation || []);
+}
+
+/* ==========================================================
+   Validation results rendering
+   ========================================================== */
+function renderValidation(results) {
+  const ICONS = { error: '✖', warning: '⚠', info: 'ℹ' };
+  const targets = { outline: '', characters: '', locations: '', cross: '' };
+
+  // Group by source
+  for (const v of results) {
+    const slot = v.source === 'cross' ? 'cross'
+               : v.source === 'outline' ? 'outline'
+               : v.source === 'characters' ? 'characters'
+               : v.source === 'locations' ? 'locations'
+               : 'cross';
+    const lineStr = v.line ? `<span class="vitem-line">line ${v.line}</span>` : '';
+    const fieldStr = v.field && v.field !== '(document)'
+      ? `<span class="vitem-field">${escHtml(v.field)}</span>` : '';
+    const suggestion = v.suggestion
+      ? `<div class="vitem-suggestion">💡 ${escHtml(v.suggestion)}</div>` : '';
+    targets[slot] += `
+      <div class="vitem ${v.level}">
+        <div class="vitem-top">
+          <span>${ICONS[v.level] || '•'}</span>
+          <span class="vitem-msg">${escHtml(v.message)}</span>
+          ${fieldStr}${lineStr}
+        </div>
+        ${suggestion}
+      </div>`;
+  }
+
+  // Render and show the loaded overview card if there are cross issues
+  for (const [slot, html] of Object.entries(targets)) {
+    const el = document.getElementById('vresults-' + slot);
+    if (el) el.innerHTML = html;
+  }
+  if (targets.cross) {
+    document.getElementById('card-loaded').style.display = 'block';
   }
 }
 
