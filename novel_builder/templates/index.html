@@ -1,0 +1,1240 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Novel Builder</title>
+<style>
+/* =========================================================
+   CSS Variables & Theme
+   ========================================================= */
+:root {
+  --bg:         #1a1a2e;
+  --bg-card:    #16213e;
+  --bg-input:   #0f3460;
+  --bg-hover:   #1a3a6a;
+  --text:       #e0e0e0;
+  --text-dim:   #8899aa;
+  --accent:     #e94560;
+  --accent2:    #0f3460;
+  --green:      #4ecca3;
+  --yellow:     #f0c040;
+  --red:        #e94560;
+  --blue:       #4ea8de;
+  --border:     #2a2a4a;
+  --radius:     8px;
+  --shadow:     0 2px 8px rgba(0,0,0,0.3);
+  --font:       'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono:       'SF Mono', 'Fira Code', 'Consolas', monospace;
+}
+[data-theme="light"] {
+  --bg:         #f5f5f5;
+  --bg-card:    #ffffff;
+  --bg-input:   #e8edf2;
+  --bg-hover:   #dce3ea;
+  --text:       #1a1a2e;
+  --text-dim:   #666;
+  --border:     #ccc;
+  --shadow:     0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* =========================================================
+   Reset & Base
+   ========================================================= */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 15px; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+a { color: var(--blue); }
+
+/* =========================================================
+   Header
+   ========================================================= */
+header {
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  padding: .6rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.logo { font-size: 1.2rem; font-weight: 700; white-space: nowrap; }
+.logo span { color: var(--accent); }
+
+/* Status indicators row */
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  flex: 1;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  font-size: .78rem;
+  padding: .2rem .5rem;
+  border-radius: 12px;
+  background: var(--bg-input);
+  white-space: nowrap;
+}
+.indicator .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex-shrink: 0;
+}
+.indicator .dot.green  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.indicator .dot.yellow { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
+.indicator .dot.red    { background: var(--red); box-shadow: 0 0 6px var(--red); }
+.indicator .dot.blue   { background: var(--blue); box-shadow: 0 0 6px var(--blue); }
+.indicator .dot.pulse  { animation: pulse 1.5s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+
+.header-actions {
+  display: flex;
+  gap: .4rem;
+  align-items: center;
+}
+.header-actions button, .header-actions .icon-btn {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: .3rem .6rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: .8rem;
+  white-space: nowrap;
+}
+.header-actions button:hover { background: var(--bg-hover); }
+
+/* =========================================================
+   Progress bar
+   ========================================================= */
+.progress-wrap {
+  width: 100%;
+  background: var(--bg);
+  height: 6px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--blue));
+  transition: width .5s ease;
+}
+
+/* =========================================================
+   Tabs
+   ========================================================= */
+.tabs {
+  display: flex;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+.tab-btn {
+  padding: .55rem 1.2rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: .85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: color .2s;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.tab-panel { display: none; flex: 1; overflow-y: auto; padding: 1rem; }
+.tab-panel.active { display: block; }
+
+/* =========================================================
+   Cards
+   ========================================================= */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow);
+}
+.card h3 {
+  font-size: .9rem;
+  margin-bottom: .7rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+/* =========================================================
+   Form elements
+   ========================================================= */
+label { font-size: .82rem; color: var(--text-dim); display: block; margin-bottom: .25rem; }
+input[type="text"], input[type="number"], input[type="url"], select {
+  width: 100%;
+  padding: .45rem .6rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: .85rem;
+  outline: none;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+textarea {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: .8rem;
+  padding: .5rem;
+  resize: vertical;
+  min-height: 120px;
+  outline: none;
+}
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-bottom: .75rem; }
+.form-group { margin-bottom: .75rem; }
+
+/* =========================================================
+   Buttons
+   ========================================================= */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .5rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text);
+  cursor: pointer;
+  font-size: .82rem;
+  font-weight: 500;
+  transition: background .15s;
+}
+.btn:hover { background: var(--bg-hover); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-primary:hover { background: #d13350; }
+.btn-danger { background: transparent; border-color: var(--red); color: var(--red); }
+.btn-danger:hover { background: rgba(233,69,96,0.15); }
+.btn-sm { padding: .3rem .6rem; font-size: .75rem; }
+
+/* =========================================================
+   File upload zone
+   ========================================================= */
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem 1rem;
+  text-align: center;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+  position: relative;
+  font-size: .85rem;
+}
+.drop-zone.drag-over { border-color: var(--accent); background: rgba(233,69,96,0.08); }
+.drop-zone input[type="file"] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer;
+}
+.drop-zone .icon { font-size: 1.5rem; margin-bottom: .3rem; }
+.file-status {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .78rem;
+  color: var(--green);
+  margin-top: .5rem;
+}
+.file-status.empty { color: var(--text-dim); }
+.file-actions { display: flex; gap: .35rem; margin-top: .5rem; }
+
+/* =========================================================
+   Loaded data summary
+   ========================================================= */
+.data-summary { margin-top: .75rem; }
+.data-summary h4 { font-size: .82rem; color: var(--accent); margin-bottom: .4rem; }
+.data-summary ul { list-style: none; padding: 0; }
+.data-summary li {
+  font-size: .78rem;
+  padding: .2rem 0;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: .4rem;
+  align-items: baseline;
+}
+.data-summary li:last-child { border-bottom: none; }
+.data-summary .tag {
+  display: inline-block;
+  background: var(--bg-input);
+  padding: .1rem .4rem;
+  border-radius: 4px;
+  font-size: .7rem;
+  color: var(--text-dim);
+}
+.data-summary .stat {
+  font-weight: 600;
+  color: var(--blue);
+}
+
+/* =========================================================
+   Output viewer
+   ========================================================= */
+.output-viewer {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  font-family: var(--mono);
+  font-size: .82rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* =========================================================
+   Log viewer
+   ========================================================= */
+.log-viewer {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .5rem;
+  font-family: var(--mono);
+  font-size: .75rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.log-entry { padding: .15rem .3rem; border-bottom: 1px solid rgba(255,255,255,0.03); }
+.log-entry .time { color: var(--text-dim); margin-right: .5rem; }
+.log-entry.warn { color: var(--yellow); }
+.log-entry.error { color: var(--red); }
+
+/* =========================================================
+   Toasts
+   ========================================================= */
+.toast-container {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+}
+.toast {
+  padding: .5rem 1rem;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  font-size: .8rem;
+  opacity: 0;
+  transform: translateY(10px);
+  animation: toast-in .3s forwards;
+  max-width: 340px;
+}
+.toast.info   { border-left: 3px solid var(--blue); }
+.toast.warn   { border-left: 3px solid var(--yellow); }
+.toast.error  { border-left: 3px solid var(--red); }
+.toast.ok     { border-left: 3px solid var(--green); }
+@keyframes toast-in { to { opacity: 1; transform: translateY(0); } }
+
+/* =========================================================
+   Modal
+   ========================================================= */
+.modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.show { display: flex; }
+.modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  max-width: 440px;
+  width: 90%;
+  box-shadow: var(--shadow);
+}
+.modal h3 { margin-bottom: .75rem; }
+.modal p  { font-size: .85rem; color: var(--text-dim); margin-bottom: 1rem; }
+.modal-actions { display: flex; gap: .5rem; justify-content: flex-end; }
+
+/* =========================================================
+   Responsive
+   ========================================================= */
+@media (max-width: 640px) {
+  .form-row { grid-template-columns: 1fr; }
+  header { padding: .5rem .7rem; }
+  .tab-btn { padding: .5rem .8rem; font-size: .8rem; }
+  .tab-panel { padding: .7rem; }
+  .logo { font-size: 1rem; }
+  .header-actions button { padding: .25rem .45rem; font-size: .72rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- ==================== HEADER ==================== -->
+<header>
+  <div class="logo">Novel<span>Builder</span></div>
+  <div class="status-bar">
+    <div class="indicator" id="ind-status">
+      <span class="dot" id="dot-status"></span>
+      <span id="lbl-status">Idle</span>
+    </div>
+    <div class="indicator" id="ind-ollama">
+      <span class="dot" id="dot-ollama"></span>
+      <span id="lbl-ollama">Ollama: ?</span>
+    </div>
+    <div class="indicator" id="ind-model">
+      <span class="dot" id="dot-model"></span>
+      <span id="lbl-model">No model active</span>
+    </div>
+    <div class="indicator" id="ind-progress" style="display:none;">
+      <span id="lbl-progress">0%</span>
+    </div>
+  </div>
+  <div class="header-actions">
+    <button onclick="toggleTheme()" title="Toggle light/dark">🌓</button>
+    <button onclick="confirmNewStory()" title="New Story" class="btn-danger btn-sm">New Story</button>
+  </div>
+</header>
+<div class="progress-wrap"><div class="progress-fill" id="progress-fill"></div></div>
+
+<!-- ==================== TABS ==================== -->
+<div class="tabs">
+  <button class="tab-btn active" data-tab="setup">Setup</button>
+  <button class="tab-btn" data-tab="output">Output</button>
+  <button class="tab-btn" data-tab="logs">Logs</button>
+</div>
+
+<!-- ==================== SETUP TAB ==================== -->
+<div class="tab-panel active" id="panel-setup">
+
+  <!-- Config card -->
+  <div class="card">
+    <h3>⚙ Connection & Models</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="cfg-host">Ollama Host URL</label>
+        <input type="url" id="cfg-host" placeholder="http://192.168.1.50:11434">
+      </div>
+      <div class="form-group">
+        <label for="cfg-model">Generation Model</label>
+        <input type="text" id="cfg-model" placeholder="gemma3:12b">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="cfg-summary-model">Summary Model</label>
+        <input type="text" id="cfg-summary-model" placeholder="gemma3:1b">
+      </div>
+      <div class="form-group" style="display:grid; grid-template-columns:1fr 1fr; gap:.5rem;">
+        <div>
+          <label for="cfg-retries">Retries</label>
+          <input type="number" id="cfg-retries" min="1" max="10" value="3">
+        </div>
+        <div>
+          <label for="cfg-timeout">Timeout (s)</label>
+          <input type="number" id="cfg-timeout" min="60" max="3600" value="900">
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-sm" onclick="saveConfig()">Save Config</button>
+  </div>
+
+  <!-- File upload cards — one per role -->
+  <div class="card" id="card-outline">
+    <h3>📘 Story Outline</h3>
+    <div class="drop-zone" id="drop-outline">
+      <input type="file" accept=".yaml,.yml" onchange="handleFile(this,'outline')">
+      <div class="icon">📄</div>
+      Upload, drag & drop, or <a href="#" onclick="showEditor('outline');return false;">paste/type</a> your story_outline.yaml
+    </div>
+    <div class="file-status empty" id="fstat-outline">No file loaded</div>
+    <div class="file-actions" id="factions-outline" style="display:none;">
+      <button class="btn btn-sm" onclick="downloadFile('outline')">⬇ Export</button>
+      <button class="btn btn-sm" onclick="editFile('outline')">✏ Edit</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteFile('outline')">✕</button>
+    </div>
+    <div class="data-summary" id="summary-outline"></div>
+  </div>
+
+  <div class="card" id="card-characters">
+    <h3>👤 Characters</h3>
+    <div class="drop-zone" id="drop-characters">
+      <input type="file" accept=".yaml,.yml" onchange="handleFile(this,'characters')">
+      <div class="icon">👥</div>
+      Upload, drag & drop, or <a href="#" onclick="showEditor('characters');return false;">paste/type</a> your characters.yaml
+    </div>
+    <div class="file-status empty" id="fstat-characters">No file loaded</div>
+    <div class="file-actions" id="factions-characters" style="display:none;">
+      <button class="btn btn-sm" onclick="downloadFile('characters')">⬇ Export</button>
+      <button class="btn btn-sm" onclick="editFile('characters')">✏ Edit</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteFile('characters')">✕</button>
+    </div>
+    <div class="data-summary" id="summary-characters"></div>
+  </div>
+
+  <div class="card" id="card-locations">
+    <h3>🗺 Locations <span style="font-size:.7rem;color:var(--text-dim)">(optional)</span></h3>
+    <div class="drop-zone" id="drop-locations">
+      <input type="file" accept=".yaml,.yml" onchange="handleFile(this,'locations')">
+      <div class="icon">🏔</div>
+      Upload, drag & drop, or <a href="#" onclick="showEditor('locations');return false;">paste/type</a> your locations.yaml
+    </div>
+    <div class="file-status empty" id="fstat-locations">No file loaded</div>
+    <div class="file-actions" id="factions-locations" style="display:none;">
+      <button class="btn btn-sm" onclick="downloadFile('locations')">⬇ Export</button>
+      <button class="btn btn-sm" onclick="editFile('locations')">✏ Edit</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteFile('locations')">✕</button>
+    </div>
+    <div class="data-summary" id="summary-locations"></div>
+  </div>
+
+  <div class="card" id="card-style">
+    <h3>🎨 Custom Style Prompt <span style="font-size:.7rem;color:var(--text-dim)">(optional)</span></h3>
+    <div class="drop-zone" id="drop-style">
+      <input type="file" accept=".txt,.yaml,.yml" onchange="handleFile(this,'style')">
+      <div class="icon">✍</div>
+      Upload, drag & drop, or <a href="#" onclick="showEditor('style');return false;">paste/type</a> style directives
+    </div>
+    <div class="file-status empty" id="fstat-style">No file loaded</div>
+    <div class="file-actions" id="factions-style" style="display:none;">
+      <button class="btn btn-sm" onclick="downloadFile('style')">⬇ Export</button>
+      <button class="btn btn-sm" onclick="editFile('style')">✏ Edit</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteFile('style')">✕</button>
+    </div>
+  </div>
+
+  <!-- Loaded data overview -->
+  <div class="card" id="card-loaded" style="display:none;">
+    <h3>📊 Loaded Data Overview</h3>
+    <div id="loaded-overview"></div>
+  </div>
+
+  <!-- Action buttons -->
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
+    <button class="btn btn-primary" id="btn-start" onclick="startGeneration(false)">▶ Start Generation</button>
+    <button class="btn" id="btn-resume" onclick="startGeneration(true)" style="display:none;">⏩ Resume</button>
+    <button class="btn btn-danger" id="btn-stop" onclick="stopGeneration()" style="display:none;">⏹ Stop</button>
+    <button class="btn" onclick="refreshParsed()">🔄 Refresh Preview</button>
+  </div>
+</div>
+
+<!-- ==================== OUTPUT TAB ==================== -->
+<div class="tab-panel" id="panel-output">
+  <div style="display:flex; gap:.5rem; margin-bottom:.75rem; flex-wrap:wrap;">
+    <button class="btn btn-sm" onclick="refreshOutput()">🔄 Refresh</button>
+    <button class="btn btn-sm" onclick="location.href='/api/download'">⬇ Download .md</button>
+    <label style="display:flex; align-items:center; gap:.3rem; font-size:.78rem; color:var(--text-dim);">
+      <input type="checkbox" id="chk-autoscroll" checked> Auto-scroll
+    </label>
+  </div>
+  <div class="output-viewer" id="output-viewer">(No output yet — start generation to see scenes here.)</div>
+</div>
+
+<!-- ==================== LOGS TAB ==================== -->
+<div class="tab-panel" id="panel-logs">
+  <div style="display:flex; gap:.5rem; margin-bottom:.75rem;">
+    <button class="btn btn-sm" onclick="clearLogs()">🗑 Clear</button>
+  </div>
+  <div class="log-viewer" id="log-viewer"></div>
+</div>
+
+<!-- ==================== EDITOR MODAL ==================== -->
+<div class="modal-overlay" id="modal-editor">
+  <div class="modal" style="max-width:700px;">
+    <h3 id="editor-title">Edit File</h3>
+    <textarea id="editor-content" rows="18" style="min-height:300px;"></textarea>
+    <div class="modal-actions" style="margin-top:.75rem;">
+      <button class="btn" onclick="closeEditor()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEditor()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== CONFIRM MODAL ==================== -->
+<div class="modal-overlay" id="modal-confirm">
+  <div class="modal">
+    <h3 id="confirm-title">Confirm</h3>
+    <p id="confirm-message">Are you sure?</p>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeConfirm()">Cancel</button>
+      <button class="btn btn-danger" id="confirm-ok" onclick="closeConfirm()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== TOAST CONTAINER ==================== -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- ==================== JAVASCRIPT ==================== -->
+<script>
+/* ==========================================================
+   State & globals
+   ========================================================== */
+let currentEditorRole = null;
+let eventSource = null;
+let reconnectTimer = null;
+
+/* ==========================================================
+   Tabs
+   ========================================================== */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+/* ==========================================================
+   Theme toggle
+   ========================================================== */
+function toggleTheme() {
+  const html = document.documentElement;
+  const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('novel-builder-theme', next);
+}
+(function() {
+  const saved = localStorage.getItem('novel-builder-theme');
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
+})();
+
+/* ==========================================================
+   Toast notifications
+   ========================================================== */
+function toast(msg, level = 'info') {
+  const c = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = 'toast ' + level;
+  el.textContent = msg;
+  c.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 400); }, 4000);
+}
+
+/* ==========================================================
+   Confirm modal
+   ========================================================== */
+function showConfirm(title, message, onOk) {
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-message').textContent = message;
+  const okBtn = document.getElementById('confirm-ok');
+  const newBtn = okBtn.cloneNode(true);
+  okBtn.parentNode.replaceChild(newBtn, okBtn);
+  newBtn.id = 'confirm-ok';
+  newBtn.addEventListener('click', () => { closeConfirm(); onOk(); });
+  document.getElementById('modal-confirm').classList.add('show');
+}
+function closeConfirm() {
+  document.getElementById('modal-confirm').classList.remove('show');
+}
+
+/* ==========================================================
+   API helpers
+   ========================================================== */
+async function api(path, opts = {}) {
+  try {
+    const resp = await fetch(path, opts);
+    return await resp.json();
+  } catch (e) {
+    toast('Network error: ' + e.message, 'error');
+    return null;
+  }
+}
+async function apiPost(path, body = {}) {
+  return api(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+/* ==========================================================
+   Config
+   ========================================================== */
+function loadConfigIntoForm(cfg) {
+  if (!cfg) return;
+  document.getElementById('cfg-host').value = cfg.host || '';
+  document.getElementById('cfg-model').value = cfg.model || 'gemma3:12b';
+  document.getElementById('cfg-summary-model').value = cfg.summary_model || 'gemma3:1b';
+  document.getElementById('cfg-retries').value = cfg.retries || 3;
+  document.getElementById('cfg-timeout').value = cfg.timeout || 900;
+}
+async function saveConfig() {
+  const cfg = {
+    host: document.getElementById('cfg-host').value.trim(),
+    model: document.getElementById('cfg-model').value.trim(),
+    summary_model: document.getElementById('cfg-summary-model').value.trim(),
+    retries: parseInt(document.getElementById('cfg-retries').value) || 3,
+    timeout: parseInt(document.getElementById('cfg-timeout').value) || 900,
+  };
+  const r = await apiPost('/api/config', cfg);
+  if (r && r.ok) { toast('Config saved', 'ok'); checkOllamaHealth(); }
+  else toast('Failed to save config', 'error');
+}
+
+/* ==========================================================
+   File upload / drag-drop
+   ========================================================== */
+['outline', 'characters', 'locations', 'style'].forEach(role => {
+  const zone = document.getElementById('drop-' + role);
+  if (!zone) return;
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) uploadFile(file, role);
+  });
+});
+
+function handleFile(input, role) {
+  const file = input.files[0];
+  if (file) uploadFile(file, role);
+  input.value = '';
+}
+
+async function uploadFile(file, role) {
+  const fd = new FormData();
+  fd.append('role', role);
+  fd.append('file', file);
+  try {
+    const resp = await fetch('/api/upload', { method: 'POST', body: fd });
+    const r = await resp.json();
+    if (r.ok) {
+      toast(`${role} file uploaded (${formatBytes(r.size)})`, 'ok');
+      refreshFiles();
+      refreshParsed();
+    } else {
+      toast(r.error || 'Upload failed', 'error');
+    }
+  } catch (e) {
+    toast('Upload error: ' + e.message, 'error');
+  }
+}
+
+/* ==========================================================
+   File status display
+   ========================================================== */
+function updateFileStatus(files) {
+  ['outline', 'characters', 'locations', 'style'].forEach(role => {
+    const el = document.getElementById('fstat-' + role);
+    const actions = document.getElementById('factions-' + role);
+    const info = files[role];
+    if (info) {
+      el.className = 'file-status';
+      el.textContent = `✓ ${info.filename} — ${formatBytes(info.size)} — ${info.modified}`;
+      actions.style.display = 'flex';
+    } else {
+      el.className = 'file-status empty';
+      el.textContent = 'No file loaded';
+      actions.style.display = 'none';
+    }
+  });
+}
+
+async function refreshFiles() {
+  const files = await api('/api/files');
+  if (files) updateFileStatus(files);
+}
+
+function downloadFile(role) {
+  window.open('/api/download-file/' + role, '_blank');
+}
+
+async function deleteFile(role) {
+  showConfirm('Delete File', `Remove the ${role} file from workspace?`, async () => {
+    const r = await apiPost('/api/delete-file/' + role);
+    if (r && r.ok) {
+      toast(`${role} file removed`, 'ok');
+      refreshFiles();
+      refreshParsed();
+    } else {
+      toast(r?.error || 'Delete failed', 'error');
+    }
+  });
+}
+
+/* ==========================================================
+   Editor modal (paste/type & edit)
+   ========================================================== */
+function showEditor(role) {
+  currentEditorRole = role;
+  const labels = { outline: 'Story Outline YAML', characters: 'Characters YAML', locations: 'Locations YAML', style: 'Custom Style Prompt' };
+  document.getElementById('editor-title').textContent = 'Edit: ' + (labels[role] || role);
+  document.getElementById('editor-content').value = '';
+  document.getElementById('modal-editor').classList.add('show');
+  document.getElementById('editor-content').focus();
+}
+
+async function editFile(role) {
+  currentEditorRole = role;
+  const labels = { outline: 'Story Outline YAML', characters: 'Characters YAML', locations: 'Locations YAML', style: 'Custom Style Prompt' };
+  document.getElementById('editor-title').textContent = 'Edit: ' + (labels[role] || role);
+  // Load current file content
+  const r = await api('/api/file-content/' + role);
+  document.getElementById('editor-content').value = (r && r.ok) ? r.content : '';
+  document.getElementById('modal-editor').classList.add('show');
+  document.getElementById('editor-content').focus();
+}
+
+function closeEditor() {
+  document.getElementById('modal-editor').classList.remove('show');
+  currentEditorRole = null;
+}
+
+async function saveEditor() {
+  if (!currentEditorRole) return;
+  const content = document.getElementById('editor-content').value;
+  const r = await apiPost('/api/save-text', { role: currentEditorRole, content });
+  if (r && r.ok) {
+    toast(`${currentEditorRole} saved (${formatBytes(r.size)})`, 'ok');
+    closeEditor();
+    refreshFiles();
+    refreshParsed();
+  } else {
+    toast(r?.error || 'Save failed', 'error');
+  }
+}
+
+/* ==========================================================
+   Parse YAML preview — loaded data display
+   ========================================================== */
+async function refreshParsed() {
+  const r = await api('/api/parse-yaml');
+  if (!r || !r.ok) return;
+
+  // Outline
+  const so = document.getElementById('summary-outline');
+  if (r.outline && !r.outline.error) {
+    const o = r.outline;
+    so.innerHTML = `
+      <h4>${escHtml(o.story_title)}</h4>
+      <ul>
+        <li><span class="stat">${o.total_chapters}</span> chapters, <span class="stat">${o.total_scenes}</span> scenes</li>
+        ${o.world ? `<li>World: ${escHtml(truncate(o.world, 100))}</li>` : ''}
+        ${o.overall_arc?.tone ? `<li>Tone: ${escHtml(o.overall_arc.tone)}</li>` : ''}
+        ${o.overall_arc?.genre ? `<li>Genre: ${escHtml(o.overall_arc.genre)}</li>` : ''}
+        ${o.overall_arc?.themes ? `<li>Themes: ${escHtml(Array.isArray(o.overall_arc.themes) ? o.overall_arc.themes.join(', ') : o.overall_arc.themes)}</li>` : ''}
+        ${o.anti_patterns?.length ? `<li>${o.anti_patterns.length} anti-patterns defined</li>` : ''}
+        ${o.narrative_hooks?.length ? `<li>${o.narrative_hooks.length} narrative hooks</li>` : ''}
+      </ul>
+      <details style="margin-top:.4rem;">
+        <summary style="font-size:.78rem;cursor:pointer;color:var(--text-dim);">Chapter breakdown</summary>
+        <ul>
+          ${o.chapters.map(c => `<li>Ch ${c.number}: ${escHtml(c.title)} <span class="tag">${c.scenes} scene${c.scenes !== 1 ? 's' : ''}</span></li>`).join('')}
+        </ul>
+      </details>
+    `;
+  } else if (r.outline?.error) {
+    so.innerHTML = `<p style="color:var(--red);font-size:.8rem;">Parse error: ${escHtml(r.outline.error)}</p>`;
+  } else {
+    so.innerHTML = '';
+  }
+
+  // Characters
+  const sc = document.getElementById('summary-characters');
+  if (r.characters && !r.characters.error) {
+    const ch = r.characters;
+    sc.innerHTML = `
+      <h4>${ch.total} character${ch.total !== 1 ? 's' : ''} loaded</h4>
+      <ul>
+        ${ch.characters.map(c => `
+          <li>
+            <strong>${escHtml(c.name)}</strong>
+            ${c.role ? `<span class="tag">${escHtml(c.role)}</span>` : ''}
+            ${c.heritage?.length ? `<span class="tag">${escHtml(Array.isArray(c.heritage) ? c.heritage.join(', ') : c.heritage)}</span>` : ''}
+            ${c.has_catchphrase ? '<span class="tag">💬</span>' : ''}
+            ${c.has_secret ? '<span class="tag">🤫</span>' : ''}
+            ${c.has_relationships ? '<span class="tag">🔗</span>' : ''}
+            ${c.has_evolution ? '<span class="tag">📈</span>' : ''}
+          </li>
+        `).join('')}
+      </ul>
+      ${ch.heritage_groups.length ? `
+        <details style="margin-top:.4rem;">
+          <summary style="font-size:.78rem;cursor:pointer;color:var(--text-dim);">Heritage groups</summary>
+          <ul>${ch.heritage_groups.map(h => `<li>${escHtml(h.label)} <span class="tag">${escHtml(h.id)}</span></li>`).join('')}</ul>
+        </details>
+      ` : ''}
+    `;
+  } else if (r.characters?.error) {
+    sc.innerHTML = `<p style="color:var(--red);font-size:.8rem;">Parse error: ${escHtml(r.characters.error)}</p>`;
+  } else {
+    sc.innerHTML = '';
+  }
+
+  // Locations
+  const sl = document.getElementById('summary-locations');
+  if (r.locations && !r.locations.error) {
+    const lo = r.locations;
+    sl.innerHTML = `
+      <h4>${lo.total} location${lo.total !== 1 ? 's' : ''} loaded</h4>
+      <ul>
+        ${lo.locations.map(l => `
+          <li>
+            <strong>${escHtml(l.id)}</strong>
+            ${l.type ? `<span class="tag">${escHtml(l.type)}</span>` : ''}
+            ${l.description ? `<span style="font-size:.75rem;color:var(--text-dim);">${escHtml(l.description)}</span>` : ''}
+          </li>
+        `).join('')}
+      </ul>
+    `;
+  } else if (r.locations?.error) {
+    sl.innerHTML = `<p style="color:var(--red);font-size:.8rem;">Parse error: ${escHtml(r.locations.error)}</p>`;
+  } else {
+    sl.innerHTML = '';
+  }
+
+  // Show loaded overview card if any data exists
+  const overviewCard = document.getElementById('card-loaded');
+  const overview = document.getElementById('loaded-overview');
+  if (r.outline || r.characters || r.locations) {
+    overviewCard.style.display = 'block';
+    let html = '<ul>';
+    if (r.outline && !r.outline.error) {
+      html += `<li>📘 <strong>${escHtml(r.outline.story_title)}</strong> — ${r.outline.total_chapters} chapters, ${r.outline.total_scenes} scenes</li>`;
+    }
+    if (r.characters && !r.characters.error) {
+      html += `<li>👤 ${r.characters.total} characters${r.characters.heritage_groups.length ? `, ${r.characters.heritage_groups.length} heritage groups` : ''}</li>`;
+    }
+    if (r.locations && !r.locations.error) {
+      html += `<li>🗺 ${r.locations.total} locations</li>`;
+    }
+    html += '</ul>';
+    overview.innerHTML = html;
+  } else {
+    overviewCard.style.display = 'none';
+  }
+}
+
+/* ==========================================================
+   Generation control
+   ========================================================== */
+async function startGeneration(resume) {
+  // Save config first
+  await saveConfig();
+  const r = await apiPost('/api/start', { resume });
+  if (r && r.ok) {
+    toast('Generation started', 'ok');
+    updateUIForStatus('running');
+  } else {
+    toast(r?.message || r?.error || 'Start failed', 'error');
+  }
+}
+
+async function stopGeneration() {
+  const r = await apiPost('/api/stop');
+  if (r && r.ok) toast('Stop requested — finishing current scene...', 'warn');
+  else toast(r?.message || 'Stop failed', 'error');
+}
+
+/* ==========================================================
+   New story
+   ========================================================== */
+function confirmNewStory() {
+  showConfirm(
+    'New Story',
+    'This will delete ALL uploaded YAML files, output, and checkpoint from the workspace. Are you sure?',
+    async () => {
+      const r = await apiPost('/api/new-story');
+      if (r && r.ok) {
+        toast(`Workspace cleared (${r.removed.length} files removed)`, 'ok');
+        refreshFiles();
+        refreshParsed();
+        document.getElementById('output-viewer').textContent = '(No output yet)';
+        document.getElementById('log-viewer').innerHTML = '';
+        updateUIForStatus('idle');
+      } else {
+        toast(r?.error || 'Reset failed', 'error');
+      }
+    }
+  );
+}
+
+/* ==========================================================
+   UI status updates
+   ========================================================== */
+function updateUIForStatus(status) {
+  const dotS = document.getElementById('dot-status');
+  const lblS = document.getElementById('lbl-status');
+  const indP = document.getElementById('ind-progress');
+  const btnStart = document.getElementById('btn-start');
+  const btnResume = document.getElementById('btn-resume');
+  const btnStop = document.getElementById('btn-stop');
+
+  dotS.className = 'dot';
+  switch (status) {
+    case 'running':
+      dotS.classList.add('green', 'pulse');
+      lblS.textContent = 'Running';
+      btnStart.style.display = 'none';
+      btnResume.style.display = 'none';
+      btnStop.style.display = '';
+      indP.style.display = '';
+      break;
+    case 'completed':
+      dotS.classList.add('green');
+      lblS.textContent = 'Completed';
+      btnStart.style.display = '';
+      btnResume.style.display = 'none';
+      btnStop.style.display = 'none';
+      break;
+    case 'stopped':
+      dotS.classList.add('yellow');
+      lblS.textContent = 'Paused';
+      btnStart.style.display = '';
+      btnResume.style.display = '';
+      btnStop.style.display = 'none';
+      break;
+    case 'error':
+      dotS.classList.add('red');
+      lblS.textContent = 'Error';
+      btnStart.style.display = '';
+      btnResume.style.display = '';
+      btnStop.style.display = 'none';
+      break;
+    default:
+      lblS.textContent = 'Idle';
+      btnStart.style.display = '';
+      btnResume.style.display = 'none';
+      btnStop.style.display = 'none';
+      indP.style.display = 'none';
+  }
+}
+
+function updateModelIndicator(info) {
+  const dot = document.getElementById('dot-model');
+  const lbl = document.getElementById('lbl-model');
+  dot.className = 'dot';
+  switch (info.model) {
+    case 'generation':
+      dot.classList.add('blue', 'pulse');
+      lbl.textContent = '✦ Generating: ' + (info.name || '');
+      break;
+    case 'summarization':
+      dot.classList.add('yellow', 'pulse');
+      lbl.textContent = '⊕ Summarizing: ' + (info.name || '');
+      break;
+    default:
+      lbl.textContent = 'No model active';
+  }
+}
+
+function updateProgress(p) {
+  const pct = p.percent || 0;
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('lbl-progress').textContent =
+    `${pct}% — Scene ${p.scene || 0}/${p.total_scenes || 0}`;
+  document.getElementById('ind-progress').style.display = '';
+}
+
+/* ==========================================================
+   Logs
+   ========================================================== */
+function addLogEntry(entry) {
+  const viewer = document.getElementById('log-viewer');
+  const div = document.createElement('div');
+  div.className = 'log-entry' + (entry.level === 'warn' ? ' warn' : entry.level === 'error' ? ' error' : '');
+  div.innerHTML = `<span class="time">${escHtml(entry.time)}</span>${escHtml(entry.message)}`;
+  viewer.appendChild(div);
+  viewer.scrollTop = viewer.scrollHeight;
+}
+
+function clearLogs() {
+  document.getElementById('log-viewer').innerHTML = '';
+}
+
+/* ==========================================================
+   Output
+   ========================================================== */
+function appendSceneToOutput(data) {
+  const viewer = document.getElementById('output-viewer');
+  if (viewer.textContent.startsWith('(No output')) viewer.textContent = '';
+  const heading = `\n\n### Scene ${data.scene_num}${data.title ? ': ' + data.title : ''}\n\n`;
+  viewer.textContent += heading + data.text + '\n\n---\n';
+  if (document.getElementById('chk-autoscroll').checked) {
+    viewer.scrollTop = viewer.scrollHeight;
+  }
+}
+
+async function refreshOutput() {
+  const r = await api('/api/output');
+  if (r && r.exists) {
+    document.getElementById('output-viewer').textContent = r.text;
+  }
+}
+
+/* ==========================================================
+   SSE — Server-Sent Events
+   ========================================================== */
+function connectSSE() {
+  if (eventSource) { eventSource.close(); }
+  eventSource = new EventSource('/api/events');
+
+  eventSource.onmessage = (e) => {
+    let event;
+    try { event = JSON.parse(e.data); } catch { return; }
+
+    switch (event.type) {
+      case 'progress':
+        updateProgress(event.data);
+        break;
+      case 'model_active':
+        updateModelIndicator(event.data);
+        break;
+      case 'status_change':
+        updateUIForStatus(event.data.status);
+        if (event.data.status === 'completed') {
+          toast('Generation complete!', 'ok');
+        } else if (event.data.status === 'error') {
+          toast('Error: ' + (event.data.message || 'Unknown'), 'error');
+        }
+        break;
+      case 'scene_complete':
+        appendSceneToOutput(event.data);
+        break;
+      case 'log':
+        addLogEntry(event.data);
+        break;
+      case 'connected':
+      case 'heartbeat':
+        break;
+    }
+  };
+
+  eventSource.onerror = () => {
+    eventSource.close();
+    eventSource = null;
+    // Reconnect after a delay
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connectSSE, 3000);
+  };
+}
+
+/* ==========================================================
+   Initial load — reconnection-safe
+   ========================================================== */
+async function init() {
+  const snap = await api('/api/status');
+  if (!snap) return;
+
+  // Config
+  loadConfigIntoForm(snap.config);
+
+  // Files
+  if (snap.files) updateFileStatus(snap.files);
+
+  // Status
+  updateUIForStatus(snap.status);
+  if (snap.active_model) updateModelIndicator(snap.active_model);
+  if (snap.progress) updateProgress(snap.progress);
+
+  // Logs (replay)
+  if (snap.logs) {
+    snap.logs.forEach(addLogEntry);
+  }
+
+  // Output scenes (rebuild viewer)
+  if (snap.output_scenes && snap.output_scenes.length) {
+    const viewer = document.getElementById('output-viewer');
+    viewer.textContent = '';
+    snap.output_scenes.forEach(s => {
+      viewer.textContent += `\n\n### Scene ${s.scene_num}${s.title ? ': ' + s.title : ''}\n(${s.chars} chars)\n---\n`;
+    });
+    // Load the full output text for complete view
+    refreshOutput();
+  }
+
+  // Parse loaded data
+  refreshParsed();
+
+  // Start SSE
+  connectSSE();
+}
+
+/* ==========================================================
+   Utility
+   ========================================================== */
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  return (b / (1024 * 1024)).toFixed(1) + ' MB';
+}
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function truncate(s, max) {
+  if (!s || s.length <= max) return s;
+  return s.substring(0, max) + '…';
+}
+
+/* ==========================================================
+   Ollama health check
+   ========================================================== */
+let _healthInterval = null;
+async function checkOllamaHealth() {
+  const dot = document.getElementById('dot-ollama');
+  const lbl = document.getElementById('lbl-ollama');
+  try {
+    const r = await api('/api/ollama-health');
+    dot.className = 'dot';
+    if (r && r.ok) {
+      dot.classList.add('green');
+      lbl.textContent = 'Ollama: connected (' + r.models.length + ' models)';
+    } else {
+      dot.classList.add('red');
+      lbl.textContent = 'Ollama: ' + (r?.error || 'unreachable');
+    }
+  } catch {
+    dot.className = 'dot red';
+    lbl.textContent = 'Ollama: offline';
+  }
+}
+function startHealthPolling() {
+  checkOllamaHealth();
+  clearInterval(_healthInterval);
+  _healthInterval = setInterval(checkOllamaHealth, 30000);
+}
+
+/* ==========================================================
+   Boot
+   ========================================================== */
+init();
+startHealthPolling();
+</script>
+</body>
+</html>

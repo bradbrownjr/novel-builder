@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Novel Builder runtime
+workspace/
+checkpoint.yaml
+full_story.md
+*_output.md
+web_config.json
+
+# OS
+.DS_Store
+Thumbs.db
