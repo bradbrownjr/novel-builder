@@ -18,6 +18,64 @@ from .state import get_relevant_memory
 
 
 # ---------------------------------------------------------------------------
+# Default anti-patterns — always included in the system prompt
+# ---------------------------------------------------------------------------
+
+_DEFAULT_PROMPT_ANTI_PATTERNS = [
+    "purple prose or overwrought descriptions",
+    "emoji or emoticons",
+    "excessive em-dashes",
+    '"delve", "tapestry", "unbeknownst", "palpable"',
+    '"a single tear" or similar melodramatic physical cues',
+    '"let out a breath they didn\'t know they were holding"',
+    '"little did they know", "everything changed", "in that moment"',
+    '"time seemed to stop" or "time stood still"',
+    '"sent shivers down" or "a chill ran down"',
+    '"whispered softly" or other redundant adverbs',
+]
+
+
+def _merge_anti_patterns(user_patterns):
+    """Merge user-defined anti-patterns with built-in defaults.
+
+    Deduplicates by checking if a user pattern is already covered by
+    a default (substring match, case-insensitive). User patterns that
+    add new information are appended; redundant ones are skipped.
+
+    Args:
+        user_patterns: List of anti-pattern strings from YAML, or None.
+
+    Returns:
+        Merged list of unique anti-pattern strings.
+    """
+    merged = list(_DEFAULT_PROMPT_ANTI_PATTERNS)
+    if not user_patterns:
+        return merged
+
+    # Build a lowercase blob of all defaults for fast substring checks
+    defaults_blob = "\n".join(p.lower() for p in _DEFAULT_PROMPT_ANTI_PATTERNS)
+
+    for pattern in user_patterns:
+        normalized = pattern.strip().strip('"').lower()
+        if not normalized:
+            continue
+        # Skip if any default already covers this pattern
+        if normalized in defaults_blob:
+            continue
+        # Skip if this pattern is a superset of a default we already have
+        # (e.g., user says "avoid purple prose" and we already have it)
+        already_covered = False
+        for default in _DEFAULT_PROMPT_ANTI_PATTERNS:
+            if default.lower() in normalized:
+                already_covered = True
+                break
+        if not already_covered:
+            merged.append(pattern.strip())
+
+    return merged
+
+
+# ---------------------------------------------------------------------------
 # System prompt
 # ---------------------------------------------------------------------------
 
@@ -66,15 +124,15 @@ def build_system_prompt(config):
     elif isinstance(arc, str) and arc:
         parts.append(f"\nStory arc: {arc}")
 
-    # Anti-pattern suppression
-    anti_patterns = config.get("anti_patterns", [])
-    if anti_patterns:
-        patterns_str = "; ".join(anti_patterns[:15])  # Cap list size
-        parts.append(
-            f"\nIMPORTANT — Avoid these overused phrases and patterns: "
-            f"{patterns_str}. "
-            "Use fresh, original language instead."
-        )
+    # Anti-pattern suppression — always includes built-in defaults
+    user_patterns = config.get("anti_patterns", [])
+    merged = _merge_anti_patterns(user_patterns if user_patterns else None)
+    patterns_str = "; ".join(merged[:20])  # Cap list size for token budget
+    parts.append(
+        f"\nIMPORTANT — Avoid these overused phrases and patterns: "
+        f"{patterns_str}. "
+        "Use fresh, original language instead."
+    )
 
     # Do NOT impose word count
     parts.append(

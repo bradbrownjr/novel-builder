@@ -41,15 +41,14 @@ overall_arc:
   pov: "Third-person limited, following the keeper."
 
 # ─── Anti-Pattern Suppression ────────────────────────────────────
-# Phrases/constructions the AI should avoid. Wildcards (*) match
-# any words. These are injected into the system prompt and also
-# used for regex post-processing cleanup.
+# Phrases/constructions the AI should avoid. Built-in defaults cover
+# purple prose, emoji, em-dashes, and common AI clichés ("delve",
+# "tapestry", "a single tear", etc.). These are always active.
+# Add your own here — duplicates of built-in defaults are
+# automatically skipped to save tokens.
 anti_patterns:
   - "shiver down * spine"
-  - "unbeknownst"
-  - "little did * know"
   - "a wave of *"
-  - "em-dashes"
   - "the weight of the world"
 
 # ─── Narrative Hooks ─────────────────────────────────────────────
@@ -119,7 +118,7 @@ chapters:
 | `overall_arc.theme` | string | No | Central theme(s) |
 | `overall_arc.tone` | string | No | Narrative tone/mood |
 | `overall_arc.pov` | string | No | Point of view |
-| `anti_patterns` | list of strings | No | AI phrases/clichés to suppress |
+| `anti_patterns` | list of strings | No | Additional AI phrases/clichés to suppress (built-in defaults always active) |
 | `narrative_hooks` | list | No | Story-level plot beats (see below) |
 | `chapters` | list | Yes | Chapter definitions |
 
