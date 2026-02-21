@@ -29,6 +29,8 @@ ollama pull gemma3:1b      # Summarization
 ```yaml
 story_title: "My Story"
 
+world: "Contemporary small-town USA. Smartphones exist but everyone knows everyone."
+
 overall_arc:
   tone: "Suspenseful and atmospheric"
   pov: "First person"
