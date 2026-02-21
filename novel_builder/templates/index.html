@@ -908,10 +908,10 @@ async function refreshParsed() {
             <strong>${escHtml(c.name)}</strong>
             ${c.role ? `<span class="tag">${escHtml(c.role)}</span>` : ''}
             ${c.heritage?.length ? `<span class="tag">${escHtml(Array.isArray(c.heritage) ? c.heritage.join(', ') : c.heritage)}</span>` : ''}
-            ${c.has_catchphrase ? '<span class="tag">💬</span>' : ''}
-            ${c.has_secret ? '<span class="tag">🤫</span>' : ''}
-            ${c.has_relationships ? '<span class="tag">🔗</span>' : ''}
-            ${c.has_evolution ? '<span class="tag">📈</span>' : ''}
+            ${c.has_catchphrase ? '<span class="tag" title="Has catchphrase">💬</span>' : ''}
+            ${c.has_secret ? '<span class="tag" title="Has secret (injected when scene notes reference tension/subtext)">🤫</span>' : ''}
+            ${c.has_relationships ? '<span class="tag" title="Has relationships (injected when both characters are in scene)">🔗</span>' : ''}
+            ${c.has_evolution ? '<span class="tag" title="Has evolution notes (character growth tracked across scenes)">📈</span>' : ''}
           </li>
         `).join('')}
       </ul>
