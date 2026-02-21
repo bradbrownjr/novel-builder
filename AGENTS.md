@@ -10,6 +10,7 @@ _(Add directives here when the user says "always" or "never" do something.)_
 - **Always** default to outputting scenes to both file and terminal unless overridden by CLI flags.
 - **Never** hardcode style directives in Python — they belong in the YAML outline.
 - **Never** include all character bios in every scene prompt — only send characters present in the scene.
+- **Always** keep `README.md` as a concise table of contents with a project description. Detailed documentation goes in `docs/`. Keep content scannable and bite-sized for readers.
 
 ## Project Conventions
 
