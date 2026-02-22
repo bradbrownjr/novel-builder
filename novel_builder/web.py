@@ -90,6 +90,21 @@ def _normalize_host(host):
     return host
 
 
+def _normalize_tts_host(host):
+    """Normalize a TTS server URL.
+
+    Accepts bare IPs (10.6.26.2), IP:port (10.6.26.2:8001),
+    or full URLs (http://10.6.26.2:8001).  Unlike Ollama, there is
+    no default port — the URL must include the port if non-standard.
+    """
+    if not host:
+        return host
+    host = host.strip().rstrip("/")
+    if not host.startswith("http://") and not host.startswith("https://"):
+        host = f"http://{host}"
+    return host
+
+
 # ---------------------------------------------------------------------------
 # Server-side generation state
 # ---------------------------------------------------------------------------
@@ -244,21 +259,32 @@ def _workspace_path(filename):
 
 
 def _load_web_config():
-    """Load saved web configuration from workspace."""
-    path = os.path.join(WORKSPACE_DIR, CONFIG_FILE)
-    if os.path.exists(path):
-        try:
-            with open(path, "r") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError):
-            pass
-    return {
+    """Load saved web configuration from workspace.
+
+    Always returns a complete config dict with all known keys.
+    Saved values override defaults; new keys get their defaults.
+    """
+    defaults = {
         "host": os.environ.get("OLLAMA_HOST", ""),
         "model": "gemma3:12b",
         "summary_model": "gemma3:1b",
         "retries": 3,
         "timeout": 900,
+        # TTS (Speaches / Kokoro / Piper)
+        "tts_host": "",
+        "tts_model": "",
+        "tts_narrator_voice": "",
+        "tts_voice_map": {},
     }
+    path = os.path.join(WORKSPACE_DIR, CONFIG_FILE)
+    if os.path.exists(path):
+        try:
+            with open(path, "r") as f:
+                saved = json.load(f)
+            defaults.update(saved)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return defaults
 
 
 def _save_web_config(cfg):
@@ -461,13 +487,18 @@ def api_config():
 
     data = request.get_json(force=True)
     # Sanitize — only accept known keys
-    allowed = {"host", "model", "summary_model", "retries", "timeout"}
+    allowed = {
+        "host", "model", "summary_model", "retries", "timeout",
+        "tts_host", "tts_model", "tts_narrator_voice", "tts_voice_map",
+    }
     cfg = _load_web_config()
     for key in allowed:
         if key in data:
             cfg[key] = data[key]
     if "host" in data:
         cfg["host"] = _normalize_host(cfg["host"])
+    if "tts_host" in data:
+        cfg["tts_host"] = _normalize_tts_host(cfg["tts_host"])
     _save_web_config(cfg)
     return jsonify({"ok": True, "config": cfg})
 
@@ -886,6 +917,167 @@ def api_delete_file(role):
         os.remove(path)
         return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "File not found"}), 404
+
+
+# ---------------------------------------------------------------------------
+# TTS (Text-to-Speech) routes — Speaches / Kokoro / Piper
+# ---------------------------------------------------------------------------
+
+@app.route("/api/tts/health")
+def api_tts_health():
+    """Check TTS server connectivity and list available models."""
+    host = request.args.get("host", "").strip()
+    if not host:
+        cfg = _load_web_config()
+        host = cfg.get("tts_host", "")
+    host = _normalize_tts_host(host)
+    if not host:
+        return jsonify({"ok": False, "error": "No TTS host configured"})
+
+    try:
+        resp = _requests.get(f"{host}/v1/models", timeout=5)
+        resp.raise_for_status()
+        data = resp.json()
+        models = [
+            m.get("id", "") for m in data.get("data", [])
+            if m.get("id")
+        ]
+        return jsonify({"ok": True, "models": models})
+    except _requests.ConnectionError:
+        return jsonify({"ok": False, "error": "Connection refused"})
+    except _requests.Timeout:
+        return jsonify({"ok": False, "error": "Timeout"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/api/tts/voices")
+def api_tts_voices():
+    """Discover available voices for a TTS model.
+
+    Tries several common endpoints (Speaches / OpenAI-compatible),
+    returns whatever voice list the server exposes.  Falls back
+    gracefully so the UI can offer a text input instead.
+    """
+    host = request.args.get("host", "").strip()
+    model = request.args.get("model", "").strip()
+    if not host:
+        cfg = _load_web_config()
+        host = cfg.get("tts_host", "")
+        if not model:
+            model = cfg.get("tts_model", "")
+    host = _normalize_tts_host(host)
+    if not host:
+        return jsonify({"ok": False, "voices": [], "error": "No TTS host"})
+
+    endpoints = []
+    if model:
+        endpoints.append(f"/v1/audio/voices?model={model}")
+    endpoints.extend(["/v1/audio/voices", "/v1/voices"])
+
+    for ep in endpoints:
+        try:
+            resp = _requests.get(f"{host}{ep}", timeout=5)
+            if not resp.ok:
+                continue
+            data = resp.json()
+            raw = (
+                data if isinstance(data, list)
+                else data.get("voices", data.get("data", []))
+            )
+            if not isinstance(raw, list):
+                continue
+            voices = []
+            for v in raw:
+                if isinstance(v, str):
+                    voices.append(v)
+                elif isinstance(v, dict):
+                    vid = (
+                        v.get("id")
+                        or v.get("name")
+                        or v.get("voice_id")
+                        or str(v)
+                    )
+                    voices.append(vid)
+            if voices:
+                return jsonify({"ok": True, "voices": sorted(voices)})
+        except Exception:
+            continue
+
+    return jsonify({
+        "ok": False,
+        "voices": [],
+        "error": "Voice listing not available \u2014 type voice names manually",
+    })
+
+
+@app.route("/api/tts/speak", methods=["POST"])
+def api_tts_speak():
+    """Generate speech audio from text via the TTS server.
+
+    Proxies the request to the Speaches-compatible /v1/audio/speech
+    endpoint and streams the MP3 response back to the browser.
+    """
+    cfg = _load_web_config()
+    data = request.get_json(force=True)
+
+    host = _normalize_tts_host(data.get("host") or cfg.get("tts_host", ""))
+    model = data.get("model") or cfg.get("tts_model", "")
+    voice = data.get("voice") or cfg.get("tts_narrator_voice", "")
+    text = data.get("text", "").strip()
+
+    if not host:
+        return jsonify({"ok": False, "error": "No TTS host configured"}), 400
+    if not model:
+        return jsonify({"ok": False, "error": "No TTS model selected"}), 400
+    if not voice:
+        return jsonify({"ok": False, "error": "No voice selected"}), 400
+    if not text:
+        return jsonify({"ok": False, "error": "No text provided"}), 400
+
+    try:
+        resp = _requests.post(
+            f"{host}/v1/audio/speech",
+            json={
+                "model": model,
+                "input": text,
+                "voice": voice,
+                "response_format": "mp3",
+            },
+            timeout=120,
+            stream=True,
+        )
+        resp.raise_for_status()
+        return Response(
+            resp.iter_content(chunk_size=4096),
+            mimetype="audio/mpeg",
+            headers={"Content-Type": "audio/mpeg"},
+        )
+    except _requests.ConnectionError:
+        return jsonify({"ok": False, "error": "TTS server connection refused"}), 502
+    except _requests.Timeout:
+        return jsonify({"ok": False, "error": "TTS request timed out"}), 504
+    except _requests.HTTPError as e:
+        return jsonify({"ok": False, "error": f"TTS server error: {e}"}), 502
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/tts/segments", methods=["POST"])
+def api_tts_segments():
+    """Segment scene text into narration/dialogue blocks.
+
+    Returns a list of paragraph-level segments, each attributed to
+    a character (for dialogue) or left as narration.
+    """
+    from .tts import segment_text_for_tts
+
+    data = request.get_json(force=True)
+    text = data.get("text", "")
+    characters = data.get("characters", [])
+
+    segments = segment_text_for_tts(text, characters)
+    return jsonify({"ok": True, "segments": segments})
 
 
 # ---------------------------------------------------------------------------

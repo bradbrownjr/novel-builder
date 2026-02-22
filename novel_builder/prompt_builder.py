@@ -109,7 +109,7 @@ def build_system_prompt(config):
             style = " ".join(style)
         parts.append(f"\nStyle: {style}")
 
-    # Overall arc context (genre, tone, themes)
+    # Overall arc context (genre, tone, themes, POV)
     arc = config.get("overall_arc", {})
     if isinstance(arc, dict):
         if arc.get("genre"):
@@ -121,6 +121,12 @@ def build_system_prompt(config):
             if isinstance(themes, list):
                 themes = ", ".join(themes)
             parts.append(f"Themes: {themes}")
+        if arc.get("pov"):
+            parts.append(
+                f"Point of view: {arc['pov']} "
+                "Write the entire story in this narrative voice. "
+                "Never shift away from this POV."
+            )
     elif isinstance(arc, str) and arc:
         parts.append(f"\nStory arc: {arc}")
 
@@ -186,6 +192,9 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
     scene_events = scene.get("events", "")
     scene_notes = scene.get("notes", "")
     scene_pov = scene.get("pov", "")
+    # Fall back to arc-level POV when no scene override is set
+    arc = config.get("overall_arc", {})
+    effective_pov = scene_pov or (arc.get("pov", "") if isinstance(arc, dict) else "")
     scene_pacing = scene.get("pacing", "")
     scene_mood = scene.get("mood", "")
 
@@ -194,8 +203,8 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
         parts.append(f"What happens: {scene_events}")
     if scene_notes:
         parts.append(f"Notes: {scene_notes}")
-    if scene_pov:
-        parts.append(f"POV: {scene_pov}")
+    if effective_pov:
+        parts.append(f"POV: {effective_pov}")
     if scene_pacing:
         parts.append(f"Pacing: {scene_pacing}")
     if scene_mood:
