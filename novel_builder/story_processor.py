@@ -9,6 +9,7 @@ import os
 import signal
 import sys
 import threading
+import traceback
 
 from .characters import auto_detect_characters, load_characters
 from .locations import load_locations
@@ -200,10 +201,20 @@ def _run_generation(config, args, event_callback=None):
                 print(f"    Characters: {', '.join(names)}")
 
             # Build scene prompt
-            user_prompt = build_scene_prompt(
-                config, chapter, scene, state, heritage_defs,
-                all_characters, locations, ch_num,
-            )
+            try:
+                user_prompt = build_scene_prompt(
+                    config, chapter, scene, state, heritage_defs,
+                    all_characters, locations, ch_num,
+                )
+            except Exception as e:
+                tb = traceback.format_exc()
+                emit("log",
+                     message=(
+                         f"Scene {scene_num}: prompt build failed — "
+                         f"{type(e).__name__}: {e}\n\n{tb}"
+                     ),
+                     level="error")
+                raise
 
             # Call generation model
             emit("model_active", model="generation", name=args.model)
@@ -263,10 +274,20 @@ def _run_generation(config, args, event_callback=None):
             emit("model_active", model="idle", name="")
 
             # Update state
-            update_after_scene(
-                state, ch_num, scene_num, summary,
-                extraction, present_ids,
-            )
+            try:
+                update_after_scene(
+                    state, ch_num, scene_num, summary,
+                    extraction, present_ids,
+                )
+            except Exception as e:
+                tb = traceback.format_exc()
+                emit("log",
+                     message=(
+                         f"Scene {scene_num}: state update failed — "
+                         f"{type(e).__name__}: {e}\n\n{tb}"
+                     ),
+                     level="error")
+                raise
 
             # Save checkpoint after every scene
             save_checkpoint(state, checkpoint_path)

@@ -270,7 +270,7 @@ def get_relevant_relationships(character, present_ids):
         Dict of character_id -> relationship description, or empty dict.
     """
     relationships = character.get("relationships", {})
-    if not relationships:
+    if not relationships or not isinstance(relationships, dict):
         return {}
 
     return {k: v for k, v in relationships.items() if k in present_ids}
