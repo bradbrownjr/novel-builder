@@ -668,7 +668,7 @@ textarea {
       <input type="checkbox" id="chk-autoscroll" checked> Auto-scroll
     </label>
     <span class="spacer"></span>
-    <button class="btn btn-sm" id="btn-tts-download" onclick="downloadAudiobook()">⬇ Audiobook MP3</button>
+    <button class="btn btn-sm" id="btn-tts-download" onclick="downloadAudiobook()">⬇ Download MP3</button>
     <button class="btn btn-sm btn-danger" id="btn-tts-download-cancel" onclick="cancelDownload()" style="display:none;">✕ Cancel</button>
     <span id="tts-download-progress" style="display:none; font-size:.78rem; color:var(--text-dim); white-space:nowrap;"></span>
     <button class="btn btn-sm" id="btn-tts-play" onclick="playAllScenes()">🔊 Read Aloud</button>
@@ -1159,7 +1159,7 @@ function confirmNewStory() {
         toast(`Workspace cleared (${r.removed.length} files removed)`, 'ok');
         refreshFiles();
         refreshParsed();
-        document.getElementById('output-viewer').textContent = '(No output yet)';
+        document.getElementById('output-viewer').innerHTML = '(No output yet — workspace cleared)';
         document.getElementById('log-viewer').innerHTML = '';
         updateUIForStatus('idle');
       } else {
@@ -1286,9 +1286,17 @@ function clearLogs() {
    ========================================================== */
 function appendSceneToOutput(data) {
   const viewer = document.getElementById('output-viewer');
-  if (viewer.textContent.startsWith('(No output')) viewer.textContent = '';
-  const heading = `\n\n### Scene ${data.scene_num}${data.title ? ': ' + data.title : ''}\n\n`;
-  viewer.textContent += heading + data.text + '\n\n---\n';
+  // Clear placeholder text on first real scene
+  if (!viewer.querySelector('.scene-block')) viewer.innerHTML = '';
+
+  const idx = viewer.querySelectorAll('.scene-block').length;
+  const heading = `### Scene ${data.scene_num}${data.title ? ': ' + data.title : ''}\n\n`;
+  const block = document.createElement('div');
+  block.className = 'scene-block';
+  block.dataset.sceneIdx = String(idx);
+  block.textContent = '\n' + heading + data.text + '\n\n---\n\n';
+  viewer.appendChild(block);
+
   if (document.getElementById('chk-autoscroll').checked) {
     viewer.scrollTop = viewer.scrollHeight;
   }
@@ -1296,9 +1304,46 @@ function appendSceneToOutput(data) {
 
 async function refreshOutput() {
   const r = await api('/api/output');
-  if (r && r.exists) {
-    document.getElementById('output-viewer').textContent = r.text;
+  if (r && r.exists) renderScenes(r.text);
+}
+
+function renderScenes(text) {
+  const viewer = document.getElementById('output-viewer');
+  if (!text || !text.trim()) {
+    viewer.innerHTML = '(No output yet — start generation to see scenes here.)';
+    return;
   }
+  // Split on scene headers, keeping the header with each scene
+  const parts = text.split(/(?=\n### Scene |^### Scene )/m)
+    .map(p => p.trim()).filter(p => p.length > 0);
+  viewer.innerHTML = '';
+  parts.forEach((p, i) => {
+    const block = document.createElement('div');
+    block.className = 'scene-block';
+    block.dataset.sceneIdx = String(i);
+    block.textContent = '\n' + p + '\n\n';
+    viewer.appendChild(block);
+  });
+}
+
+function getOutputText() {
+  const viewer = document.getElementById('output-viewer');
+  const blocks = viewer.querySelectorAll('.scene-block');
+  if (!blocks.length) return viewer.textContent;
+  return Array.from(blocks).map(b => b.textContent).join('\n');
+}
+
+function getFirstVisibleSceneIdx() {
+  const viewer = document.getElementById('output-viewer');
+  const viewerTop = viewer.getBoundingClientRect().top;
+  const blocks = viewer.querySelectorAll('.scene-block');
+  for (const block of blocks) {
+    // First block whose bottom edge is below the top of the viewer = first visible
+    if (block.getBoundingClientRect().bottom > viewerTop) {
+      return parseInt(block.dataset.sceneIdx, 10) || 0;
+    }
+  }
+  return 0;
 }
 
 /* ==========================================================
@@ -1617,7 +1662,10 @@ function waitWhilePaused() {
 }
 
 async function playAllScenes() {
-  const text = document.getElementById('output-viewer').textContent;
+  // Capture scroll position before any async operations
+  const startAtIdx = getFirstVisibleSceneIdx();
+
+  const text = getOutputText();
   if (!text || text.startsWith('(No output')) {
     toast('No output to read aloud', 'warn'); return;
   }
@@ -1625,6 +1673,7 @@ async function playAllScenes() {
   // Refresh config from server
   const snap = await api('/api/status');
   const cfg = snap?.config || {};
+  tts.host = tts.host || cfg.tts_host || '';
   tts.model = cfg.tts_model || '';
   tts.narratorVoice = cfg.tts_narrator_voice || '';
   tts.voiceMap = cfg.tts_voice_map || {};
@@ -1638,7 +1687,9 @@ async function playAllScenes() {
   tts.scenes = parseOutputIntoScenes(text);
   if (!tts.scenes.length) { toast('No scenes found in output', 'warn'); return; }
 
+  tts.currentSceneIdx = Math.min(startAtIdx, tts.scenes.length - 1);
   tts.playing = true; tts.paused = false; tts.stopped = false;
+  if (startAtIdx > 0) toast(`Starting from scene ${startAtIdx + 1}`, 'info');
   updateTTSControls(); updateTTSProgress();
 
   // Get character names for dialogue attribution
@@ -1680,7 +1731,7 @@ async function playAllScenes() {
 
 /* --- Audiobook download --- */
 async function downloadAudiobook() {
-  const text = document.getElementById('output-viewer').textContent;
+  const text = getOutputText();
   if (!text || text.startsWith('(No output')) {
     toast('No output to compile', 'warn'); return;
   }
