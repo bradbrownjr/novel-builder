@@ -429,8 +429,10 @@ def _format_story_memory(memory):
     parts = []
 
     chars = memory.get("characters", {})
-    if chars:
+    if isinstance(chars, dict) and chars:
         for char_id, data in chars.items():
+            if not isinstance(data, dict):
+                continue
             name = data.get("name", char_id)
             desc = data.get("description", "")
             notes = data.get("notes", "")
@@ -439,15 +441,21 @@ def _format_story_memory(memory):
                 parts.append(f"  - Previously established: {name} — {detail}")
 
     facts = memory.get("facts", [])
-    for fact in facts[:5]:  # Cap to keep prompt manageable
-        detail = fact.get("detail", "")
-        if detail:
-            parts.append(f"  - Established fact: {detail}")
+    if isinstance(facts, list):
+        for fact in facts[:5]:  # Cap to keep prompt manageable
+            if not isinstance(fact, dict):
+                continue
+            detail = fact.get("detail", "")
+            if detail:
+                parts.append(f"  - Established fact: {detail}")
 
     commitments = memory.get("commitments", [])
-    for commit in commitments[:3]:
-        detail = commit.get("detail", "")
-        if detail:
-            parts.append(f"  - Commitment: {detail}")
+    if isinstance(commitments, list):
+        for commit in commitments[:3]:
+            if not isinstance(commit, dict):
+                continue
+            detail = commit.get("detail", "")
+            if detail:
+                parts.append(f"  - Commitment: {detail}")
 
     return "\n".join(parts)
