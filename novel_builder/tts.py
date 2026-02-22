@@ -2,7 +2,11 @@
 
 Segments narrative text into paragraph-level blocks with character
 voice attribution for multi-voice audiobook playback.
-
+Key behaviours:
+  - Markdown headers (chapter/scene titles) are emitted as narrator segments.
+  - Paragraphs that mix narration beats with quoted dialogue are split at
+    quote boundaries: narration text → narrator voice; quoted spans →
+    attributed character voice.
 Attribution strategy (applied in priority order):
   1. Verb-based   — "Name said/asked/etc." near quoted text.
   2. Name-near-quotes — character name in the same paragraph as dialogue,
@@ -72,8 +76,16 @@ def segment_text_for_tts(text, character_names):
         if not para:
             continue
 
-        # Skip scene separators and markdown headers
-        if re.match(r'^-{3,}$', para) or re.match(r'^#{1,6}\s', para):
+        # Scene separators — discard
+        if re.match(r'^-{3,}$', para):
+            continue
+
+        # Markdown headers — strip markers, emit as narrator
+        m_hdr = re.match(r'^(#{1,6})\s+(.*)', para, re.DOTALL)
+        if m_hdr:
+            clean = m_hdr.group(2).strip()
+            if clean:
+                segments.append({"type": "narration", "text": clean, "character": None})
             continue
 
         has_dialogue = bool(_QUOTE_RE.search(para))
@@ -97,7 +109,72 @@ def segment_text_for_tts(text, character_names):
     if character_names:
         _apply_contextual_attribution(segments, character_names)
 
+    # Final pass: split mixed paragraphs into narration/dialogue spans
+    segments = _expand_mixed_paragraphs(segments)
+
     return segments
+
+
+# ---------------------------------------------------------------------------
+# Intra-paragraph span splitting
+# ---------------------------------------------------------------------------
+
+def _expand_mixed_paragraphs(segments):
+    """Split paragraphs that interleave narration and dialogue.
+
+    A paragraph like::
+
+        “Yes, that’s me,” Elias said, his voice loud. He extended a hand. “Elias Thorne.”
+
+    is attributed to Elias as a whole, but the narration beats
+    (``Elias said, his voice loud. He extended a hand.``) should be read
+    by the narrator.  This function splits such paragraphs at quote
+    boundaries so each span gets the correct voice.
+
+    Pure-dialogue paragraphs (no outside text) and pure-narration paragraphs
+    are returned unchanged.
+    """
+    expanded = []
+    for seg in segments:
+        if seg["type"] != "dialogue":
+            expanded.append(seg)
+            continue
+
+        # If there is no non-quoted text, the whole paragraph is spoken — keep as-is
+        outside = _QUOTE_RE.sub('', seg["text"]).strip()
+        if not outside:
+            expanded.append(seg)
+            continue
+
+        # Split at quote boundaries
+        spans = _split_paragraph_into_spans(seg["text"], seg["character"])
+        expanded.extend(spans)
+
+    return expanded
+
+
+def _split_paragraph_into_spans(para, speaker):
+    """Split *para* into alternating narration/dialogue sub-segments.
+
+    Quoted spans → ``{type: “dialogue”, character: speaker}``.
+    Non-quoted spans → ``{type: “narration”, character: None}``.
+    Whitespace-only spans are dropped.
+    """
+    spans = []
+    last_end = 0
+
+    for m in _QUOTE_RE.finditer(para):
+        before = para[last_end:m.start()].strip()
+        if before:
+            spans.append({"type": "narration", "text": before, "character": None})
+        spans.append({"type": "dialogue", "text": m.group(), "character": speaker})
+        last_end = m.end()
+
+    after = para[last_end:].strip()
+    if after:
+        spans.append({"type": "narration", "text": after, "character": None})
+
+    return spans if spans else [{"type": "dialogue", "text": para, "character": speaker}]
 
 
 # ---------------------------------------------------------------------------

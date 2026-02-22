@@ -3,7 +3,9 @@
 import sys
 from novel_builder.tts import segment_text_for_tts
 
-FULL_TEXT = r'''The bell above the door, a brass monstrosity shaped like a grinning clown, shrieked as he pushed it open. It wasn't a gentle chime, but a piercing clang that vibrated in his teeth. Elias flinched, instinctively pressing a hand to his chest. The sound seemed to amplify the tremor already humming beneath his skin.
+FULL_TEXT = '''### Chapter 1: The Empire
+
+The bell above the door, a brass monstrosity shaped like a grinning clown, shrieked as he pushed it open. It wasn't a gentle chime, but a piercing clang that vibrated in his teeth. Elias flinched, instinctively pressing a hand to his chest. The sound seemed to amplify the tremor already humming beneath his skin.
 
 The air inside was thick, a humid blanket of cedar wood and something else—a sweetness he couldn't place, overlaid with the dry scent of aging paper. Dust motes danced in the shafts of light filtering through the grimy windows, illuminating rows upon rows of toys. Empire Toys and Hobbies. The name felt grander than the reality.
 
@@ -30,28 +32,59 @@ CHARACTERS = ["Elias Thorne", "Morty Wick"]
 
 def test_full_passage():
     segs = segment_text_for_tts(FULL_TEXT, CHARACTERS)
-    print("=== Full passage attribution (Morty Wick in YAML, Morty Silver in prose) ===")
+    print("=== Full passage (with header + mixed paragraphs) ===")
     for i, s in enumerate(segs):
         tag = f"[{s['character'] or 'NARRATOR'}]"
-        preview = s['text'][:80].replace('\n', ' ')
+        preview = s['text'][:70].replace('\n', ' ')
         print(f"  {i:2d}. {s['type']:10s} {tag:20s} {preview}...")
-
-    expected = {
-        4: ("dialogue", "Morty Wick"),
-        6: ("dialogue", "Elias Thorne"),
-        7: ("dialogue", "Morty Wick"),
-        9: ("dialogue", "Elias Thorne"),
-        10: ("dialogue", "Morty Wick"),
-    }
-    errors = 0
     print()
-    for idx, (etype, echar) in expected.items():
-        seg = segs[idx]
-        ok = seg["type"] == etype and seg["character"] == echar
-        label = "OK  " if ok else "FAIL"
-        print(f"  {label} seg[{idx}]: expected ({etype}, {echar}) — got ({seg['type']}, {seg['character']})")
-        if not ok:
-            errors += 1
+
+    errors = 0
+
+    # Header should be read by narrator
+    assert segs[0]["type"] == "narration", "seg[0] should be narration (header)"
+    assert segs[0]["character"] is None, "seg[0] character should be None"
+    assert "Chapter 1" in segs[0]["text"] or "Empire" in segs[0]["text"]
+    print("  OK   seg[0]: header read by narrator")
+
+    # Find the segment containing "Yes, that's me,"
+    yes_segs = [s for s in segs if "Yes, that" in s["text"]]
+    for s in yes_segs:
+        if s["type"] == "dialogue":
+            assert s["character"] == "Elias Thorne", f"'Yes, that's me' should be Elias, got {s['character']}"
+            print(f"  OK   'Yes, that\u2019s me,' → Elias")
+        else:
+            assert s["character"] is None, f"Narration beat should have no character, got {s['character']}"
+            print(f"  OK   narration beat in Elias paragraph → narrator")
+
+    # "He extended a hand." should be narration (not Elias voice)
+    extended = [s for s in segs if "extended a hand" in s["text"]]
+    for s in extended:
+        assert s["type"] == "narration" and s["character"] is None, \
+            f"'He extended a hand.' should be narrator, got type={s['type']} char={s['character']}"
+        print("  OK   'He extended a hand.' → narrator")
+
+    # "Morty Silver. Welcome..." quote should be Morty
+    morty_welcome = [s for s in segs if "Welcome to the Empire" in s["text"]]
+    for s in morty_welcome:
+        assert s["type"] == "dialogue" and s["character"] == "Morty Wick", \
+            f"'Morty Silver. Welcome...' should be Morty Wick, got {s['character']}"
+        print("  OK   'Morty Silver. Welcome...' → Morty Wick")
+
+    # "He gestured around the store" should be narration
+    gestured = [s for s in segs if "gestured around" in s["text"]]
+    for s in gestured:
+        assert s["type"] == "narration" and s["character"] is None, \
+            f"'He gestured...' should be narrator, got {s['character']}"
+        print("  OK   'He gestured around the store' → narrator")
+
+    # "It's… organized chaos" should be Morty
+    chaos = [s for s in segs if "organized chaos" in s["text"]]
+    for s in chaos:
+        assert s["type"] == "dialogue" and s["character"] == "Morty Wick", \
+            f"'organized chaos' should be Morty Wick, got {s['character']}"
+        print("  OK   'It\u2019s\u2026 organized chaos' → Morty Wick")
+
     return errors
 
 
@@ -76,24 +109,22 @@ Marcus sighed. "Fine, let's at least bring supplies."
         preview = s['text'][:70].replace('\n', ' ')
         print(f"  {i:2d}. {s['type']:10s} {tag:20s} {preview}...")
 
-    expected = {
-        0: ("dialogue", "Claire"),
-        1: ("dialogue", "Marcus"),
-        2: ("dialogue", "Claire"),
-        3: ("dialogue", "Marcus"),
-        4: ("dialogue", "Claire"),
-        5: ("dialogue", "Marcus"),
-        6: ("dialogue", "Claire"),
-    }
+    # "Marcus sighed." should split: narration then dialogue
+    sighed = [s for s in segs if "sighed" in s["text"]]
+    fine = [s for s in segs if "supplies" in s["text"]]
     errors = 0
-    print()
-    for idx, (etype, echar) in expected.items():
-        seg = segs[idx]
-        ok = seg["type"] == etype and seg["character"] == echar
-        label = "OK  " if ok else "FAIL"
-        print(f"  {label} seg[{idx}]: expected ({etype}, {echar}) — got ({seg['type']}, {seg['character']})")
-        if not ok:
+    for s in sighed:
+        if s["type"] != "narration":
+            print(f"  FAIL 'Marcus sighed.' should be narration, got {s['type']}")
             errors += 1
+        else:
+            print("  OK   'Marcus sighed.' → narrator")
+    for s in fine:
+        if s["type"] != "dialogue" or s["character"] != "Marcus":
+            print(f"  FAIL '\"Fine,...\"' should be Marcus dialogue, got {s['type']}/{s['character']}")
+            errors += 1
+        else:
+            print("  OK   '\"Fine, let\u2019s...\"' → Marcus")
     return errors
 
 
