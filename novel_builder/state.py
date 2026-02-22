@@ -11,6 +11,50 @@ _MAX_RECENT_SCENES = 3
 _MAX_MEMORY_CHARACTERS = 20
 
 
+def _sanitize_story_memory(memory):
+    """Ensure story_memory has the correct structure (dict with typed fields).
+
+    Defensive utility that coerces unexpected types (None, string, wrong
+    collection) back to the expected container so downstream code never
+    receives a string where it expects a dict or list.
+
+    Args:
+        memory: The story_memory value from a checkpoint state dict.
+
+    Returns:
+        A new dict with guaranteed-correct types for each key.
+    """
+    if not isinstance(memory, dict):
+        memory = {}
+
+    # characters must be a dict
+    chars = memory.get("characters", {})
+    if not isinstance(chars, dict):
+        chars = {}
+    else:
+        # Each character entry must itself be a dict
+        chars = {k: v for k, v in chars.items() if isinstance(v, dict)}
+    memory["characters"] = chars
+
+    # facts must be a list of dicts
+    facts = memory.get("facts", [])
+    if not isinstance(facts, list):
+        facts = []
+    else:
+        facts = [f for f in facts if isinstance(f, dict)]
+    memory["facts"] = facts
+
+    # commitments must be a list of dicts
+    commitments = memory.get("commitments", [])
+    if not isinstance(commitments, list):
+        commitments = []
+    else:
+        commitments = [c for c in commitments if isinstance(c, dict)]
+    memory["commitments"] = commitments
+
+    return memory
+
+
 def load_checkpoint(filepath=None):
     """Load checkpoint state from file.
 
@@ -21,7 +65,10 @@ def load_checkpoint(filepath=None):
         Dict with checkpoint state, or empty dict if not found.
     """
     path = filepath or _CHECKPOINT_FILE
-    return load_yaml_optional(path)
+    state = load_yaml_optional(path)
+    if state and "story_memory" in state:
+        state["story_memory"] = _sanitize_story_memory(state["story_memory"])
+    return state
 
 
 def save_checkpoint(state, filepath=None):
@@ -137,11 +184,7 @@ def _merge_story_memory(state, extraction, scene_id):
         extraction: Dict with 'characters', 'facts', 'commitments'.
         scene_id: Scene ID string.
     """
-    memory = state.get("story_memory", {
-        "characters": {},
-        "facts": [],
-        "commitments": [],
-    })
+    memory = _sanitize_story_memory(state.get("story_memory", {}))
 
     # New characters
     for char_entry in extraction.get("characters", []):
@@ -210,22 +253,22 @@ def get_relevant_memory(state, text_to_scan):
     Returns:
         Dict with 'characters', 'facts', 'commitments' relevant to scene.
     """
-    memory = state.get("story_memory", {})
-    if not memory:
+    memory = _sanitize_story_memory(state.get("story_memory", {}))
+    if not memory or (not memory["characters"] and not memory["facts"] and not memory["commitments"]):
         return {"characters": {}, "facts": [], "commitments": []}
 
     text_lower = text_to_scan.lower()
     relevant = {"characters": {}, "facts": [], "commitments": []}
 
     # Check remembered characters
-    for char_id, char_data in memory.get("characters", {}).items():
+    for char_id, char_data in memory["characters"].items():
         name = char_data.get("name", "")
         if (char_id in text_lower or
                 (name and name.lower() in text_lower)):
             relevant["characters"][char_id] = char_data
 
     # For facts and commitments, include recent ones and keyword-matched
-    for fact in memory.get("facts", [])[-10:]:  # last 10 facts
+    for fact in memory["facts"][-10:]:  # last 10 facts
         detail = fact.get("detail", "")
         # Include if any word overlap with scene text
         words = set(detail.lower().split())
@@ -233,7 +276,7 @@ def get_relevant_memory(state, text_to_scan):
         if words & scene_words - {"the", "a", "an", "is", "was", "and", "or"}:
             relevant["facts"].append(fact)
 
-    for commit in memory.get("commitments", [])[-10:]:
+    for commit in memory["commitments"][-10:]:
         detail = commit.get("detail", "")
         words = set(detail.lower().split())
         scene_words = set(text_lower.split())
