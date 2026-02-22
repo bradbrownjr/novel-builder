@@ -90,11 +90,15 @@ def segment_text_for_tts(text, character_names):
                 clean, re.IGNORECASE | re.DOTALL,
             )
             if m_label:
-                # Has a label prefix — only emit if there's a title after the colon
+                # Has a label prefix — only skip bare Scene labels with no title
                 title = (m_label.group(1) or '').strip()
+                kind = clean.split()[0].lower()  # 'scene' or 'chapter'
                 if title:
                     segments.append({"type": "narration", "text": title, "character": None})
-                # else bare "Scene 1.2" with no title — skip silently
+                elif kind == 'chapter':
+                    # Bare "Chapter 3" — read it
+                    segments.append({"type": "narration", "text": clean, "character": None})
+                # else bare "Scene 1.1" with no title — skip silently
             elif clean:
                 # Plain header with no scene/chapter prefix — emit as-is
                 segments.append({"type": "narration", "text": clean, "character": None})

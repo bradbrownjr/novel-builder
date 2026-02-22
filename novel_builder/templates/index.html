@@ -1313,8 +1313,9 @@ function renderScenes(text) {
     viewer.innerHTML = '(No output yet — start generation to see scenes here.)';
     return;
   }
-  // Split on scene headers, keeping the header with each scene
-  const parts = text.split(/(?=\n### Scene |^### Scene )/m)
+  // Split on chapter AND scene headers so DOM blocks == tts.scenes indices
+  const SCENE_SPLIT = /(?=\n#{2,3} (?:Chapter|Scene) |^#{2,3} (?:Chapter|Scene) )/m;
+  const parts = text.split(SCENE_SPLIT)
     .map(p => p.trim()).filter(p => p.length > 0);
   viewer.innerHTML = '';
   parts.forEach((p, i) => {
@@ -1620,9 +1621,9 @@ async function testVoice(nameOrNarrator) {
 
 /* --- Playback engine --- */
 function parseOutputIntoScenes(text) {
-  // Split on scene headers (### Scene ...)
-  const parts = text.split(/(?=\n### Scene )/);
-  return parts.map(p => p.trim()).filter(p => p.length > 0);
+  // Must use same split as renderScenes so scene indices align with DOM blocks
+  const SCENE_SPLIT = /(?=\n#{2,3} (?:Chapter|Scene) |^#{2,3} (?:Chapter|Scene) )/m;
+  return text.split(SCENE_SPLIT).map(p => p.trim()).filter(p => p.length > 0);
 }
 
 function getVoiceForSegment(seg) {
