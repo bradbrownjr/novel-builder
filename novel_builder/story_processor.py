@@ -160,10 +160,10 @@ def _run_generation(config, args, event_callback=None):
         print(f"\n--- Chapter {ch_num}/{total_chapters}: {ch_title} ---")
         emit("log", message=f"Chapter {ch_num}/{total_chapters}: {ch_title}", level="info")
 
-        # Write chapter header to output
+        # Write chapter header to output — only if not already present (guards against re-runs)
         sc_start = start_sc if ch_idx == start_ch else 0
         if sc_start == 0:
-            _write_chapter_header(output_file, ch_num, ch_title)
+            _write_chapter_header_if_needed(output_file, ch_num, ch_title)
 
         for sc_idx in range(sc_start, len(scenes)):
             if _shutdown_requested:
@@ -215,6 +215,7 @@ def _run_generation(config, args, event_callback=None):
                     user_prompt,
                     timeout=args.timeout,
                     retries=args.retries,
+                    emit_callback=emit,
                 )
             except OllamaError as e:
                 emit("model_active", model="idle", name="")
@@ -373,6 +374,21 @@ def _write_chapter_header(filepath, chapter_num, title):
     """Append a chapter header to the output file."""
     with open(filepath, "a", encoding="utf-8") as f:
         f.write(f"\n## Chapter {chapter_num}: {title}\n\n")
+
+
+def _write_chapter_header_if_needed(filepath, chapter_num, title):
+    """Append a chapter header only if it does not already exist in the file.
+
+    Prevents duplicate headers when resuming a run that stopped at the
+    beginning of a chapter (sc_start == 0 but header already written).
+    """
+    header = f"## Chapter {chapter_num}: {title}"
+    if os.path.exists(filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            content = f.read()
+        if header in content:
+            return  # Already written — skip
+    _write_chapter_header(filepath, chapter_num, title)
 
 
 def _write_scene(filepath, scene_num, scene_title, text):
