@@ -12,14 +12,18 @@ class OllamaError(Exception):
 
 def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
                 temperature=0.75, num_ctx=12288):
-    """Make a single call to the Ollama /api/generate endpoint.
+    """Make a single streaming call to the Ollama /api/generate endpoint.
+
+    Uses stream=True so the timeout applies per-chunk (not total generation
+    time). This prevents false timeouts on long scenes where the model is
+    actively generating but takes more than `timeout` seconds overall.
 
     Args:
         host: Ollama server URL.
         model: Model name.
         system_prompt: System message.
         user_prompt: User message.
-        timeout: Request timeout in seconds.
+        timeout: Per-chunk inactivity timeout in seconds.
         temperature: Sampling temperature.
         num_ctx: Context window size.
 
@@ -29,12 +33,14 @@ def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
     Raises:
         OllamaError: If the API call fails.
     """
+    import json as _json
+
     url = f"{host}/api/generate"
     payload = {
         "model": model,
         "system": system_prompt,
         "prompt": user_prompt,
-        "stream": False,
+        "stream": True,
         "options": {
             "num_ctx": num_ctx,
             "temperature": temperature,
@@ -44,17 +50,31 @@ def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
     }
 
     try:
-        response = requests.post(url, json=payload, timeout=timeout)
+        response = requests.post(url, json=payload, timeout=timeout, stream=True)
         response.raise_for_status()
-        return response.json()["response"]
+
+        chunks = []
+        for line in response.iter_lines(chunk_size=None):
+            if not line:
+                continue
+            try:
+                data = _json.loads(line)
+            except ValueError:
+                continue
+            token = data.get("response", "")
+            if token:
+                chunks.append(token)
+            if data.get("done"):
+                break
+
+        return "".join(chunks)
+
     except requests.exceptions.Timeout:
-        raise OllamaError(f"Request timed out after {timeout}s")
+        raise OllamaError(f"Timed out waiting for response chunk after {timeout}s")
     except requests.exceptions.ConnectionError as e:
         raise OllamaError(f"Connection failed: {e}")
     except requests.exceptions.HTTPError as e:
         raise OllamaError(f"HTTP error: {e}")
-    except KeyError:
-        raise OllamaError("Unexpected response format from Ollama")
     except Exception as e:
         raise OllamaError(f"Ollama API error: {e}")
 
