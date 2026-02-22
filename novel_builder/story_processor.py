@@ -392,12 +392,16 @@ def _write_chapter_header_if_needed(filepath, chapter_num, title):
 
 
 def _write_scene(filepath, scene_num, scene_title, text):
-    """Append a scene to the output file."""
+    """Append a scene to the output file.
+
+    Titled scenes get a heading. Untitled scenes get a blank line separator
+    only — no heading, no divider — so the output reads like prose.
+    """
     with open(filepath, "a", encoding="utf-8") as f:
-        header = f"### Scene {scene_num}"
         if scene_title:
-            header += f": {scene_title}"
-        f.write(f"{header}\n\n{text}\n\n---\n\n")
+            f.write(f"### {scene_title}\n\n{text}\n\n")
+        else:
+            f.write(f"{text}\n\n")
 
 
 def _print_scene(text):
