@@ -812,6 +812,7 @@ function loadConfigIntoForm(cfg) {
   // TTS fields
   document.getElementById('cfg-tts-host').value = cfg.tts_host || '';
   document.getElementById('cfg-tts-narrator-voice').value = cfg.tts_narrator_voice || '';
+  tts.host = cfg.tts_host || '';
   tts.model = cfg.tts_model || '';
   tts.narratorVoice = cfg.tts_narrator_voice || '';
   tts.voiceMap = cfg.tts_voice_map || {};
@@ -1400,6 +1401,7 @@ const tts = {
   currentAudio: null,
   currentSceneIdx: 0,
   scenes: [],
+  host: '',
   voiceMap: {},
   narratorVoice: '',
   model: '',
@@ -1426,6 +1428,7 @@ async function checkTTSHealth() {
 
   const r = await api('/api/tts/health?host=' + encodeURIComponent(host));
   if (r && r.ok) {
+    tts.host = host;
     tts.availableModels = r.models || [];
     statusEl.innerHTML = '✓ Connected — ' + tts.availableModels.length + ' model(s) available';
     statusEl.style.color = 'var(--green)';
@@ -1519,6 +1522,7 @@ async function saveTTSConfig() {
   const r = await apiPost('/api/config', cfg);
   if (r && r.ok) {
     toast('TTS config saved', 'ok');
+    tts.host = cfg.tts_host;
     tts.voiceMap = vm;
     tts.narratorVoice = cfg.tts_narrator_voice;
     tts.model = cfg.tts_model;
@@ -1537,8 +1541,9 @@ async function testVoice(nameOrNarrator) {
     voice = el?.value.trim() || '';
     label = nameOrNarrator;
   }
+  const host = document.getElementById('cfg-tts-host').value.trim();
   const model = document.getElementById('cfg-tts-model').value.trim();
-  if (!voice || !model) { toast('Set model and voice first', 'warn'); return; }
+  if (!voice || !model || !host) { toast('Set host, model and voice first', 'warn'); return; }
 
   toast('Testing voice for ' + label + '…', 'info');
   try {
@@ -1547,7 +1552,7 @@ async function testVoice(nameOrNarrator) {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         text: 'Hello, my name is ' + label + '. This is a voice test for the novel builder.',
-        model, voice,
+        host, model, voice,
       }),
     });
     if (!resp.ok) {
@@ -1579,7 +1584,7 @@ async function fetchTTSAudio(text, voice) {
   const resp = await fetch('/api/tts/speak', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ text, model: tts.model, voice }),
+    body: JSON.stringify({ text, host: tts.host, model: tts.model, voice }),
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({error: 'Unknown error'}));
