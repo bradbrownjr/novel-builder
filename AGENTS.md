@@ -39,7 +39,10 @@ novel_builder/
 ├── characters.py         # load_characters(), filter_for_scene(), auto_detect_characters(), get_evolution_context()
 ├── locations.py          # load_locations(), resolve_location()
 ├── yaml_io.py            # load_yaml(), save_yaml()
-└── postprocess.py        # clean_scene_text(), apply_anti_patterns()
+├── postprocess.py        # clean_scene_text(), apply_anti_patterns()
+├── tts.py                # segment_text_for_tts(), _find_speaker(), _name_matches_attribution()
+├── web.py                # Flask web UI, TTS proxy routes (/api/tts/health, /api/tts/voices, /api/tts/speak, /api/tts/segments)
+└── validator.py          # validate_all()
 ```
 
 _(Update this tree when functions are added, renamed, or moved.)_
