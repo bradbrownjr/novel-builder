@@ -1285,16 +1285,9 @@ async function init() {
     snap.logs.forEach(addLogEntry);
   }
 
-  // Output scenes (rebuild viewer)
-  if (snap.output_scenes && snap.output_scenes.length) {
-    const viewer = document.getElementById('output-viewer');
-    viewer.textContent = '';
-    snap.output_scenes.forEach(s => {
-      viewer.textContent += `\n\n### Scene ${s.scene_num}${s.title ? ': ' + s.title : ''}\n(${s.chars} chars)\n---\n`;
-    });
-    // Load the full output text for complete view
-    refreshOutput();
-  }
+  // Always load output from disk — covers server restarts where in-memory
+  // output_scenes is empty but full_story.md already has content.
+  refreshOutput();
 
   // Parse loaded data
   refreshParsed();
