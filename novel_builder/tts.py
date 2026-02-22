@@ -80,11 +80,23 @@ def segment_text_for_tts(text, character_names):
         if re.match(r'^-{3,}$', para):
             continue
 
-        # Markdown headers — strip markers, emit as narrator
+        # Markdown headers — extract readable title, skip bare scene/chapter labels
         m_hdr = re.match(r'^(#{1,6})\s+(.*)', para, re.DOTALL)
         if m_hdr:
             clean = m_hdr.group(2).strip()
-            if clean:
+            # Match "Scene 1", "Scene 1.2", "Chapter 3", etc. with optional ": Title"
+            m_label = re.match(
+                r'^(?:Scene|Chapter)\s+[\d.]+\s*(?::\s*(.+))?$',
+                clean, re.IGNORECASE | re.DOTALL,
+            )
+            if m_label:
+                # Has a label prefix — only emit if there's a title after the colon
+                title = (m_label.group(1) or '').strip()
+                if title:
+                    segments.append({"type": "narration", "text": title, "character": None})
+                # else bare "Scene 1.2" with no title — skip silently
+            elif clean:
+                # Plain header with no scene/chapter prefix — emit as-is
                 segments.append({"type": "narration", "text": clean, "character": None})
             continue
 
