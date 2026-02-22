@@ -94,7 +94,8 @@ def segment_text_for_tts(text, character_names):
                 title = (m_label.group(1) or '').strip()
                 kind = clean.split()[0].lower()  # 'scene' or 'chapter'
                 if title:
-                    segments.append({"type": "narration", "text": title, "character": None})
+                    # Read the full label + title, e.g. "Chapter 2: Dust and Echoes"
+                    segments.append({"type": "narration", "text": clean, "character": None})
                 elif kind == 'chapter':
                     # Bare "Chapter 3" — read it
                     segments.append({"type": "narration", "text": clean, "character": None})
