@@ -61,7 +61,7 @@ def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
 
 def call_ollama_with_retry(host, model, system_prompt, user_prompt,
                            timeout=900, retries=3, temperature=0.75,
-                           num_ctx=12288):
+                           num_ctx=12288, emit_callback=None):
     """Call Ollama with exponential backoff retry logic.
 
     Args:
@@ -73,6 +73,7 @@ def call_ollama_with_retry(host, model, system_prompt, user_prompt,
         retries: Maximum number of attempts.
         temperature: Sampling temperature.
         num_ctx: Context window size.
+        emit_callback: Optional callable(event_type, **kwargs) for progress logging.
 
     Returns:
         Generated text string.
@@ -80,7 +81,8 @@ def call_ollama_with_retry(host, model, system_prompt, user_prompt,
     Raises:
         OllamaError: If all retry attempts fail.
     """
-    backoff_delays = [5, 15, 45, 90, 180]  # seconds between retries
+    _emit_callback = emit_callback
+    backoff_delays = [60, 300, 900]  # 1 min, 5 min, 15 min — gives Docker time to restart
 
     last_error = None
     for attempt in range(1, retries + 1):
@@ -94,8 +96,14 @@ def call_ollama_with_retry(host, model, system_prompt, user_prompt,
             last_error = e
             if attempt < retries:
                 delay = backoff_delays[min(attempt - 1, len(backoff_delays) - 1)]
+                mins = delay // 60
+                secs = delay % 60
+                delay_str = f"{mins}m {secs}s" if mins else f"{secs}s"
                 print(f"  [Retry {attempt}/{retries}] {e}")
-                print(f"  Waiting {delay}s before next attempt...")
+                print(f"  Waiting {delay_str} before next attempt...")
+                # Emit progress so the web UI shows retry status
+                if _emit_callback:
+                    _emit_callback("log", message=f"[Retry {attempt}/{retries}] Ollama error: {e}. Waiting {delay_str}...", level="warn")
                 time.sleep(delay)
             else:
                 print(f"  [Failed] All {retries} attempts exhausted.")

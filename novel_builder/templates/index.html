@@ -1245,11 +1245,39 @@ function connectSSE() {
   eventSource.onerror = () => {
     eventSource.close();
     eventSource = null;
-    // Reconnect after a delay
+    // Show reconnecting indicator
+    const dot = document.getElementById('dot-status');
+    const lbl = document.getElementById('lbl-status');
+    if (!['running', 'completed', 'stopped', 'error'].includes(dot.className)) {
+      // Only update label, not dot color — don't scare the user
+    }
+    lbl.textContent = lbl.textContent + ' (reconnecting…)';
+    // Reconnect after a short delay
     clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(connectSSE, 3000);
+    reconnectTimer = setTimeout(() => {
+      connectSSE();
+      // Re-sync status from server after reconnect in case we missed events
+      api('/api/status').then(snap => {
+        if (!snap) return;
+        updateUIForStatus(snap.status);
+        if (snap.progress) updateProgress(snap.progress);
+        if (snap.active_model) updateModelIndicator(snap.active_model);
+      });
+    }, 3000);
   };
 }
+
+/* ==========================================================
+   Page visibility — re-check health when tab becomes active
+   ========================================================== */
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    // Cancel any pending offline timers — we just came back
+    clearTimeout(_healthChangeTimer);
+    // Re-run health check after brief settle time (don't hammer immediately)
+    setTimeout(checkOllamaHealth, 1500);
+  }
+});
 
 /* ==========================================================
    Initial load — reconnection-safe
@@ -1329,7 +1357,9 @@ async function checkOllamaHealth() {
   let newText;
   
   try {
-    const r = await api('/api/ollama-health');
+    // Use a silent fetch (not api()) to avoid toast popups on transient failures
+    const resp = await fetch('/api/ollama-health');
+    const r = await resp.json();
     if (r && r.ok) {
       newStatus = 'connected';
       newText = 'Ollama: connected (' + r.models.length + ' models)';
@@ -1354,7 +1384,7 @@ async function checkOllamaHealth() {
         dot.classList.add('red');
       }
       lbl.textContent = newText;
-    }, 2000);  // 2 second grace period for transient disconnects
+    }, 4000);  // 4 second grace period for transient disconnects (tab switching, Docker restart)
   }
 }
 function startHealthPolling() {
