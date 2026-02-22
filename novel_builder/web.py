@@ -413,7 +413,20 @@ def api_status():
 
     # Check for an existing checkpoint on disk so the UI can offer Resume
     # even after a server restart (when in-memory state is fresh/idle).
+    # Also check CWD as a fallback — older runs saved checkpoint.yaml there.
     checkpoint_path = os.path.join(WORKSPACE_DIR, "checkpoint.yaml")
+    cwd_checkpoint_path = os.path.join(os.getcwd(), "checkpoint.yaml")
+
+    # Migrate CWD checkpoint into workspace if workspace one doesn't exist yet
+    if not os.path.exists(checkpoint_path) and os.path.exists(cwd_checkpoint_path):
+        try:
+            _ensure_workspace()
+            import shutil
+            shutil.move(cwd_checkpoint_path, checkpoint_path)
+        except Exception:
+            # Migration failed — fall back to reading from CWD
+            checkpoint_path = cwd_checkpoint_path
+
     if os.path.exists(checkpoint_path):
         try:
             from .yaml_io import load_yaml_optional

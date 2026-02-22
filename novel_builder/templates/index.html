@@ -1275,9 +1275,14 @@ async function init() {
     const where = info.last_scene
       ? `Chapter ${info.last_chapter}, Scene ${info.last_scene}`
       : `Chapter ${info.last_chapter}`;
+    const title = info.story_title ? `"${info.story_title}" — ` : '';
     document.getElementById('btn-resume').style.display = '';
     document.getElementById('btn-logs-resume').style.display = '';
-    toast(`Checkpoint found — left off at ${where}. Click Resume to continue.`, 'warn');
+    const msg = `Checkpoint found: ${title}left off at ${where}. Click Resume to continue.`;
+    toast(msg, 'warn');
+    addLogEntry({ time: new Date().toLocaleTimeString(), message: msg, level: 'warn' });
+  } else if (!snap.has_checkpoint && snap.status === 'idle') {
+    addLogEntry({ time: new Date().toLocaleTimeString(), message: 'No checkpoint found — ready to start a new run.', level: 'info' });
   }
 
   // Logs (replay)
