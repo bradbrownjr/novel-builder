@@ -668,6 +668,9 @@ textarea {
       <input type="checkbox" id="chk-autoscroll" checked> Auto-scroll
     </label>
     <span class="spacer"></span>
+    <button class="btn btn-sm" id="btn-tts-download" onclick="downloadAudiobook()">⬇ Audiobook MP3</button>
+    <button class="btn btn-sm btn-danger" id="btn-tts-download-cancel" onclick="cancelDownload()" style="display:none;">✕ Cancel</button>
+    <span id="tts-download-progress" style="display:none; font-size:.78rem; color:var(--text-dim); white-space:nowrap;"></span>
     <button class="btn btn-sm" id="btn-tts-play" onclick="playAllScenes()">🔊 Read Aloud</button>
     <button class="btn btn-sm" id="btn-tts-pause" onclick="pauseTTS()" style="display:none;">⏸ Pause</button>
     <button class="btn btn-sm btn-danger" id="btn-tts-stop" onclick="stopTTS()" style="display:none;">⏹ Stop</button>
@@ -1407,6 +1410,8 @@ const tts = {
   model: '',
   availableModels: [],
   availableVoices: [],
+  downloading: false,
+  downloadCancelled: false,
 };
 
 /* --- TTS health & model/voice discovery --- */
@@ -1673,6 +1678,120 @@ async function playAllScenes() {
   if (!wasStopped) toast('Read aloud complete', 'ok');
 }
 
+/* --- Audiobook download --- */
+async function downloadAudiobook() {
+  const text = document.getElementById('output-viewer').textContent;
+  if (!text || text.startsWith('(No output')) {
+    toast('No output to compile', 'warn'); return;
+  }
+
+  // Refresh config from server (same as playAllScenes)
+  const snap = await api('/api/status');
+  const cfg = snap?.config || {};
+  tts.host = tts.host || cfg.tts_host || '';
+  tts.model = cfg.tts_model || '';
+  tts.narratorVoice = cfg.tts_narrator_voice || '';
+  tts.voiceMap = cfg.tts_voice_map || {};
+
+  if (!tts.host || !tts.model || !tts.narratorVoice) {
+    toast('Configure TTS host, model and narrator voice in the Setup tab first', 'warn');
+    document.querySelector('[data-tab="setup"]').click();
+    return;
+  }
+
+  const scenes = parseOutputIntoScenes(text);
+  if (!scenes.length) { toast('No scenes found in output', 'warn'); return; }
+
+  // Get character names for attribution
+  const parsed = await api('/api/parse-yaml');
+  const charNames = (parsed?.characters?.characters || []).map(c => c.name);
+
+  // Collect all segments across all scenes
+  toast('Building segment list…', 'info');
+  const allSegments = [];
+  for (const scene of scenes) {
+    const segResp = await apiPost('/api/tts/segments', { text: scene, characters: charNames });
+    const segs = segResp?.ok
+      ? segResp.segments
+      : [{ type: 'narration', text: scene, character: null }];
+    allSegments.push(...segs);
+  }
+
+  const total = allSegments.length;
+  tts.downloading = true;
+  tts.downloadCancelled = false;
+  updateDownloadControls(0, total);
+
+  // Fetch each segment and collect ArrayBuffers
+  const buffers = [];
+  for (let i = 0; i < allSegments.length; i++) {
+    if (tts.downloadCancelled) break;
+    updateDownloadControls(i, total);
+    const seg = allSegments[i];
+    const voice = getVoiceForSegment(seg);
+    try {
+      const blob = await fetchTTSAudio(seg.text, voice);
+      buffers.push(await blob.arrayBuffer());
+    } catch (e) {
+      console.warn('Segment', i, 'failed:', e.message);
+      // Skip failed segments — don't abort the whole book
+    }
+  }
+
+  tts.downloading = false;
+  updateDownloadControls(total, total, true);
+
+  if (tts.downloadCancelled) {
+    toast('Audiobook download cancelled', 'warn');
+    return;
+  }
+
+  // Concatenate all MP3 ArrayBuffers into one
+  const totalBytes = buffers.reduce((s, b) => s + b.byteLength, 0);
+  const combined = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const buf of buffers) {
+    combined.set(new Uint8Array(buf), offset);
+    offset += buf.byteLength;
+  }
+
+  // Trigger download
+  const blob = new Blob([combined], { type: 'audio/mpeg' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const title = (snap?.config?.story_title || 'audiobook').replace(/[^a-zA-Z0-9_-]/g, '_');
+  a.href = url;
+  a.download = title + '.mp3';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  toast('Audiobook download started — ' + (totalBytes / 1024 / 1024).toFixed(1) + ' MB', 'ok');
+}
+
+function cancelDownload() {
+  tts.downloadCancelled = true;
+}
+
+function updateDownloadControls(done, total, finished = false) {
+  const btnDl = document.getElementById('btn-tts-download');
+  const btnCancel = document.getElementById('btn-tts-download-cancel');
+  const prog = document.getElementById('tts-download-progress');
+  if (!btnDl) return;
+  if (finished || !tts.downloading) {
+    btnDl.style.display = '';
+    btnCancel.style.display = 'none';
+    prog.style.display = 'none';
+    prog.textContent = '';
+  } else {
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    btnDl.style.display = 'none';
+    btnCancel.style.display = '';
+    prog.style.display = '';
+    prog.textContent = `Compiling… ${done}/${total} (${pct}%)`;
+  }
+}
+
 function pauseTTS() {
   if (!tts.playing) return;
   tts.paused = !tts.paused;
@@ -1694,12 +1813,16 @@ function updateTTSControls() {
   const play = document.getElementById('btn-tts-play');
   const pause = document.getElementById('btn-tts-pause');
   const stop = document.getElementById('btn-tts-stop');
+  const dl = document.getElementById('btn-tts-download');
   if (play) play.style.display = tts.playing ? 'none' : '';
   if (pause) {
     pause.style.display = tts.playing ? '' : 'none';
     pause.textContent = tts.paused ? '▶ Resume' : '⏸ Pause';
   }
   if (stop) stop.style.display = tts.playing ? '' : 'none';
+  // Disable download button while playing (and play while downloading)
+  if (dl) dl.disabled = tts.playing;
+  if (play) play.disabled = tts.downloading;
 }
 
 function updateTTSProgress() {
