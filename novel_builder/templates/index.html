@@ -1269,6 +1269,17 @@ async function init() {
   if (snap.active_model) updateModelIndicator(snap.active_model);
   if (snap.progress) updateProgress(snap.progress);
 
+  // If the server restarted (idle) but a checkpoint exists on disk, show Resume
+  if (snap.has_checkpoint && snap.status === 'idle') {
+    const info = snap.checkpoint_info || {};
+    const where = info.last_scene
+      ? `Chapter ${info.last_chapter}, Scene ${info.last_scene}`
+      : `Chapter ${info.last_chapter}`;
+    document.getElementById('btn-resume').style.display = '';
+    document.getElementById('btn-logs-resume').style.display = '';
+    toast(`Checkpoint found — left off at ${where}. Click Resume to continue.`, 'warn');
+  }
+
   // Logs (replay)
   if (snap.logs) {
     snap.logs.forEach(addLogEntry);

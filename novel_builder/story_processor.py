@@ -107,7 +107,8 @@ def _run_generation(config, args, event_callback=None):
     output_file = args.output or _default_output_name(config)
 
     # Checkpoint/resume
-    checkpoint = load_checkpoint()
+    checkpoint_path = getattr(args, 'checkpoint_path', None)
+    checkpoint = load_checkpoint(checkpoint_path)
     state = None
 
     if should_resume(args, checkpoint):
@@ -221,7 +222,7 @@ def _run_generation(config, args, event_callback=None):
                 print("    Saving checkpoint and stopping.")
                 emit("log", message=f"Generation failed: {e}", level="error")
                 emit("status_change", status="error", message=str(e))
-                save_checkpoint(state)
+                save_checkpoint(state, checkpoint_path)
                 return
             emit("model_active", model="idle", name="")
 
@@ -267,7 +268,7 @@ def _run_generation(config, args, event_callback=None):
             )
 
             # Save checkpoint after every scene
-            save_checkpoint(state)
+            save_checkpoint(state, checkpoint_path)
             scenes_completed += 1
             pct = int(100 * scenes_completed / all_scene_count) if all_scene_count else 0
             emit("scene_complete", scene_num=str(scene_num), title=scene_title,

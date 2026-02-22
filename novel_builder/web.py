@@ -335,6 +335,7 @@ def _start_generation(web_config):
         outline=os.path.join(WORKSPACE_DIR, FILE_ROLES["outline"]),
         characters=os.path.join(WORKSPACE_DIR, FILE_ROLES["characters"]),
         locations=os.path.join(WORKSPACE_DIR, FILE_ROLES["locations"]),
+        checkpoint_path=os.path.join(WORKSPACE_DIR, "checkpoint.yaml"),
     )
 
     # Validate required files exist
@@ -409,6 +410,28 @@ def api_status():
     snap = state.snapshot()
     snap["config"] = _load_web_config()
     snap["files"] = _list_workspace_files()
+
+    # Check for an existing checkpoint on disk so the UI can offer Resume
+    # even after a server restart (when in-memory state is fresh/idle).
+    checkpoint_path = os.path.join(WORKSPACE_DIR, "checkpoint.yaml")
+    if os.path.exists(checkpoint_path):
+        try:
+            from .yaml_io import load_yaml_optional
+            cp = load_yaml_optional(checkpoint_path)
+            if cp:
+                snap["has_checkpoint"] = True
+                snap["checkpoint_info"] = {
+                    "last_chapter": cp.get("last_completed_chapter", "?"),
+                    "last_scene": cp.get("last_completed_scene", "?"),
+                    "story_title": cp.get("story_title", ""),
+                }
+            else:
+                snap["has_checkpoint"] = False
+        except Exception:
+            snap["has_checkpoint"] = False
+    else:
+        snap["has_checkpoint"] = False
+
     return jsonify(snap)
 
 
