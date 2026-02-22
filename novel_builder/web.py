@@ -14,6 +14,7 @@ import queue
 import re
 import threading
 import time
+import traceback
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -381,8 +382,12 @@ def _start_generation(web_config):
         try:
             _story_generator(config, args, event_callback=_event_callback)
         except Exception as e:
+            tb = traceback.format_exc()
             state.emit("log", {
-                "message": f"Unexpected error: {e}",
+                "message": (
+                    f"Unexpected error — {type(e).__name__}: {e}\n\n"
+                    f"{tb}"
+                ),
                 "level": "error",
             })
             state.emit("status_change", {"status": "error", "message": str(e)})

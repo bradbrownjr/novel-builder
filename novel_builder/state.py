@@ -25,31 +25,48 @@ def _sanitize_story_memory(memory):
         A new dict with guaranteed-correct types for each key.
     """
     if not isinstance(memory, dict):
+        print(f"Warning: story_memory was {type(memory).__name__!r}, resetting to empty dict.")
         memory = {}
 
     # characters must be a dict
     chars = memory.get("characters", {})
     if not isinstance(chars, dict):
+        print(f"Warning: story_memory.characters was {type(chars).__name__!r} "
+              f"(value: {str(chars)[:80]!r}) — discarding corrupt value.")
         chars = {}
     else:
         # Each character entry must itself be a dict
-        chars = {k: v for k, v in chars.items() if isinstance(v, dict)}
+        bad = [k for k, v in chars.items() if not isinstance(v, dict)]
+        if bad:
+            print(f"Warning: story_memory.characters had {len(bad)} non-dict "
+                  f"entries {bad[:3]} — removing them.")
+            chars = {k: v for k, v in chars.items() if isinstance(v, dict)}
     memory["characters"] = chars
 
     # facts must be a list of dicts
     facts = memory.get("facts", [])
     if not isinstance(facts, list):
+        print(f"Warning: story_memory.facts was {type(facts).__name__!r} "
+              f"(value: {str(facts)[:80]!r}) — discarding corrupt value.")
         facts = []
     else:
-        facts = [f for f in facts if isinstance(f, dict)]
+        bad_count = sum(1 for f in facts if not isinstance(f, dict))
+        if bad_count:
+            print(f"Warning: story_memory.facts had {bad_count} non-dict entries — removing them.")
+            facts = [f for f in facts if isinstance(f, dict)]
     memory["facts"] = facts
 
     # commitments must be a list of dicts
     commitments = memory.get("commitments", [])
     if not isinstance(commitments, list):
+        print(f"Warning: story_memory.commitments was {type(commitments).__name__!r} "
+              f"(value: {str(commitments)[:80]!r}) — discarding corrupt value.")
         commitments = []
     else:
-        commitments = [c for c in commitments if isinstance(c, dict)]
+        bad_count = sum(1 for c in commitments if not isinstance(c, dict))
+        if bad_count:
+            print(f"Warning: story_memory.commitments had {bad_count} non-dict entries — removing them.")
+            commitments = [c for c in commitments if isinstance(c, dict)]
     memory["commitments"] = commitments
 
     return memory

@@ -154,22 +154,46 @@ def call_summary_model(host, model, text, timeout=300):
         "1. Summarize the scene in 2-3 concise sentences focusing on key "
         "plot developments, emotional shifts, and character actions.\n"
         "2. Extract any NEW persistent details established in the scene.\n\n"
-        "Format your response exactly as:\n"
-        "SUMMARY: [your 2-3 sentence summary]\n"
-        "NEW_CHARACTERS: [name: description] or NONE\n"
-        "NEW_FACTS: [fact] or NONE\n"
-        "COMMITMENTS: [commitment] or NONE\n\n"
-        "Only list genuinely new information. Be concise."
+        "You MUST format your entire response exactly as shown below — "
+        "no extra text before or after:\n\n"
+        "SUMMARY: <2-3 sentence summary>\n"
+        "NEW_CHARACTERS: <Full Name: brief description> or NONE\n"
+        "NEW_FACTS: <one new world/story fact> or NONE\n"
+        "COMMITMENTS: <one promise or obligation> or NONE\n\n"
+        "Example output:\n"
+        "SUMMARY: Morty apologized to Rick for breaking the portal gun. "
+        "Rick reluctantly accepted but demanded Morty help with repairs.\n"
+        "NEW_CHARACTERS: NONE\n"
+        "NEW_FACTS: The portal gun requires dark matter to function.\n"
+        "COMMITMENTS: Morty will help Rick repair the portal gun tomorrow.\n\n"
+        "Only list genuinely NEW information not already established. "
+        "Start your response with SUMMARY: — nothing else."
     )
 
-    user_prompt = f"Analyze this scene:\n\n{text}"
+    base_user_prompt = f"Analyze this scene:\n\n{text}"
+    user_prompt = base_user_prompt
 
-    result = call_ollama_with_retry(
-        host, model, system_prompt, user_prompt,
-        timeout=timeout, retries=2, temperature=0.3, num_ctx=8192,
-    )
+    for format_attempt in range(2):
+        result = call_ollama_with_retry(
+            host, model, system_prompt, user_prompt,
+            timeout=timeout, retries=2, temperature=0.3, num_ctx=8192,
+        )
+        summary, extraction = _parse_summary_response(result)
 
-    return _parse_summary_response(result)
+        if summary:  # Got a usable summary — extraction may be empty but that's OK
+            return summary, extraction
+
+        # Model ignored the format — retry with an explicit reminder
+        user_prompt = (
+            f"{base_user_prompt}\n\n"
+            "IMPORTANT: Your previous response did not follow the required "
+            "format. You MUST begin your response with 'SUMMARY:' followed "
+            "by the summary text, then NEW_CHARACTERS:, NEW_FACTS:, and "
+            "COMMITMENTS: on separate lines."
+        )
+
+    # Both attempts produced no summary — return what we have
+    return summary, extraction
 
 
 def _parse_summary_response(text):
