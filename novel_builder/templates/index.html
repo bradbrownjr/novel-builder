@@ -63,8 +63,8 @@ header {
   padding: .6rem 1rem;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: .75rem;
-  flex-wrap: wrap;
   position: sticky;
   top: 0;
   z-index: 100;
@@ -72,14 +72,18 @@ header {
 .logo { font-size: 1.2rem; font-weight: 700; white-space: nowrap; }
 .logo span { color: var(--accent); }
 
-/* Status indicators row */
+/* Status indicators row — separate from main header */
 .status-bar {
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  padding: .5rem 1rem;
   display: flex;
   align-items: center;
   gap: .7rem;
-  flex: 1;
   flex-wrap: wrap;
-  min-width: 0;
+  position: sticky;
+  top: 3.5rem;
+  z-index: 99;
 }
 .indicator {
   display: inline-flex;
@@ -426,35 +430,37 @@ textarea {
 <!-- ==================== HEADER ==================== -->
 <header>
   <div class="logo">Novel<span>Builder</span></div>
-  <div class="status-bar">
-    <div class="indicator" id="ind-status">
-      <span class="dot" id="dot-status"></span>
-      <span id="lbl-status">Idle</span>
-    </div>
-    <div class="indicator" id="ind-ollama">
-      <span class="dot" id="dot-ollama"></span>
-      <span id="lbl-ollama">Ollama: ?</span>
-    </div>
-    <div class="indicator" id="ind-model">
-      <span class="dot" id="dot-model"></span>
-      <span id="lbl-model">No model active</span>
-    </div>
-    <div class="indicator" id="ind-progress" style="display:none;">
-      <span id="lbl-progress">0%</span>
-    </div>
-  </div>
   <div class="header-actions">
     <button onclick="toggleTheme()" title="Toggle light/dark">🌓</button>
     <button onclick="confirmNewStory()" title="New Story" class="btn-danger btn-sm">New Story</button>
   </div>
 </header>
+
+<!-- ==================== STATUS BAR ==================== -->
+<div class="status-bar">
+  <div class="indicator" id="ind-status">
+    <span class="dot" id="dot-status"></span>
+    <span id="lbl-status">Idle</span>
+  </div>
+  <div class="indicator" id="ind-ollama">
+    <span class="dot" id="dot-ollama"></span>
+    <span id="lbl-ollama">Ollama: ?</span>
+  </div>
+  <div class="indicator" id="ind-model">
+    <span class="dot" id="dot-model"></span>
+    <span id="lbl-model">No model active</span>
+  </div>
+  <div class="indicator" id="ind-progress" style="display:none;">
+    <span id="lbl-progress">0%</span>
+  </div>
+</div>
 <div class="progress-wrap"><div class="progress-fill" id="progress-fill"></div></div>
 
 <!-- ==================== TABS ==================== -->
 <div class="tabs">
   <button class="tab-btn active" data-tab="setup">Setup</button>
-  <button class="tab-btn" data-tab="output">Output</button>
   <button class="tab-btn" data-tab="logs">Logs</button>
+  <button class="tab-btn" data-tab="output">Output</button>
 </div>
 
 <!-- ==================== SETUP TAB ==================== -->
@@ -590,6 +596,9 @@ textarea {
 <!-- ==================== LOGS TAB ==================== -->
 <div class="tab-panel" id="panel-logs">
   <div style="display:flex; gap:.5rem; margin-bottom:.75rem;">
+    <button class="btn btn-sm" id="btn-logs-start" onclick="startGeneration(false)" style="display:none;">▶ Start</button>
+    <button class="btn btn-sm btn-danger" id="btn-logs-stop" onclick="stopGeneration()" style="display:none;">⏹ Stop</button>
+    <button class="btn btn-sm" id="btn-logs-resume" onclick="startGeneration(true)" style="display:none;">⏩ Resume</button>
     <button class="btn btn-sm" onclick="clearLogs()">🗑 Clear</button>
   </div>
   <div class="log-viewer" id="log-viewer"></div>
@@ -630,6 +639,8 @@ textarea {
 let currentEditorRole = null;
 let eventSource = null;
 let reconnectTimer = null;
+let _lastHealthStatus = null;
+let _healthChangeTimer = null;
 
 /* ==========================================================
    Tabs
@@ -1025,6 +1036,8 @@ async function startGeneration(resume) {
   if (r && r.ok) {
     toast('Generation started', 'ok');
     updateUIForStatus('running');
+    // Switch to logs tab
+    document.querySelector('[data-tab="logs"]').click();
   } else {
     toast(r?.message || r?.error || 'Start failed', 'error');
   }
@@ -1069,6 +1082,9 @@ function updateUIForStatus(status) {
   const btnStart = document.getElementById('btn-start');
   const btnResume = document.getElementById('btn-resume');
   const btnStop = document.getElementById('btn-stop');
+  const btnLogsStart = document.getElementById('btn-logs-start');
+  const btnLogsResume = document.getElementById('btn-logs-resume');
+  const btnLogsStop = document.getElementById('btn-logs-stop');
 
   dotS.className = 'dot';
   switch (status) {
@@ -1078,6 +1094,9 @@ function updateUIForStatus(status) {
       btnStart.style.display = 'none';
       btnResume.style.display = 'none';
       btnStop.style.display = '';
+      btnLogsStart.style.display = 'none';
+      btnLogsResume.style.display = 'none';
+      btnLogsStop.style.display = '';
       indP.style.display = '';
       break;
     case 'completed':
@@ -1086,6 +1105,9 @@ function updateUIForStatus(status) {
       btnStart.style.display = '';
       btnResume.style.display = 'none';
       btnStop.style.display = 'none';
+      btnLogsStart.style.display = '';
+      btnLogsResume.style.display = 'none';
+      btnLogsStop.style.display = 'none';
       break;
     case 'stopped':
       dotS.classList.add('yellow');
@@ -1093,6 +1115,9 @@ function updateUIForStatus(status) {
       btnStart.style.display = '';
       btnResume.style.display = '';
       btnStop.style.display = 'none';
+      btnLogsStart.style.display = '';
+      btnLogsResume.style.display = '';
+      btnLogsStop.style.display = 'none';
       break;
     case 'error':
       dotS.classList.add('red');
@@ -1100,12 +1125,19 @@ function updateUIForStatus(status) {
       btnStart.style.display = '';
       btnResume.style.display = '';
       btnStop.style.display = 'none';
+      btnLogsStart.style.display = '';
+      btnLogsResume.style.display = '';
+      btnLogsStop.style.display = 'none';
       break;
     default:
+      dotS.classList.add('text-dim');
       lblS.textContent = 'Idle';
       btnStart.style.display = '';
       btnResume.style.display = 'none';
       btnStop.style.display = 'none';
+      btnLogsStart.style.display = '';
+      btnLogsResume.style.display = 'none';
+      btnLogsStop.style.display = 'none';
       indP.style.display = 'none';
   }
 }
@@ -1278,25 +1310,42 @@ function truncate(s, max) {
 }
 
 /* ==========================================================
-   Ollama health check
+   Ollama health check with status change debouncing
    ========================================================== */
 let _healthInterval = null;
 async function checkOllamaHealth() {
   const dot = document.getElementById('dot-ollama');
   const lbl = document.getElementById('lbl-ollama');
+  let newStatus;
+  let newText;
+  
   try {
     const r = await api('/api/ollama-health');
-    dot.className = 'dot';
     if (r && r.ok) {
-      dot.classList.add('green');
-      lbl.textContent = 'Ollama: connected (' + r.models.length + ' models)';
+      newStatus = 'connected';
+      newText = 'Ollama: connected (' + r.models.length + ' models)';
     } else {
-      dot.classList.add('red');
-      lbl.textContent = 'Ollama: ' + (r?.error || 'unreachable');
+      newStatus = 'unreachable';
+      newText = 'Ollama: ' + (r?.error || 'unreachable');
     }
   } catch {
-    dot.className = 'dot red';
-    lbl.textContent = 'Ollama: offline';
+    newStatus = 'offline';
+    newText = 'Ollama: offline';
+  }
+  
+  // Only update if status actually changed, with grace period to avoid flicker
+  if (newStatus !== _lastHealthStatus) {
+    clearTimeout(_healthChangeTimer);
+    _healthChangeTimer = setTimeout(() => {
+      _lastHealthStatus = newStatus;
+      dot.className = 'dot';
+      if (newStatus === 'connected') {
+        dot.classList.add('green');
+      } else {
+        dot.classList.add('red');
+      }
+      lbl.textContent = newText;
+    }, 2000);  // 2 second grace period for transient disconnects
   }
 }
 function startHealthPolling() {
