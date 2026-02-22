@@ -329,6 +329,12 @@ def _build_character_block(scene, all_characters, heritage_defs,
         role = context.get("role", "")
         lines.append(f"**{name}** ({role})" if role else f"**{name}**")
 
+        # Species / appearance — always, so the LLM never invents a different form
+        if context.get("species"):
+            lines.append(f"  Species/form: {context['species']}")
+        if context.get("appearance"):
+            lines.append(f"  Appearance: {context['appearance']}")
+
         # Vibe — always
         if context.get("vibe"):
             lines.append(f"  Vibe: {context['vibe']}")

@@ -60,8 +60,8 @@ _(Update this tree when functions are added, renamed, or moved.)_
 
 | Context tier | When | Fields sent |
 |---|---|---|
-| **Full bio** | First appearance in story | Name, summary, role, personality, vibe, voice, habit + merged heritage traits |
-| **Reminder** | Subsequent appearances | Name, role, vibe, voice + evolution notes |
+| **Full bio** | First appearance in story | Name, summary, role, personality, vibe, species, appearance, voice, habit + merged heritage traits |
+| **Reminder** | Subsequent appearances | Name, role, vibe, species, appearance, voice + evolution notes |
 
 - `vibe` is the persistent tonal anchor — always included.
 - `voice` (speech patterns) is always included when present — shapes dialogue.
