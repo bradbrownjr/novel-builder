@@ -1237,6 +1237,24 @@ function connectSSE() {
         addLogEntry(event.data);
         break;
       case 'connected':
+        // SSE handshake complete — re-sync full state from server.
+        // This covers: new tab opens while generation is running, tab was
+        // pre-loaded before generation started, or reconnect after a drop.
+        fetch('/api/status').then(r => r.json()).then(snap => {
+          if (!snap) return;
+          updateUIForStatus(snap.status);
+          if (snap.progress) updateProgress(snap.progress);
+          if (snap.active_model) updateModelIndicator(snap.active_model);
+          if (snap.has_checkpoint && snap.status === 'idle') {
+            const info = snap.checkpoint_info || {};
+            const where = info.last_scene
+              ? `Chapter ${info.last_chapter}, Scene ${info.last_scene}`
+              : `Chapter ${info.last_chapter}`;
+            document.getElementById('btn-resume').style.display = '';
+            document.getElementById('btn-logs-resume').style.display = '';
+          }
+        }).catch(() => {});
+        break;
       case 'heartbeat':
         break;
     }
