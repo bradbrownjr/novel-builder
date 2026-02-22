@@ -140,7 +140,11 @@ def build_character_context(char_id, character, heritage_defs,
         context["summary"] = merged.get("summary", "")
         context["personality"] = merged.get("personality", [])
 
-        # Always if present
+        # Always if present — physical/nature facts that must never drift
+        if merged.get("species"):
+            context["species"] = merged["species"]
+        if merged.get("appearance"):
+            context["appearance"] = merged["appearance"]
         if merged.get("voice"):
             context["voice"] = merged["voice"]
         if merged.get("habit"):
@@ -163,6 +167,11 @@ def build_character_context(char_id, character, heritage_defs,
         context["role"] = character.get("role", "")
         context["vibe"] = character.get("vibe", "")
 
+        # Always — physical/nature facts that must never drift
+        if character.get("species"):
+            context["species"] = character["species"]
+        if character.get("appearance"):
+            context["appearance"] = character["appearance"]
         if character.get("voice"):
             context["voice"] = character["voice"]
         if character.get("habit"):
