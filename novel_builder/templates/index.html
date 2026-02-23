@@ -1474,7 +1474,8 @@ const tts = {
   currentSceneIdx: 0,
   scenes: [],
   host: '',
-  voiceMap: {},
+  voiceMap: {},       // manually saved via web UI
+  yamlVoiceMap: {},   // sourced from characters.yaml tts_voice field (takes precedence)
   narratorVoice: '',
   model: '',
   availableModels: [],
@@ -1563,17 +1564,39 @@ function updateVoiceMapUI(characters) {
   const wrapper = document.getElementById('tts-voice-map');
   if (!characters?.length) { wrapper.style.display = 'none'; return; }
   wrapper.style.display = '';
+
+  // Rebuild yamlVoiceMap from current character list
+  tts.yamlVoiceMap = {};
+  for (const ch of characters) {
+    if (ch.tts_voice) tts.yamlVoiceMap[ch.name] = ch.tts_voice;
+  }
+
   let html = '';
   for (const ch of characters) {
+    const yamlVoice = ch.tts_voice || '';
     const saved = tts.voiceMap[ch.name] || '';
+    const displayVoice = yamlVoice || saved;
+    const fromYaml = !!yamlVoice;
     html += '<div class="voice-map-row">'
       + '<span class="voice-map-name">' + escHtml(ch.name) + '</span>'
-      + '<span class="voice-map-role">' + escHtml(ch.role || '') + '</span>'
-      + '<input type="text" list="tts-voices-list" class="voice-map-input tts-char-voice"'
-      + ' data-character="' + escHtml(ch.name) + '"'
-      + ' value="' + escHtml(saved) + '"'
-      + ' placeholder="voice name">'
-      + '<button class="btn btn-sm" onclick="testVoice(\'' + escHtml(ch.name).replace(/'/g, "\\'") + '\')" title="Test">🔊</button>'
+      + '<span class="voice-map-role">' + escHtml(ch.role || '') + '</span>';
+    if (fromYaml) {
+      // YAML-sourced: show locked field with badge
+      html += '<span style="display:flex;align-items:center;gap:.35rem;flex:1;">'
+        + '<input type="text" list="tts-voices-list" class="voice-map-input tts-char-voice"'
+        + ' data-character="' + escHtml(ch.name) + '"'
+        + ' value="' + escHtml(displayVoice) + '"'
+        + ' readonly title="Defined in characters.yaml — edit tts_voice to change"'
+        + ' style="flex:1;opacity:.75;cursor:default;">'
+        + '<span title="Voice defined in characters.yaml" style="font-size:.7rem;color:var(--text-dim);white-space:nowrap;">📄 yaml</span>'
+        + '</span>';
+    } else {
+      html += '<input type="text" list="tts-voices-list" class="voice-map-input tts-char-voice"'
+        + ' data-character="' + escHtml(ch.name) + '"'
+        + ' value="' + escHtml(displayVoice) + '"'
+        + ' placeholder="voice name">';
+    }
+    html += '<button class="btn btn-sm" onclick="testVoice(\'' + escHtml(ch.name).replace(/'/g, "\\'") + '\')" title="Test">🔊</button>'
       + '</div>';
   }
   container.innerHTML = html;
@@ -1650,7 +1673,11 @@ function parseOutputIntoScenes(text) {
 }
 
 function getVoiceForSegment(seg) {
-  if (seg.character && tts.voiceMap[seg.character]) return tts.voiceMap[seg.character];
+  if (seg.character) {
+    // YAML-defined voice takes precedence over manually saved map
+    if (tts.yamlVoiceMap[seg.character]) return tts.yamlVoiceMap[seg.character];
+    if (tts.voiceMap[seg.character]) return tts.voiceMap[seg.character];
+  }
   return tts.narratorVoice;
 }
 
@@ -1716,9 +1743,15 @@ async function playAllScenes() {
   if (startAtIdx > 0) toast(`Starting from scene ${startAtIdx + 1}`, 'info');
   updateTTSControls(); updateTTSProgress();
 
-  // Get character names for dialogue attribution
+  // Get character names for dialogue attribution; also rebuild yamlVoiceMap
   const parsed = await api('/api/parse-yaml');
-  const charNames = (parsed?.characters?.characters || []).map(c => c.name);
+  const _playChars = parsed?.characters?.characters || [];
+  const charNames = _playChars.map(c => c.name);
+  // YAML voices take precedence — rebuild from fresh parse before playback
+  tts.yamlVoiceMap = {};
+  for (const ch of _playChars) {
+    if (ch.tts_voice) tts.yamlVoiceMap[ch.name] = ch.tts_voice;
+  }
 
   for (let i = tts.currentSceneIdx; i < tts.scenes.length; i++) {
     if (tts.stopped) break;
@@ -1777,9 +1810,15 @@ async function downloadAudiobook() {
   const scenes = parseOutputIntoScenes(text);
   if (!scenes.length) { toast('No scenes found in output', 'warn'); return; }
 
-  // Get character names for attribution
+  // Get character names for attribution; also rebuild yamlVoiceMap
   const parsed = await api('/api/parse-yaml');
-  const charNames = (parsed?.characters?.characters || []).map(c => c.name);
+  const characters = parsed?.characters?.characters || [];
+  const charNames = characters.map(c => c.name);
+  // YAML voices take precedence — rebuild map from fresh parse
+  tts.yamlVoiceMap = {};
+  for (const ch of characters) {
+    if (ch.tts_voice) tts.yamlVoiceMap[ch.name] = ch.tts_voice;
+  }
 
   // Collect all segments across all scenes
   toast('Building segment list…', 'info');

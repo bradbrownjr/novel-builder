@@ -733,6 +733,7 @@ def api_parse_yaml():
                     "has_secret": bool(cdata.get("secret")),
                     "has_relationships": bool(cdata.get("relationships")),
                     "has_evolution": bool(cdata.get("evolution")),
+                    "tts_voice": cdata.get("tts_voice", ""),
                 })
             heritage = data.get("heritage", {})
             heritage_list = []
