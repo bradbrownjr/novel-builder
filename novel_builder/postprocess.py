@@ -48,6 +48,9 @@ def clean_scene_text(text):
     # Collapse triple+ newlines into double
     text = re.sub(r"\n{3,}", "\n\n", text)
 
+    # Remove bare divider lines (---, ==, etc.) — no scene dividers in book-like output
+    text = re.sub(r"^\s*(?:---|===|-{3,}|={3,})\s*$", "", text, flags=re.MULTILINE)
+
     # Remove trailing spaces on lines
     text = re.sub(r" +\n", "\n", text)
 
@@ -133,23 +136,33 @@ def strip_scene_header(text, scene_number=None):
         return ""
 
     # Remove leading markdown headers that look like scene/chapter labels
+    # Matches: ### Scene 2.1, ## Chapter 3: Title, # Part IV, etc.
     text = re.sub(
-        r"^#{1,4}\s*(?:Scene|Chapter|Part)\s*[\d.:]+\s*[-—:]?\s*.*?\n+",
+        r"^#{1,6}\s*(?:Scene|Chapter|Part|Act|Section)\s*[\d\w.:—-]*\s*(?:[-—:].*?)?\n+",
         "",
         text,
         count=1,
-        flags=re.IGNORECASE,
+        flags=re.IGNORECASE | re.MULTILINE,
     )
 
     # Remove specific scene number header if provided
     if scene_number:
         escaped = re.escape(str(scene_number))
         text = re.sub(
-            rf"^#{1,4}\s*{escaped}\s*[-—:]?\s*.*?\n+",
+            rf"^#{1,6}\s*{escaped}\s*[-—:]?\s*.*?\n+",
             "",
             text,
             count=1,
-            flags=re.IGNORECASE,
+            flags=re.IGNORECASE | re.MULTILINE,
         )
+
+    # Remove any trailing markdown headers at very end of text
+    # (in case the model put a "Next scene" header at the end)
+    text = re.sub(
+        r"\n#{1,6}\s*(?:Scene|Chapter|Part|Act|Section)\s*[\d\w.:—-]*.*?$",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
 
     return text.strip()
