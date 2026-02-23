@@ -663,6 +663,103 @@ textarea {
 .mem-action-btn.mem-add-btn:hover {
   color: var(--green);
 }
+
+/* =========================================================
+   Card header row (title + inline help button)
+   ========================================================= */
+.card-header-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: .7rem;
+}
+.card-header-row .card-title {
+  flex: 1;
+  font-size: .9rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  font-weight: 600;
+}
+.help-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-dim);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: .7rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: border-color .15s, color .15s, background .15s;
+  line-height: 1;
+  padding: 0;
+  font-family: var(--font);
+}
+.help-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(233,69,96,0.08);
+}
+
+/* =========================================================
+   YAML Schema Help Modal content
+   ========================================================= */
+.yaml-field-list {
+  display: flex;
+  flex-direction: column;
+  gap: .28rem;
+}
+.yaml-field-item {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: .25rem .45rem;
+  align-items: baseline;
+  padding: .28rem .4rem;
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--bg-input);
+}
+.yaml-field-name {
+  font-family: var(--mono);
+  font-size: .76rem;
+  color: var(--blue);
+  white-space: nowrap;
+}
+.yaml-field-req {
+  font-size: .63rem;
+  padding: .05rem .28rem;
+  border-radius: 3px;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.yaml-field-req.req { background: rgba(233,69,96,0.18); color: var(--red); }
+.yaml-field-req.opt { background: var(--bg); color: var(--text-dim); border: 1px solid var(--border); }
+.yaml-field-desc {
+  color: var(--text-dim);
+  font-size: .77rem;
+  line-height: 1.4;
+}
+.yaml-field-desc strong { color: var(--text); }
+.yaml-field-desc code {
+  font-family: var(--mono);
+  font-size: .72rem;
+  background: var(--bg);
+  padding: .05rem .25rem;
+  border-radius: 3px;
+  color: var(--blue);
+}
+.yaml-help-section {
+  font-size: .7rem;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--accent);
+  margin: .6rem 0 .2rem 0;
+  font-weight: 700;
+  padding-left: .2rem;
+}
 </style>
 </head>
 <body>
@@ -723,7 +820,10 @@ textarea {
 <div class="tab-panel active" id="panel-story">
 
   <div class="card" id="card-outline">
-    <h3>📘 Story Outline</h3>
+    <div class="card-header-row">
+      <span class="card-title">📘 Story Outline</span>
+      <button class="help-btn" onclick="showYamlHelp('outline')" title="YAML Schema Reference">?</button>
+    </div>
     <div class="drop-zone" id="drop-outline">
       <input type="file" accept=".yaml,.yml" onchange="handleFile(this,'outline')">
       <div class="icon">📄</div>
@@ -740,7 +840,10 @@ textarea {
   </div>
 
   <div class="card" id="card-characters">
-    <h3>👤 Characters</h3>
+    <div class="card-header-row">
+      <span class="card-title">👤 Characters</span>
+      <button class="help-btn" onclick="showYamlHelp('characters')" title="YAML Schema Reference">?</button>
+    </div>
     <div class="drop-zone" id="drop-characters">
       <input type="file" accept=".yaml,.yml" onchange="handleFile(this,'characters')">
       <div class="icon">👥</div>
@@ -757,7 +860,10 @@ textarea {
   </div>
 
   <div class="card" id="card-locations">
-    <h3>🗺 Locations <span style="font-size:.7rem;color:var(--text-dim)">(optional)</span></h3>
+    <div class="card-header-row">
+      <span class="card-title">🗺 Locations <span style="font-size:.65rem;opacity:.7;">(optional)</span></span>
+      <button class="help-btn" onclick="showYamlHelp('locations')" title="YAML Schema Reference">?</button>
+    </div>
     <div class="drop-zone" id="drop-locations">
       <input type="file" accept=".yaml,.yml" onchange="handleFile(this,'locations')">
       <div class="icon">🏔</div>
@@ -774,7 +880,10 @@ textarea {
   </div>
 
   <div class="card" id="card-style">
-    <h3>🎨 Custom Style Prompt <span style="font-size:.7rem;color:var(--text-dim)">(optional)</span></h3>
+    <div class="card-header-row">
+      <span class="card-title">🎨 Custom Style Prompt <span style="font-size:.65rem;opacity:.7;">(optional)</span></span>
+      <button class="help-btn" onclick="showYamlHelp('style')" title="YAML Schema Reference">?</button>
+    </div>
     <div class="drop-zone" id="drop-style">
       <input type="file" accept=".txt,.yaml,.yml" onchange="handleFile(this,'style')">
       <div class="icon">✍</div>
@@ -981,6 +1090,17 @@ textarea {
       <button class="btn" onclick="closeConfirm()">Cancel</button>
       <button class="btn btn-danger" id="confirm-ok" onclick="closeConfirm()">Confirm</button>
     </div>
+  </div>
+</div>
+
+<!-- ==================== YAML HELP MODAL ==================== -->
+<div class="modal-overlay" id="modal-yaml-help" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal" style="max-width:580px;max-height:82vh;display:flex;flex-direction:column;padding:1.25rem;">
+    <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem;flex-shrink:0;">
+      <h3 id="yaml-help-title" style="flex:1;margin:0;font-size:1rem;">YAML Schema</h3>
+      <button class="btn btn-sm" onclick="document.getElementById('modal-yaml-help').classList.remove('show')">✕ Close</button>
+    </div>
+    <div id="yaml-help-content" style="overflow-y:auto;flex:1;padding-right:.25rem;"></div>
   </div>
 </div>
 
@@ -2844,6 +2964,126 @@ async function saveMemory() {
     toast('Save failed: ' + (r?.error || 'unknown error'), 'error');
   }
 }
+
+/* ==========================================================
+   YAML Schema Help Modal
+   ========================================================== */
+function showYamlHelp(role) {
+  const F = (name, req, desc) =>
+    `<div class="yaml-field-item"><span class="yaml-field-name">${name}</span><span class="yaml-field-req ${req ? 'req' : 'opt'}">${req ? 'required' : 'optional'}</span><span class="yaml-field-desc">${desc}</span></div>`;
+  const S = label => `<div class="yaml-help-section">${label}</div>`;
+
+  const schemas = {
+    outline: {
+      title: '📘 Story Outline',
+      html: `<div class="yaml-field-list">
+        ${F('story_title', true, 'Title of the story')}
+        ${F('world', false, 'Global setting context — era, genre rules, tech level. Included in every scene prompt.')}
+        ${F('style_directives', false, 'Global prose style instructions for the AI (tone, POV, voice)')}
+        ${F('pov_character', false, 'Full name of the first-person narrator — used for TTS &ldquo;I said&rdquo; attribution')}
+        ${F('overall_arc.theme', false, 'Central theme(s) of the story')}
+        ${F('overall_arc.tone', false, 'Narrative tone/mood')}
+        ${F('overall_arc.pov', false, 'Point of view e.g. &ldquo;Third-person limited&rdquo;')}
+        ${F('anti_patterns', false, 'List of AI clichés/phrases to suppress — adds to built-in defaults')}
+        ${S('narrative_hooks (story-level plot beats)')}
+        ${F('narrative_hooks[].hook', true, 'Description of the plot beat')}
+        ${F('narrative_hooks[].chapters', false, '[start, end] active chapter range. Omit for always-available hooks.')}
+        ${S('chapters')}
+        ${F('chapters[].chapter_number', true, 'Chapter number (integer)')}
+        ${F('chapters[].title', true, 'Chapter heading displayed in the output')}
+        ${F('chapters[].summary', true, 'Brief description of the chapter arc')}
+        ${F('chapters[].style_override', false, 'Per-chapter prose style tweaks')}
+        ${S('scenes (within each chapter)')}
+        ${F('scenes[].scene_number', true, 'Scene identifier e.g. <code>1.1</code>, <code>1.2</code>')}
+        ${F('scenes[].setting', true, 'Location ID from locations file, or inline description string')}
+        ${F('scenes[].events', true, 'What happens — the AI writes the scene from this')}
+        ${F('scenes[].characters_present', false, 'List of character IDs. Auto-detected from events/notes if omitted.')}
+        ${F('scenes[].emotional_arc', false, 'Emotional trajectory e.g. <code>Calm → dread</code>')}
+        ${F('scenes[].pacing', false, '<code>slow-burn</code> | <code>action</code> | <code>dialogue-heavy</code> | <code>introspective</code>')}
+        ${F('scenes[].notes', false, 'Authorial guidance — direct instructions to the AI for this scene')}
+      </div>`
+    },
+    characters: {
+      title: '👤 Characters',
+      html: `<p style="font-size:.78rem;color:var(--text-dim);margin-bottom:.6rem;">Top-level key: <code style="font-family:var(--mono);font-size:.74rem;color:var(--blue);">characters:</code>. Each entry uses the character&rsquo;s ID as the YAML key.</p>
+      <div class="yaml-field-list">
+        ${F('Name', true, 'Display name used in output and the UI')}
+        ${F('role', false, 'Character role — e.g. protagonist, antagonist, supporting')}
+        ${F('summary', false, 'Background/bio. Sent to AI on first appearance only, then dropped.')}
+        ${F('vibe', false, '<strong>High impact.</strong> Tonal anchor for how this character feels to the reader. Always sent to the AI.')}
+        ${F('voice', false, 'Speech patterns and dialogue style. Always sent — strongly improves dialogue quality.')}
+        ${F('personality', false, 'List of personality traits. Sent on first appearance only.')}
+        ${F('habit', false, 'Recurring behavioral quirk — always sent when present')}
+        ${F('catchphrase', false, 'Signature phrase. Probability-gated — not injected every scene.')}
+        ${F('catchphrase_frequency', false, '<code>rare</code> (1/8) | <code>occasional</code> (1/4) | <code>frequent</code> (1/2). Default: <code>occasional</code>')}
+        ${F('catchphrases', false, 'Multi-phrase format: list of <code>{phrase, frequency}</code> objects')}
+        ${F('secret', false, 'Hidden info — only included when scene notes reference tension or subtext')}
+        ${F('relationships', false, 'Map of <code>character_id: description</code>. Sent when both characters are in the scene.')}
+        ${F('evolution', false, 'List of <code>{after_chapter, note}</code> — character growth over time')}
+        ${F('heritage', false, 'Heritage ID or list of IDs — group traits merged on first appearance')}
+        ${S('heritage (shared group traits — optional section)')}
+        ${F('heritage.*.label', false, 'Display name for the group')}
+        ${F('heritage.*.traits', false, 'Physical/behavioral traits common to this group')}
+        ${F('heritage.*.speech_patterns', false, 'How members of this group typically speak')}
+        ${F('heritage.*.cultural_notes', false, 'Customs, rituals, social norms')}
+      </div>`
+    },
+    locations: {
+      title: '🗺 Locations',
+      html: `<p style="font-size:.78rem;color:var(--text-dim);margin-bottom:.6rem;">Top-level key: <code style="font-family:var(--mono);font-size:.74rem;color:var(--blue);">setting:</code> or <code style="font-family:var(--mono);font-size:.74rem;color:var(--blue);">locations:</code>. Each entry uses the location&rsquo;s ID as the YAML key (referenced in scene <code style="font-family:var(--mono);font-size:.74rem;color:var(--blue);">setting:</code> fields).</p>
+      <div class="yaml-field-list">
+        ${F('(id key)', true, 'Unique identifier used in <code>scene.setting</code> references e.g. <code>the_lighthouse</code>')}
+        ${F('name', false, 'Proper name — rendered first in the prompt so the AI uses it in prose')}
+        ${F('type', false, 'Brief classification of the place')}
+        ${F('atmosphere', false, 'Default sensory/mood description')}
+        ${F('mood_shift', false, 'Map of keyed variants e.g. <code>{night: &ldquo;…&rdquo;, storm: &ldquo;…&rdquo;}</code>')}
+        ${F('(any other keys)', false, 'Sub-areas or descriptive attributes — all included in the prompt. Schema is flexible.')}
+      </div>`
+    },
+    style: {
+      title: '🎨 Custom Style Prompt',
+      html: `<p style="font-size:.78rem;color:var(--text-dim);margin-bottom:.6rem;">Free-form text or YAML. Appended to the system prompt for every scene. Supplements — does not replace — style set in <code style="font-family:var(--mono);font-size:.74rem;color:var(--blue);">story_outline.yaml</code>.</p>
+      <div class="yaml-field-list">
+        ${F('style_directives', false, 'Plain text or YAML string with prose style instructions')}
+        ${F('anti_patterns', false, 'List of phrases/patterns the AI should avoid')}
+      </div>
+      <div style="margin-top:.8rem;font-size:.78rem;color:var(--text-dim);line-height:1.6;">
+        <strong style="color:var(--text);">Tips:</strong><br>
+        Write what you&rsquo;d tell a human editor: &ldquo;Favour sensory detail over exposition&rdquo;, &ldquo;Avoid adverbs&rdquo;, &ldquo;Short paragraphs for tension&rdquo;. Plain prose instructions work well here.
+      </div>`
+    }
+  };
+
+  const schema = schemas[role];
+  if (!schema) return;
+  document.getElementById('yaml-help-title').textContent = schema.title + ' — YAML Fields';
+  document.getElementById('yaml-help-content').innerHTML = schema.html;
+  document.getElementById('modal-yaml-help').classList.add('show');
+}
+
+/* ==========================================================
+   Mobile: swipe left/right between tabs
+   ========================================================== */
+(function () {
+  const TAB_ORDER = ['story', 'settings', 'logs', 'memory', 'output'];
+  let _sx = 0, _sy = 0;
+  document.addEventListener('touchstart', e => {
+    _sx = e.touches[0].clientX;
+    _sy = e.touches[0].clientY;
+  }, { passive: true });
+  document.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - _sx;
+    const dy = e.changedTouches[0].clientY - _sy;
+    // Require a clear horizontal swipe (min 55px, more horizontal than vertical)
+    if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const active = document.querySelector('.tab-btn.active');
+    const idx = TAB_ORDER.indexOf(active?.dataset.tab);
+    if (idx === -1) return;
+    const next = dx < 0 ? idx + 1 : idx - 1;
+    if (next < 0 || next >= TAB_ORDER.length) return;
+    document.querySelector(`[data-tab="${TAB_ORDER[next]}"]`).click();
+  }, { passive: true });
+})();
 
 /* ==========================================================
    Boot
