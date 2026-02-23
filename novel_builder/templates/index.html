@@ -1770,6 +1770,7 @@ async function playAllScenes() {
     if (tts.stopped) break;
     tts.currentSceneIdx = i;
     updateTTSProgress();
+    scrollToScene(i);
 
     const segResp = await apiPost('/api/tts/segments', {
       text: tts.scenes[i], characters: charNames, pov_character: povCharacter,
@@ -1963,6 +1964,12 @@ function updateTTSProgress() {
   } else {
     ind.style.display = 'none';
   }
+}
+
+function scrollToScene(idx) {
+  const viewer = document.getElementById('output-viewer');
+  const block = viewer.querySelector(`.scene-block[data-scene-idx="${idx}"]`);
+  if (block) block.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /* ==========================================================

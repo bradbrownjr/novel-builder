@@ -50,6 +50,11 @@ _COMMON_NON_NAMES = frozenset({
     'one', 'someone', 'everyone', 'nobody', 'anybody', 'somebody',
 })
 
+# Sentinel returned by first-person detection when no pov_character is set.
+# Tells the segmenter to narrator-lock the segment while still tracking as
+# a distinct speaker in the alternation chain.
+_FIRST_PERSON = "__FIRST_PERSON__"
+
 
 def segment_text_for_tts(text, character_names, pov_character=None):
     """Split text into paragraph-level segments with voice attribution.
@@ -122,7 +127,7 @@ def segment_text_for_tts(text, character_names, pov_character=None):
                 segments.append({"type": "narration", "text": clean, "character": None})
             continue
 
-        has_dialogue = bool(_QUOTE_RE.search(para))
+        has_dialogue = _has_spoken_dialogue(para)
         speaker = None
 
         if has_dialogue and character_names:
@@ -133,11 +138,19 @@ def segment_text_for_tts(text, character_names, pov_character=None):
             if speaker is None:
                 speaker = _find_speaker_by_proximity(para, character_names)
 
-        segments.append({
+        # Resolve _FIRST_PERSON sentinel → narrator-locked segment
+        first_person = (speaker == _FIRST_PERSON)
+        if first_person:
+            speaker = None
+
+        seg = {
             "type": "dialogue" if has_dialogue else "narration",
             "text": para,
             "character": speaker,
-        })
+        }
+        if first_person:
+            seg["_first_person"] = True
+        segments.append(seg)
 
     # Pass 3: contextual attribution for still-unattributed dialogue
     if character_names:
@@ -145,6 +158,11 @@ def segment_text_for_tts(text, character_names, pov_character=None):
 
     # Final pass: split mixed paragraphs into narration/dialogue spans
     segments = _expand_mixed_paragraphs(segments)
+
+    # Strip internal flags before returning
+    for seg in segments:
+        seg.pop("_first_person", None)
+        seg.pop("_narrator_locked", None)
 
     return segments
 
@@ -212,6 +230,36 @@ def _split_paragraph_into_spans(para, speaker):
 
 
 # ---------------------------------------------------------------------------
+# Dialogue vs. scare-quote detection
+# ---------------------------------------------------------------------------
+
+def _has_spoken_dialogue(paragraph):
+    """True if the paragraph contains actual spoken dialogue, not scare quotes.
+
+    Scare quotes (e.g. ``"shrinkage"``, ``"obsolete stock"``) are short
+    quoted phrases embedded in narration, typically lowercase.  Spoken
+    dialogue almost always starts with an uppercase letter or is long
+    enough to be a sentence fragment.
+
+    Returns True if any quoted span looks like speech.
+    """
+    quotes = _QUOTE_RE.findall(paragraph)
+    if not quotes:
+        return False
+    for q in quotes:
+        inner = q[1:-1].strip()
+        if not inner:
+            continue
+        # 4+ words → almost certainly dialogue
+        if len(inner.split()) >= 4:
+            return True
+        # Shorter quote starting with uppercase → likely dialogue
+        if inner[0].isupper():
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Pass 1 — Verb-based attribution
 # ---------------------------------------------------------------------------
 
@@ -226,14 +274,15 @@ def _find_speaker_by_verb(paragraph, character_names, pov_character=None):
     """
     verbs = _ATTRIBUTION_VERBS
 
-    # First-person attribution: "I said/asked/etc." near a quote → POV character
-    if pov_character:
-        if re.search(
-            rf'(?<!\w)I\s+(?:{verbs})\b.{{0,80}}[\u201c"]|[\u201d"].{{0,80}}(?<!\w)I\s+(?:{verbs})\b',
-            paragraph,
-            re.DOTALL,
-        ):
-            return pov_character
+    # First-person attribution: "I said/asked/etc." near a quote
+    # With pov_character → returns the character name (best for alternation).
+    # Without → returns _FIRST_PERSON sentinel (narrator-locked, still tracked).
+    if re.search(
+        rf'(?<!\w)I\s+(?:{verbs})\b.{{0,80}}[\u201c"]|[\u201d"].{{0,80}}(?<!\w)I\s+(?:{verbs})\b',
+        paragraph,
+        re.DOTALL,
+    ):
+        return pov_character if pov_character else _FIRST_PERSON
 
     sorted_names = sorted(character_names, key=len, reverse=True)
 
@@ -414,11 +463,12 @@ def _apply_contextual_attribution(segments, character_names, pov_character=None)
         if _has_unnamed_speaker_attribution(seg['text'], character_names):
             seg['_narrator_locked'] = True
             continue
-        # Indirect: the previous attributed paragraph addressed a non-roster
-        # person — their response is next and should fall to narrator
+        # Indirect: the previous attributed/first-person paragraph addressed a
+        # non-roster person — their response is next and should fall to narrator
         if i > 0:
             prev = segments[i - 1]
-            if prev.get('character') is not None and _has_non_roster_addressee(prev['text'], character_names):
+            prev_has_speaker = prev.get('character') is not None or prev.get('_first_person')
+            if prev_has_speaker and _has_non_roster_addressee(prev['text'], character_names):
                 seg['_narrator_locked'] = True
     # --- Strategy A: conversation-aware alternation ---
     # Three passes to propagate from both ends and fill remaining gaps.
@@ -454,21 +504,27 @@ def _apply_contextual_attribution(segments, character_names, pov_character=None)
     for i, seg in enumerate(segments):
         if seg["type"] != "dialogue" or seg["character"] is not None:
             continue
+        if seg.get("_first_person") or seg.get("_narrator_locked"):
+            continue
 
         # Names appearing inside the dialogue quotes are likely
         # addressees ("You Elias?") — exclude them as speaker candidates.
         addressees = names_inside_quotes(seg["text"])
 
         candidates = []
-        # Look at paragraph before
+        # Look at paragraph before (skip locked/first-person neighbours)
         if i > 0:
             prev = segments[i - 1]
-            if prev["character"] is None:
+            if (prev["character"] is None
+                    and not prev.get("_first_person")
+                    and not prev.get("_narrator_locked")):
                 candidates.extend(names_mentioned_in(prev["text"]))
         # Look at paragraph after
         if i < len(segments) - 1:
             nxt = segments[i + 1]
-            if nxt["character"] is None:
+            if (nxt["character"] is None
+                    and not nxt.get("_first_person")
+                    and not nxt.get("_narrator_locked")):
                 candidates.extend(names_mentioned_in(nxt["text"]))
 
         # Filter out addressees
@@ -501,6 +557,12 @@ def _alternation_pass(segments, forward=True):
         if seg["type"] != "dialogue":
             continue
         if seg.get("_narrator_locked"):
+            continue
+
+        # First-person segments are narrator-voiced but still tracked in
+        # the alternation chain so the NEXT line alternates correctly.
+        if seg.get("_first_person"):
+            _push_recent(recent, _FIRST_PERSON)
             continue
 
         if seg["character"] is not None:
