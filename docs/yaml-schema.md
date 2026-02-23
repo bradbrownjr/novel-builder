@@ -35,7 +35,8 @@ world: >
 
 # ─── Overall Arc ──────────────────────────────────────────────────
 overall_arc:
-  theme: "Isolation, duty, and the cost of keeping secrets."
+  genre: "Literary fiction"                          # Optional
+  themes: "Isolation, duty, and the cost of keeping secrets."  # string or list
   tone: "Atmospheric and melancholic with moments of warmth."
   pov: "Third-person limited, following the keeper."
 
@@ -114,10 +115,11 @@ chapters:
 | `pov_character` | string | No | Full name of the first-person narrator. When set, `I said/asked/etc.` patterns in TTS attribution are assigned to this character rather than falling through to alternation |
 | `style_directives` | string | No | Global writing style instructions for the AI |
 | `world` | string | No | Global setting context (era, genre rules, tech level) — included in every prompt |
-| `overall_arc` | object | No | Theme, tone, and POV for the story |
-| `overall_arc.theme` | string | No | Central theme(s) |
+| `overall_arc` | object | No | Genre, theme, tone, and POV for the story |
+| `overall_arc.genre` | string | No | Genre e.g. `literary fiction`, `dark fantasy` |
+| `overall_arc.themes` | string or list | No | Central theme(s) |
 | `overall_arc.tone` | string | No | Narrative tone/mood |
-| `overall_arc.pov` | string | No | Point of view |
+| `overall_arc.pov` | string | No | Point of view — applied to every scene unless overridden per-scene |
 | `anti_patterns` | list of strings | No | Additional AI phrases/clichés to suppress (built-in defaults always active) |
 | `narrative_hooks` | list | No | Story-level plot beats (see below) |
 | `chapters` | list | Yes | Chapter definitions |
@@ -139,6 +141,9 @@ chapters:
 | `events` | string | Yes | What happens in the scene |
 | `emotional_arc` | string | No | Emotional trajectory (e.g., "Calm → dread") |
 | `pacing` | string | No | `slow-burn`, `action`, `dialogue-heavy`, `introspective` |
+| `pov` | string | No | Per-scene POV override — overrides `overall_arc.pov` for this scene only |
+| `mood` | string | No | Mood description appended to the scene prompt e.g. `heavy dread, like before a storm` |
+| `mood_shift_key` | string | No | Activates a keyed variant from the location's `mood_shift` map e.g. `night` or `storm` |
 | `notes` | string | No | Authorial guidance for the AI |
 
 ---
@@ -215,11 +220,14 @@ characters:
 | `role` | string | No | Always | Every scene |
 | `personality` | list | No | First appearance | Dropped after established |
 | `vibe` | string | No | Always | Tonal anchor — never dropped |
+| `species` | string | No | Always | Physical anchor — prose must never contradict this |
+| `appearance` | string | No | Always | Visual description anchor — kept consistent across scenes |
 | `voice` | string | No | Always | Shapes dialogue quality |
 | `habit` | string | No | Always | Included if present |
 | `catchphrase` | string | No | Probability-gated | When the frequency roll hits |
 | `catchphrase_frequency` | string | No | (internal) | Controls probability gate |
 | `catchphrases` | list | No | Probability-gated | Alternative list format (see below) |
+| `tts_voice` | string | No | (TTS only) | Voice ID used by the Read Aloud feature e.g. `af_heart` |
 | `secret` | string | No | Conditional | Included when scene notes reference tension/subtext |
 | `relationships` | map | No | Conditional | Included for scenes where both characters are present |
 | `evolution` | list | No | Accumulated | All notes up to current chapter |
