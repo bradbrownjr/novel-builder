@@ -1002,13 +1002,34 @@ let _healthChangeTimer = null;
    ========================================================== */
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
-    if (btn.dataset.tab === 'memory') loadMemory();
+    // If leaving the memory tab with unsaved edits, ask first
+    const leavingMemory = document.querySelector('.tab-btn.active')?.dataset.tab === 'memory'
+      && btn.dataset.tab !== 'memory';
+    if (leavingMemory && _memoryDirty) {
+      if (!confirm('You have unsaved memory edits. Save before switching tabs?')) {
+        // Discard — reload fresh on next visit
+        _memoryDirty = false;
+        _memoryData = null;
+        _updateMemSaveBtn();
+      } else {
+        saveMemory().then(() => {
+          _activateTab(btn);
+        });
+        return;
+      }
+    }
+    _activateTab(btn);
   });
 });
+
+function _activateTab(btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+  // Load memory only if not already loaded or explicitly cleared
+  if (btn.dataset.tab === 'memory' && !_memoryDirty) loadMemory();
+}
 
 /* ==========================================================
    Theme toggle
@@ -1834,14 +1855,14 @@ function connectSSE() {
         break;
       case 'scene_complete':
         appendSceneToOutput(event.data);
-        // Keep Memory tab current if it's open
-        if (document.querySelector('[data-tab="memory"]')?.classList.contains('active')) {
+        // Keep Memory tab current if it's open and no unsaved edits
+        if (!_memoryDirty && document.querySelector('[data-tab="memory"]')?.classList.contains('active')) {
           loadMemory();
         }
         break;
       case 'scene_regenerated':
         _handleSceneRegenerated(event.data);
-        if (document.querySelector('[data-tab="memory"]')?.classList.contains('active')) {
+        if (!_memoryDirty && document.querySelector('[data-tab="memory"]')?.classList.contains('active')) {
           loadMemory();
         }
         break;
