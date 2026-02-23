@@ -11,7 +11,7 @@ class OllamaError(Exception):
 
 
 def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
-                temperature=0.75, num_ctx=12288):
+                temperature=0.85, num_ctx=12288):
     """Make a single streaming call to the Ollama /api/generate endpoint.
 
     Uses stream=True so the timeout applies per-chunk (not total generation
@@ -44,8 +44,9 @@ def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
         "options": {
             "num_ctx": num_ctx,
             "temperature": temperature,
-            "top_p": 0.9,
-            "presence_penalty": 0.1,
+            "top_p": 0.92,
+            "presence_penalty": 0.2,
+            "repeat_penalty": 1.15,
         },
     }
 
@@ -80,7 +81,7 @@ def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
 
 
 def call_ollama_with_retry(host, model, system_prompt, user_prompt,
-                           timeout=900, retries=5, temperature=0.75,
+                           timeout=900, retries=5, temperature=0.85,
                            num_ctx=12288, emit_callback=None):
     """Call Ollama with exponential backoff retry logic.
 
