@@ -44,20 +44,35 @@ _ATTRIBUTION_VERBS = (
 # Regex for any quoted text (curly or straight quotes)
 _QUOTE_RE = re.compile(r'\u201c[^\u201d]*\u201d|"[^"]*"')
 
+# Common English pronouns and articles that should never be treated as proper names
+_COMMON_NON_NAMES = frozenset({
+    'she', 'he', 'they', 'it', 'we', 'the', 'a', 'an', 'this', 'that',
+    'one', 'someone', 'everyone', 'nobody', 'anybody', 'somebody',
+})
 
-def segment_text_for_tts(text, character_names):
+
+def segment_text_for_tts(text, character_names, pov_character=None):
     """Split text into paragraph-level segments with voice attribution.
 
     Each paragraph is classified as narration (narrator voice) or dialogue
     (a specific character's voice).  Attribution uses a multi-pass approach:
 
-      Pass 1 — Verb attribution (strongest signal).
+      Pass 1 — Verb attribution (strongest signal), including first-person
+               "I said/asked/etc." → pov_character.
       Pass 2 — Name-near-dialogue fallback (same paragraph).
       Pass 3 — Contextual: adjacent-paragraph proximity + alternation.
+               Unattributed dialogue with evidence of a non-roster speaker
+               (explicit attribution to an unknown name, or the previous
+               paragraph addressed a non-roster character) is locked to
+               narrator before alternation runs.
 
     Args:
         text: The full scene text (may include scene headers, separators).
         character_names: List of character name strings to attempt matching.
+        pov_character: Optional name of the first-person POV character.
+                       When set, "I said/asked/etc." patterns are attributed
+                       to this character instead of falling through to
+                       alternation.
 
     Returns:
         List of dicts with keys:
@@ -112,7 +127,7 @@ def segment_text_for_tts(text, character_names):
 
         if has_dialogue and character_names:
             # Pass 1: verb-based attribution (highest confidence)
-            speaker = _find_speaker_by_verb(para, character_names)
+            speaker = _find_speaker_by_verb(para, character_names, pov_character=pov_character)
 
             # Pass 2: name-near-dialogue fallback
             if speaker is None:
@@ -126,7 +141,7 @@ def segment_text_for_tts(text, character_names):
 
     # Pass 3: contextual attribution for still-unattributed dialogue
     if character_names:
-        _apply_contextual_attribution(segments, character_names)
+        _apply_contextual_attribution(segments, character_names, pov_character=pov_character)
 
     # Final pass: split mixed paragraphs into narration/dialogue spans
     segments = _expand_mixed_paragraphs(segments)
@@ -200,13 +215,26 @@ def _split_paragraph_into_spans(para, speaker):
 # Pass 1 — Verb-based attribution
 # ---------------------------------------------------------------------------
 
-def _find_speaker_by_verb(paragraph, character_names):
+def _find_speaker_by_verb(paragraph, character_names, pov_character=None):
     """Identify speaker via explicit attribution verbs.
 
     Patterns matched:
         "…", Name said       |  Name said, "…"  |  Name said … "…"
+
+    If *pov_character* is given, first-person patterns (``I said``,
+    ``I asked``, etc.) near a quote are attributed to that character.
     """
     verbs = _ATTRIBUTION_VERBS
+
+    # First-person attribution: "I said/asked/etc." near a quote → POV character
+    if pov_character:
+        if re.search(
+            rf'(?<!\w)I\s+(?:{verbs})\b.{{0,80}}[\u201c"]|[\u201d"].{{0,80}}(?<!\w)I\s+(?:{verbs})\b',
+            paragraph,
+            re.DOTALL,
+        ):
+            return pov_character
+
     sorted_names = sorted(character_names, key=len, reverse=True)
 
     for name in sorted_names:
@@ -280,10 +308,71 @@ def _name_near_dialogue(paragraph, name):
 
 
 # ---------------------------------------------------------------------------
+# Pass 3 helpers — non-roster speaker detection
+# ---------------------------------------------------------------------------
+
+def _build_roster_lower(character_names):
+    """Return a set of lowercased names and first-name variants from the roster."""
+    result = set()
+    for name in character_names:
+        result.add(name.lower())
+        parts = name.lower().split()
+        if parts:
+            result.add(parts[0])
+    return result
+
+
+def _has_unnamed_speaker_attribution(paragraph, character_names):
+    """True if paragraph has 'ProperName verb' attributed to a non-roster name near a quote.
+
+    Detects patterns like ``Mrs. Henderson replied, "..."`` where
+    ``Mrs. Henderson`` is not in *character_names*.
+    """
+    verbs = _ATTRIBUTION_VERBS
+    cn_lower = _build_roster_lower(character_names)
+    pat = re.compile(
+        rf'(?<!\w)([A-Z][a-zA-Z\'.-]+(?:\s+[A-Z][a-zA-Z\'.-]+)?)\s+(?:{verbs})\b'
+    )
+    for m in pat.finditer(paragraph):
+        found = m.group(1).lower()
+        if found in _COMMON_NON_NAMES or found == 'i':
+            continue
+        if found in cn_lower:
+            continue
+        # Non-roster name + attribution verb — verify a quote exists nearby
+        end = min(len(paragraph), m.end() + 100)
+        if re.search(r'[\u201c\u201d""]', paragraph[max(0, m.start() - 10):end]):
+            return True
+    return False
+
+
+def _has_non_roster_addressee(paragraph, character_names):
+    """True if paragraph has 'verb ProperName' where ProperName is not in roster.
+
+    Detects patterns like ``I asked Mrs. Henderson`` or ``told Captain
+    Reeves`` — indicating the *next* unattributed dialogue line is likely
+    that non-roster character responding.
+    """
+    verbs = _ATTRIBUTION_VERBS
+    cn_lower = _build_roster_lower(character_names)
+    pat = re.compile(
+        rf'\b(?:{verbs})\s+([A-Z][a-zA-Z\'.-]+(?:\s+[A-Z][a-zA-Z\'.-]+)?)\b'
+    )
+    for m in pat.finditer(paragraph):
+        found = m.group(1).lower()
+        if found in _COMMON_NON_NAMES or found == 'i':
+            continue
+        if found in cn_lower:
+            continue
+        return True
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Pass 3 — Contextual: adjacent paragraphs + alternation
 # ---------------------------------------------------------------------------
 
-def _apply_contextual_attribution(segments, character_names):
+def _apply_contextual_attribution(segments, character_names, pov_character=None):
     """Resolve unattributed dialogue using surrounding context.
 
     Two strategies applied in order:
@@ -302,8 +391,35 @@ def _apply_contextual_attribution(segments, character_names):
        that character.  Names that only appear *inside the target's
        quoted text* are excluded (likely addressees, not speakers).
 
+    Before alternation runs, a **narrator-lock pre-pass** identifies
+    unattributed segments that clearly belong to non-roster speakers:
+
+    - The paragraph itself has an explicit attribution verb tied to a
+      non-roster proper name (e.g. ``Mrs. Henderson replied``).
+    - The immediately preceding attributed paragraph addressed a
+      non-roster character (e.g. ``I asked Mrs. Henderson`` → her
+      response should be read by the narrator, not guessed via
+      alternation).
+
+    Locked segments are skipped by alternation so the narrator voice
+    is used instead of a wrong character's voice.
+
     Modifies *segments* in place.
     """
+    # --- Narrator-lock pre-pass ---
+    for i, seg in enumerate(segments):
+        if seg.get('type') != 'dialogue' or seg.get('character') is not None:
+            continue
+        # Direct: this paragraph explicitly attributes to a non-roster name
+        if _has_unnamed_speaker_attribution(seg['text'], character_names):
+            seg['_narrator_locked'] = True
+            continue
+        # Indirect: the previous attributed paragraph addressed a non-roster
+        # person — their response is next and should fall to narrator
+        if i > 0:
+            prev = segments[i - 1]
+            if prev.get('character') is not None and _has_non_roster_addressee(prev['text'], character_names):
+                seg['_narrator_locked'] = True
     # --- Strategy A: conversation-aware alternation ---
     # Three passes to propagate from both ends and fill remaining gaps.
     _alternation_pass(segments, forward=True)
@@ -383,6 +499,8 @@ def _alternation_pass(segments, forward=True):
 
         # Skip narration — but do NOT clear recent speakers.
         if seg["type"] != "dialogue":
+            continue
+        if seg.get("_narrator_locked"):
             continue
 
         if seg["character"] is not None:

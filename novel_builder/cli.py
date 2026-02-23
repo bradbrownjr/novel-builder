@@ -80,8 +80,8 @@ def parse_args(argv=None):
     parser.add_argument(
         "--retries",
         type=int,
-        default=10,
-        help="Ollama retry attempts on failure (default: 10).",
+        default=5,
+        help="Ollama retry attempts on failure (default: 5).",
     )
     parser.add_argument(
         "--timeout",

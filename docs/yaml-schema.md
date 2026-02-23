@@ -21,8 +21,7 @@ CLI flags (`--outline`, `--characters`, `--locations`) override auto-discovery.
 
 ```yaml
 # ─── Story Metadata ───────────────────────────────────────────────
-story_title: "The Last Lighthouse"
-
+story_title: "The Last Lighthouse"pov_character: "Silas Marsh"     # Optional. First-person narrator — used by TTS to attribute "I said/asked" to this character
 style_directives: >
   Write grounded literary fiction with sensory detail.
   Favor dry humor over melodrama. Avoid purple prose.
@@ -112,6 +111,7 @@ chapters:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `story_title` | string | Yes | Title of the story |
+| `pov_character` | string | No | Full name of the first-person narrator. When set, `I said/asked/etc.` patterns in TTS attribution are assigned to this character rather than falling through to alternation |
 | `style_directives` | string | No | Global writing style instructions for the AI |
 | `world` | string | No | Global setting context (era, genre rules, tech level) — included in every prompt |
 | `overall_arc` | object | No | Theme, tone, and POV for the story |

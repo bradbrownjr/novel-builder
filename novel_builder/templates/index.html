@@ -1759,6 +1759,7 @@ async function playAllScenes() {
   const parsed = await api('/api/parse-yaml');
   const _playChars = parsed?.characters?.characters || [];
   const charNames = _playChars.map(c => c.name);
+  const povCharacter = parsed?.outline?.pov_character || '';
   // YAML voices take precedence — rebuild from fresh parse before playback
   tts.yamlVoiceMap = {};
   for (const ch of _playChars) {
@@ -1771,7 +1772,7 @@ async function playAllScenes() {
     updateTTSProgress();
 
     const segResp = await apiPost('/api/tts/segments', {
-      text: tts.scenes[i], characters: charNames,
+      text: tts.scenes[i], characters: charNames, pov_character: povCharacter,
     });
     const segments = segResp?.ok
       ? segResp.segments
@@ -1826,6 +1827,7 @@ async function downloadAudiobook() {
   const parsed = await api('/api/parse-yaml');
   const characters = parsed?.characters?.characters || [];
   const charNames = characters.map(c => c.name);
+  const povCharacter = parsed?.outline?.pov_character || '';
   // YAML voices take precedence — rebuild map from fresh parse
   tts.yamlVoiceMap = {};
   for (const ch of characters) {
@@ -1836,7 +1838,7 @@ async function downloadAudiobook() {
   toast('Building segment list…', 'info');
   const allSegments = [];
   for (const scene of scenes) {
-    const segResp = await apiPost('/api/tts/segments', { text: scene, characters: charNames });
+    const segResp = await apiPost('/api/tts/segments', { text: scene, characters: charNames, pov_character: povCharacter });
     const segs = segResp?.ok
       ? segResp.segments
       : [{ type: 'narration', text: scene, character: null }];
