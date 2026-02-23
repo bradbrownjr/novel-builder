@@ -149,6 +149,9 @@ header {
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 .tab-btn {
   padding: .55rem 1.2rem;
@@ -585,9 +588,7 @@ textarea {
 
   <!-- Action buttons -->
   <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
-    <button class="btn btn-primary" id="btn-start" onclick="startGeneration(false)">▶ Start Generation</button>
-    <button class="btn" id="btn-resume" onclick="startGeneration(true)" style="display:none;">⏩ Resume</button>
-    <button class="btn btn-danger" id="btn-stop" onclick="stopGeneration()" style="display:none;">⏹ Stop</button>
+    <button class="btn btn-primary" onclick="document.querySelector('[data-tab=&quot;settings&quot;]').click()">Next: Settings →</button>
     <button class="btn" onclick="refreshParsed()">🔄 Refresh Preview</button>
   </div>
 </div>
@@ -661,6 +662,13 @@ textarea {
     <div id="tts-status" style="font-size:.78rem; margin-top:.5rem; color:var(--text-dim);"></div>
   </div>
   <datalist id="tts-voices-list"></datalist>
+
+  <!-- Generation buttons -->
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
+    <button class="btn btn-primary" id="btn-start" onclick="startGeneration(false)">▶ Start Generation</button>
+    <button class="btn" id="btn-resume" onclick="startGeneration(true)" style="display:none;">⏩ Resume</button>
+    <button class="btn btn-danger" id="btn-stop" onclick="stopGeneration()" style="display:none;">⏹ Stop</button>
+  </div>
 
 </div>
 
