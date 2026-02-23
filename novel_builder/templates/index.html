@@ -389,6 +389,58 @@ textarea {
 }
 
 /* =========================================================
+   Output Table of Contents
+   ========================================================= */
+#output-toc-wrap {
+  margin-bottom: .5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+#output-toc-bar {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .3rem .7rem;
+  font-size: .78rem;
+  font-family: var(--font);
+  cursor: pointer;
+  user-select: none;
+}
+#output-toc-bar:hover { background: var(--bg-input); }
+#output-toc-bar .toc-bar-label { font-weight: 600; flex: 1; color: var(--text); }
+#output-toc-bar .toc-toggle-icon { color: var(--text-dim); font-size: .7rem; }
+#output-toc {
+  display: none;
+  padding: .3rem .6rem .6rem .6rem;
+  max-height: 200px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+.toc-chapter-item {
+  font-weight: 600;
+  font-family: var(--font);
+  font-size: .8rem;
+  color: var(--text);
+  cursor: pointer;
+  padding: .22rem .4rem;
+  border-radius: 3px;
+  margin-top: .3rem;
+}
+.toc-chapter-item:first-child { margin-top: 0; }
+.toc-chapter-item:hover { background: var(--bg-input); color: var(--accent); }
+.toc-scene-item {
+  font-family: var(--font);
+  font-size: .76rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: .15rem .4rem .15rem 1.4rem;
+  border-radius: 3px;
+}
+.toc-scene-item:hover { background: var(--bg-input); color: var(--text); }
+
+/* =========================================================
    Log viewer
    ========================================================= */
 .log-viewer {
@@ -826,6 +878,13 @@ textarea {
 
 <!-- ==================== OUTPUT TAB ==================== -->
 <div class="tab-panel" id="panel-output">
+  <div id="output-toc-wrap" style="display:none;">
+    <div id="output-toc-bar" onclick="toggleToc()">
+      <span class="toc-bar-label">📋 Table of Contents</span>
+      <span class="toc-toggle-icon" id="toc-toggle-icon">▼</span>
+    </div>
+    <div id="output-toc"></div>
+  </div>
   <div class="tts-toolbar">
     <button class="btn btn-sm" onclick="refreshOutput()">🔄 Refresh</button>
     <button class="btn btn-sm" onclick="location.href='/api/download'">⬇ Download .md</button>
@@ -1590,49 +1649,47 @@ function renderScenes(text) {
   const viewer = document.getElementById('output-viewer');
   if (!text || !text.trim()) {
     viewer.innerHTML = '(No output yet — start generation to see scenes here.)';
+    document.getElementById('output-toc-wrap').style.display = 'none';
     return;
   }
   viewer.innerHTML = '';
 
-  // Parse scene and chapter markers
   const lines = text.split('\n');
   let currentSceneId = null;
   let currentSceneTitle = '';
-  let currentChapter = null;
-  let chapterTitle = '';
   let buf = [];
   let blockIdx = 0;
+  const tocEntries = [];
 
   function flushScene() {
     const raw = buf.join('\n').trim();
-    if (!raw) { buf = []; return; }
+    buf = [];
+    if (!raw) return;
 
-    // Extract title from ### heading if present
-    let displayTitle = currentSceneTitle;
-    let bodyText = raw;
-    const hMatch = raw.match(/^###\s+(.+)/);
-    if (hMatch) {
-      displayTitle = hMatch[1];
-      bodyText = raw.replace(/^###\s+.+\n*/, '').trim();
-    }
-
-    if (currentSceneId) {
+    if (currentSceneId || currentSceneTitle) {
+      const anchorId = currentSceneId ? `scene-${currentSceneId}` : `scene-idx-${blockIdx}`;
       const hdr = document.createElement('div');
       hdr.className = 'scene-header';
-      hdr.innerHTML = `<span class="scene-label">Scene ${escHtml(String(currentSceneId))}</span>`
-        + (displayTitle ? `<span class="scene-title">${escHtml(displayTitle)}</span>` : '<span class="scene-title"></span>')
-        + `<button class="btn-regen" onclick="regenerateScene('${escHtml(String(currentSceneId))}')" title="Regenerate this scene">🔄 Regen</button>`;
+      hdr.id = anchorId;
+      if (currentSceneId) {
+        hdr.innerHTML = `<span class="scene-label">Scene ${escHtml(String(currentSceneId))}</span>`
+          + `<span class="scene-title">${escHtml(currentSceneTitle)}</span>`
+          + `<button class="btn-regen" onclick="regenerateScene('${escHtml(String(currentSceneId))}')" title="Regenerate this scene">🔄 Regen</button>`;
+      } else {
+        hdr.innerHTML = `<span class="scene-label">Scene</span>`
+          + `<span class="scene-title">${escHtml(currentSceneTitle)}</span>`;
+      }
       viewer.appendChild(hdr);
+      tocEntries.push({ id: anchorId, label: currentSceneTitle || `Scene ${currentSceneId || blockIdx + 1}`, type: 'scene' });
     }
 
     const block = document.createElement('div');
     block.className = 'scene-block';
     block.dataset.sceneIdx = String(blockIdx);
     if (currentSceneId) block.dataset.sceneId = String(currentSceneId);
-    block.textContent = '\n' + bodyText + '\n\n';
+    block.textContent = '\n' + raw + '\n\n';
     viewer.appendChild(block);
     blockIdx++;
-    buf = [];
   }
 
   for (const line of lines) {
@@ -1640,18 +1697,25 @@ function renderScenes(text) {
     const chM = line.match(/^<!--\s*chapter:(\d+)\s*-->/);
     if (chM) {
       flushScene();
-      currentChapter = chM[1];
+      currentSceneId = null;
+      currentSceneTitle = '';
       continue;
     }
-    // Chapter heading: ## Chapter N: Title
-    const chH = line.match(/^##\s+Chapter\s+(\d+):\s+(.+)/);
+    // Chapter heading: ## Chapter N: Title  OR  ## Chapter N — Title
+    const chH = line.match(/^##\s+Chapter\s+(\d+)[:\s\u2014\u2013-]+(.+)/);
     if (chH) {
-      chapterTitle = `Chapter ${chH[1]}: ${chH[2]}`;
+      flushScene();
+      const chapterTitle = `Chapter ${chH[1]}: ${chH[2].trim()}`;
+      const anchorId = `chapter-${chH[1]}`;
       const chHdr = document.createElement('div');
       chHdr.className = 'chapter-header';
+      chHdr.id = anchorId;
       chHdr.innerHTML = `<span class="chapter-label">${escHtml(chapterTitle)}</span>`
         + `<button class="btn-regen" onclick="regenerateChapter(${parseInt(chH[1], 10)})" title="Regenerate entire chapter">🔄 Regen Chapter</button>`;
       viewer.appendChild(chHdr);
+      tocEntries.push({ id: anchorId, label: chapterTitle, type: 'chapter' });
+      currentSceneId = null;
+      currentSceneTitle = '';
       continue;
     }
     // Scene open marker: <!-- scene:X.Y -->
@@ -1669,10 +1733,52 @@ function renderScenes(text) {
       currentSceneTitle = '';
       continue;
     }
+    // ### heading outside scene markers → pseudo-scene boundary (legacy files)
+    const titleM = line.match(/^###\s+(.+)/);
+    if (titleM && !currentSceneId) {
+      flushScene();
+      currentSceneTitle = titleM[1].trim();
+      continue;
+    }
     buf.push(line);
   }
-  // Flush any trailing content (legacy files without markers)
   flushScene();
+
+  buildToc(tocEntries);
+}
+
+function buildToc(entries) {
+  const wrap = document.getElementById('output-toc-wrap');
+  const tocDiv = document.getElementById('output-toc');
+  tocDiv.innerHTML = '';
+  if (!entries.length) { wrap.style.display = 'none'; return; }
+
+  for (const entry of entries) {
+    const el = document.createElement('div');
+    el.className = entry.type === 'chapter' ? 'toc-chapter-item' : 'toc-scene-item';
+    el.textContent = entry.type === 'scene' ? '↳ ' + entry.label : entry.label;
+    el.onclick = () => {
+      const viewer = document.getElementById('output-viewer');
+      const target = document.getElementById(entry.id);
+      if (target) {
+        // Scroll within the viewer div
+        viewer.scrollTop = target.offsetTop - 8;
+        target.style.transition = 'background .15s';
+        target.style.background = 'rgba(138,180,248,.18)';
+        setTimeout(() => { target.style.background = ''; }, 900);
+      }
+    };
+    tocDiv.appendChild(el);
+  }
+  wrap.style.display = 'block';
+}
+
+function toggleToc() {
+  const toc = document.getElementById('output-toc');
+  const icon = document.getElementById('toc-toggle-icon');
+  const open = toc.style.display !== 'none';
+  toc.style.display = open ? 'none' : 'block';
+  icon.textContent = open ? '▼' : '▲';
 }
 
 function getOutputText() {
