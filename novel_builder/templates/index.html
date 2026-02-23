@@ -3006,9 +3006,10 @@ ${F(0,'world',false,'Global setting context — era, genre rules, tech level. In
 ${F(0,'style_directives',false,'Global prose style instructions for the AI (tone, POV, voice)')}
 ${F(0,'pov_character',false,'First-person narrator name — used for TTS &ldquo;I said&rdquo; attribution')}
 ${P(0,'overall_arc')}
-${F(1,'theme',false,'Central theme(s) of the story')}
+${F(1,'genre',false,'Genre e.g. &ldquo;literary fiction&rdquo;, &ldquo;dark fantasy&rdquo;')}
 ${F(1,'tone',false,'Narrative tone and mood')}
-${F(1,'pov',false,'Point of view e.g. &ldquo;Third-person limited&rdquo;')}
+${F(1,'themes',false,'Central theme(s) — string or list of strings')}
+${F(1,'pov',false,'Point of view e.g. &ldquo;Third-person limited&rdquo; — applied to every scene unless overridden per-scene')}
 ${P(0,'anti_patterns','list of strings')}
 ${V(1,'- "phrase to avoid"')}
 ${V(1,'- "another phrase"')}
@@ -3026,8 +3027,11 @@ ${F(2,'setting',true,'Location ID from locations file, or an inline description 
 ${F(2,'events',true,'What happens — the AI writes the scene prose from this')}
 ${F(2,'characters_present',false,'Auto-detected if omitted. List the character IDs to be explicit.')}
 ${V(3,'- character_id')}
-${F(2,'emotional_arc',false,'Emotional trajectory e.g. <code>Calm → dread</code>')}
+${F(2,'emotional_arc',false,'Emotional trajectory e.g. <code>Calm -&gt; dread</code>')}
 ${F(2,'pacing',false,'<code>slow-burn</code> | <code>action</code> | <code>dialogue-heavy</code> | <code>introspective</code>')}
+${F(2,'pov',false,'Per-scene POV override — overrides <code>overall_arc.pov</code> for this scene only')}
+${F(2,'mood',false,'Mood description appended to the scene prompt e.g. &ldquo;heavy dread, like before a storm&rdquo;')}
+${F(2,'mood_shift_key',false,'Activates a keyed variant from the location&rsquo;s <code>mood_shift</code> map e.g. <code>night</code> or <code>storm</code>')}
 ${F(2,'notes',false,'Authorial guidance — direct instructions to the AI for this scene')}
 </div>`
     },
@@ -3040,6 +3044,8 @@ ${F(2,'Name',true,'Display name used in prose and the UI')}
 ${F(2,'role',false,'e.g. protagonist, antagonist, supporting')}
 ${F(2,'summary',false,'Background/bio — sent to AI on first appearance only, then dropped')}
 ${F(2,'vibe',false,'How this character feels to the reader — always sent to the AI','⚡ high impact')}
+${F(2,'species',false,'Species or race — always sent when present; never allowed to drift in prose')}
+${F(2,'appearance',false,'Physical description — always sent when present; anchors the AI to consistent visuals')}
 ${F(2,'voice',false,'Speech patterns and dialogue style — always sent; strongly improves dialogue quality')}
 ${F(2,'personality',false,'Trait list — sent on first appearance only')}
 ${V(3,'- stoic')}
