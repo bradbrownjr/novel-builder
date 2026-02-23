@@ -268,7 +268,7 @@ def _load_web_config():
         "host": os.environ.get("OLLAMA_HOST", ""),
         "model": "gemma3:12b",
         "summary_model": "gemma3:1b",
-        "retries": 3,
+        "retries": 10,
         "timeout": 900,
         # TTS (Speaches / Kokoro / Piper)
         "tts_host": "",
@@ -349,7 +349,7 @@ def _start_generation(web_config):
         host=_normalize_host(web_config.get("host", "")),
         model=web_config.get("model", "gemma3:12b"),
         summary_model=web_config.get("summary_model", "gemma3:1b"),
-        retries=int(web_config.get("retries", 3)),
+        retries=int(web_config.get("retries", 10)),
         timeout=int(web_config.get("timeout", 900)),
         output=os.path.join(WORKSPACE_DIR, "full_story.md"),
         quiet=True,  # Web UI handles display
