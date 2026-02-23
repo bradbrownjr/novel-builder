@@ -941,6 +941,60 @@ def api_download():
     )
 
 
+@app.route("/api/memory")
+def api_memory():
+    """Return the full story memory from the current checkpoint."""
+    checkpoint_path = os.path.join(WORKSPACE_DIR, "checkpoint.yaml")
+    cwd_path = os.path.join(os.getcwd(), "checkpoint.yaml")
+
+    path = checkpoint_path if os.path.exists(checkpoint_path) else (
+        cwd_path if os.path.exists(cwd_path) else None
+    )
+    if path is None:
+        return jsonify({"ok": False, "error": "No checkpoint found — start generation first."})
+
+    try:
+        from .yaml_io import load_yaml_optional
+        from .state import _sanitize_story_memory
+        cp = load_yaml_optional(path)
+        if not cp:
+            return jsonify({"ok": False, "error": "Checkpoint is empty."})
+
+        memory = _sanitize_story_memory(cp.get("story_memory", {}))
+
+        # Build the response — keep it UI-friendly
+        def _items(lst):
+            return [{"scene": e.get("scene", ""), "detail": e.get("detail", "")}
+                    for e in lst if isinstance(e, dict) and e.get("detail")]
+
+        chars = memory.get("characters", {})
+        char_list = [
+            {
+                "name": v.get("name", k),
+                "description": v.get("description", ""),
+                "notes": v.get("notes", ""),
+                "introduced_scene": v.get("introduced_scene", ""),
+                "last_seen": v.get("last_seen", ""),
+            }
+            for k, v in chars.items() if isinstance(v, dict)
+        ]
+
+        return jsonify({
+            "ok": True,
+            "story_title": cp.get("story_title", ""),
+            "last_chapter": cp.get("last_completed_chapter", ""),
+            "last_scene": cp.get("last_completed_scene", ""),
+            "story_so_far": cp.get("story_so_far", ""),
+            "recent_scenes": cp.get("recent_scenes", []),
+            "actions": _items(memory.get("actions", [])),
+            "facts": _items(memory.get("facts", [])),
+            "commitments": _items(memory.get("commitments", [])),
+            "characters": char_list,
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
 @app.route("/api/delete-file/<role>", methods=["POST"])
 def api_delete_file(role):
     """Delete a single workspace file by role."""

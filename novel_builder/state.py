@@ -9,6 +9,8 @@ from .yaml_io import load_yaml_optional, save_yaml
 _CHECKPOINT_FILE = "checkpoint.yaml"
 _MAX_RECENT_SCENES = 3
 _MAX_MEMORY_CHARACTERS = 20
+_RECENT_ALWAYS_INJECT = 5  # always-inject memory from last N scenes
+_COMPRESSION_INTERVAL = 5  # compress story_so_far every N scenes
 
 
 def _sanitize_story_memory(memory):
@@ -68,6 +70,19 @@ def _sanitize_story_memory(memory):
             print(f"Warning: story_memory.commitments had {bad_count} non-dict entries — removing them.")
             commitments = [c for c in commitments if isinstance(c, dict)]
     memory["commitments"] = commitments
+
+    # actions must be a list of dicts
+    actions = memory.get("actions", [])
+    if not isinstance(actions, list):
+        print(f"Warning: story_memory.actions was {type(actions).__name__!r} "
+              f"(value: {str(actions)[:80]!r}) — discarding corrupt value.")
+        actions = []
+    else:
+        bad_count = sum(1 for a in actions if not isinstance(a, dict))
+        if bad_count:
+            print(f"Warning: story_memory.actions had {bad_count} non-dict entries — removing them.")
+            actions = [a for a in actions if isinstance(a, dict)]
+    memory["actions"] = actions
 
     return memory
 
@@ -147,6 +162,7 @@ def init_state(config, output_file):
         "story_memory": {
             "characters": {},
             "facts": [],
+            "actions": [],
             "commitments": [],
         },
     }
@@ -191,6 +207,9 @@ def update_after_scene(state, chapter_num, scene_id, summary,
 
     # Merge story memory
     _merge_story_memory(state, extraction, str(scene_id))
+
+    # Increment compression counter
+    state["_scenes_since_compress"] = state.get("_scenes_since_compress", 0) + 1
 
 
 def _merge_story_memory(state, extraction, scene_id):
@@ -246,6 +265,14 @@ def _merge_story_memory(state, extraction, scene_id):
                 "detail": fact.strip(),
             })
 
+    # Actions
+    for action in extraction.get("actions", []):
+        if action.strip():
+            memory.setdefault("actions", []).append({
+                "scene": scene_id,
+                "detail": action.strip(),
+            })
+
     # Commitments
     for commitment in extraction.get("commitments", []):
         if commitment.strip():
@@ -271,11 +298,29 @@ def get_relevant_memory(state, text_to_scan):
         Dict with 'characters', 'facts', 'commitments' relevant to scene.
     """
     memory = _sanitize_story_memory(state.get("story_memory", {}))
-    if not memory or (not memory["characters"] and not memory["facts"] and not memory["commitments"]):
-        return {"characters": {}, "facts": [], "commitments": []}
+    all_empty = (
+        not memory.get("characters")
+        and not memory.get("facts")
+        and not memory.get("actions")
+        and not memory.get("commitments")
+    )
+    if not memory or all_empty:
+        return {"characters": {}, "facts": [], "actions": [], "commitments": []}
 
     text_lower = text_to_scan.lower()
-    relevant = {"characters": {}, "facts": [], "commitments": []}
+    relevant = {"characters": {}, "facts": [], "actions": [], "commitments": []}
+
+    # Stopwords to exclude from keyword matching
+    _STOP_WORDS = {
+        "the", "a", "an", "is", "was", "and", "or", "of", "to", "in",
+        "for", "on", "it", "he", "she", "they", "with", "that", "this",
+        "her", "his", "had", "has", "have", "but", "not", "are", "were",
+    }
+    scene_words = set(text_lower.split()) - _STOP_WORDS
+
+    # Track scene IDs of recent scenes for always-inject
+    recent = state.get("recent_scenes", [])
+    recent_scene_ids = {r["scene"] for r in recent[-_RECENT_ALWAYS_INJECT:]}
 
     # Check remembered characters
     for char_id, char_data in memory["characters"].items():
@@ -284,20 +329,27 @@ def get_relevant_memory(state, text_to_scan):
                 (name and name.lower() in text_lower)):
             relevant["characters"][char_id] = char_data
 
-    # For facts and commitments, include recent ones and keyword-matched
-    for fact in memory["facts"][-10:]:  # last 10 facts
-        detail = fact.get("detail", "")
-        # Include if any word overlap with scene text
-        words = set(detail.lower().split())
-        scene_words = set(text_lower.split())
-        if words & scene_words - {"the", "a", "an", "is", "was", "and", "or"}:
+    def _match_or_recent(entry):
+        """Return True if entry keyword-matches scene text or is recent."""
+        if entry.get("scene") in recent_scene_ids:
+            return True
+        detail = entry.get("detail", "")
+        words = set(detail.lower().split()) - _STOP_WORDS
+        return bool(words & scene_words)
+
+    # Facts: keyword-matched from last 10
+    for fact in memory.get("facts", [])[-10:]:
+        if _match_or_recent(fact):
             relevant["facts"].append(fact)
 
-    for commit in memory["commitments"][-10:]:
-        detail = commit.get("detail", "")
-        words = set(detail.lower().split())
-        scene_words = set(text_lower.split())
-        if words & scene_words - {"the", "a", "an", "is", "was", "and", "or"}:
+    # Actions: always-inject recent, keyword-match older
+    for action in memory.get("actions", [])[-10:]:
+        if _match_or_recent(action):
+            relevant["actions"].append(action)
+
+    # Commitments: always-inject recent, keyword-match older
+    for commit in memory.get("commitments", [])[-10:]:
+        if _match_or_recent(commit):
             relevant["commitments"].append(commit)
 
     return relevant
@@ -340,3 +392,69 @@ def resumption_point(state, chapters):
                         return len(chapters), 0  # All done
 
     return 0, 0  # Start from beginning
+
+
+def should_compress(state):
+    """Check whether story_so_far should be compressed.
+
+    Returns True every _COMPRESSION_INTERVAL scenes and when the
+    accumulated text exceeds 1500 characters (the prompt builder's
+    truncation threshold).  The counter is stored in the checkpoint
+    so it survives restarts.
+    """
+    counter = state.get("_scenes_since_compress", 0)
+    story = state.get("story_so_far", "")
+    return counter >= _COMPRESSION_INTERVAL and len(story) > 1500
+
+
+def compress_story_so_far(state, host, summary_model):
+    """Compress story_so_far via the summary model into a tighter recap.
+
+    Replaces the raw concatenation of per-scene summaries with a
+    coherent, compressed narrative summary.  Resets the compression
+    counter on success.
+
+    Args:
+        state: Checkpoint state dict (mutated in place).
+        host: Ollama host URL.
+        summary_model: Model name for summarization.
+
+    Returns:
+        True if compression succeeded, False otherwise.
+    """
+    from .ollama_client import call_ollama
+
+    story = state.get("story_so_far", "")
+    if not story or len(story) < 800:
+        return False
+
+    system_prompt = (
+        "You are a precise literary assistant. "
+        "Compress the following story-so-far summary into a single, "
+        "coherent recap of 4-6 sentences. Preserve every character "
+        "name, key action, unresolved commitment, and plot development. "
+        "Do NOT add any information not present in the input. "
+        "Output ONLY the compressed summary — nothing else."
+    )
+
+    try:
+        compressed = call_ollama(
+            host=host,
+            model=summary_model,
+            system_prompt=system_prompt,
+            user_prompt=story,
+            timeout=300,
+        )
+        compressed = compressed.strip()
+        if compressed and len(compressed) < len(story):
+            old_len = len(story)
+            state["story_so_far"] = compressed
+            state["_scenes_since_compress"] = 0
+            print(f"    Story-so-far compressed: {old_len} → {len(compressed)} chars")
+            return True
+        else:
+            print("    Compression did not reduce size — skipping.")
+            return False
+    except Exception as e:
+        print(f"    Warning: story_so_far compression failed — {e}")
+        return False

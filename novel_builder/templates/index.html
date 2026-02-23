@@ -459,6 +459,45 @@ textarea {
   align-items: center;
 }
 .tts-toolbar .spacer { flex: 1; }
+
+/* =========================================================
+   Memory tab
+   ========================================================= */
+.mem-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.mem-item {
+  padding: .45rem .5rem;
+  border-bottom: 1px solid var(--border);
+  font-size: .84rem;
+  line-height: 1.55;
+}
+.mem-item:last-child { border-bottom: none; }
+.mem-badge {
+  display: inline-block;
+  font-size: .7rem;
+  color: var(--text-dim);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: .05rem .35rem;
+  margin-right: .45rem;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.mem-green { border-left: 3px solid var(--green); padding-left: .6rem; }
+.mem-blue  { border-left: 3px solid var(--blue);  padding-left: .6rem; }
+.mem-yellow{ border-left: 3px solid var(--yellow); padding-left: .6rem; }
+.mem-story-text {
+  font-size: .88rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  color: var(--text);
+  max-height: 260px;
+  overflow-y: auto;
+}
 </style>
 </head>
 <body>
@@ -507,6 +546,7 @@ textarea {
   <button class="tab-btn" data-tab="settings">Settings</button>
   <button class="tab-btn" data-tab="logs">Logs</button>
   <button class="tab-btn" data-tab="output">Output</button>
+  <button class="tab-btn" data-tab="memory">Memory</button>
 </div>
 </div><!-- /#top-chrome -->
 
@@ -706,6 +746,46 @@ textarea {
   <div class="log-viewer" id="log-viewer"></div>
 </div>
 
+<!-- ==================== MEMORY TAB ==================== -->
+<div class="tab-panel" id="panel-memory">
+  <div style="display:flex; gap:.5rem; margin-bottom:.75rem; align-items:center;">
+    <button class="btn btn-sm" onclick="loadMemory()">🔄 Refresh</button>
+    <span id="memory-last-updated" style="font-size:.75rem; color:var(--text-dim);"></span>
+  </div>
+
+  <div id="mem-empty" style="display:none; color:var(--text-dim); text-align:center; padding:2rem; font-size:.9rem;"></div>
+
+  <div class="card" id="mem-story-card">
+    <h3>Story So Far</h3>
+    <p class="mem-story-text" id="mem-story-text"></p>
+  </div>
+
+  <div class="card" id="mem-recent-card">
+    <h3>Recent Scenes</h3>
+    <div id="mem-recent-list"></div>
+  </div>
+
+  <div class="card" id="mem-actions-card">
+    <h3>Actions Taken</h3>
+    <ul class="mem-list" id="mem-actions-list"></ul>
+  </div>
+
+  <div class="card" id="mem-facts-card">
+    <h3>Established Facts</h3>
+    <ul class="mem-list" id="mem-facts-list"></ul>
+  </div>
+
+  <div class="card" id="mem-commitments-card">
+    <h3>Active Commitments</h3>
+    <ul class="mem-list" id="mem-commitments-list"></ul>
+  </div>
+
+  <div class="card" id="mem-chars-card">
+    <h3>Extracted Characters</h3>
+    <div id="mem-chars-list"></div>
+  </div>
+</div>
+
 <!-- ==================== EDITOR MODAL ==================== -->
 <div class="modal-overlay" id="modal-editor">
   <div class="modal" style="max-width:700px;">
@@ -753,6 +833,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'memory') loadMemory();
   });
 });
 
@@ -1410,6 +1491,10 @@ function connectSSE() {
         break;
       case 'scene_complete':
         appendSceneToOutput(event.data);
+        // Keep Memory tab current if it's open
+        if (document.querySelector('[data-tab="memory"]')?.classList.contains('active')) {
+          loadMemory();
+        }
         break;
       case 'log':
         addLogEntry(event.data);
@@ -2126,6 +2211,93 @@ function setupDropZones() {
       if (file) uploadFile(file, role);
     });
   });
+}
+
+/* ==========================================================
+   Memory tab
+   ========================================================== */
+function loadMemory() {
+  const CARDS = ['mem-story-card','mem-recent-card','mem-actions-card',
+                 'mem-facts-card','mem-commitments-card','mem-chars-card'];
+
+  fetch('/api/memory')
+    .then(r => r.json())
+    .then(data => {
+      const emptyEl = document.getElementById('mem-empty');
+      if (!data.ok) {
+        CARDS.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+        emptyEl.textContent = data.error || 'No memory available yet — start generation first.';
+        emptyEl.style.display = '';
+        return;
+      }
+      emptyEl.style.display = 'none';
+
+      // Story So Far
+      const storyCard = document.getElementById('mem-story-card');
+      if (data.story_so_far) {
+        document.getElementById('mem-story-text').textContent = data.story_so_far;
+        storyCard.style.display = '';
+      } else {
+        storyCard.style.display = 'none';
+      }
+
+      // Recent Scenes
+      _renderMemSection('mem-recent-card', 'mem-recent-list', data.recent_scenes || [], item => {
+        const badge = item.scene ? `<span class="mem-badge">Scene ${escHtml(String(item.scene))}</span>` : '';
+        return `<div class="mem-item">${badge}${escHtml(item.summary || '')}</div>`;
+      }, false);
+
+      // Actions
+      _renderMemItems('mem-actions-card', 'mem-actions-list', data.actions || [], 'green');
+
+      // Facts
+      _renderMemItems('mem-facts-card', 'mem-facts-list', data.facts || [], 'blue');
+
+      // Commitments
+      _renderMemItems('mem-commitments-card', 'mem-commitments-list', data.commitments || [], 'yellow');
+
+      // Extracted Characters
+      const charsCard = document.getElementById('mem-chars-card');
+      const charsDiv  = document.getElementById('mem-chars-list');
+      if (data.characters && data.characters.length > 0) {
+        charsDiv.innerHTML = data.characters.map(c => {
+          const parts = [c.description, c.notes].filter(Boolean).join(' \u2014 ');
+          const badge = c.introduced_scene
+            ? `<span class="mem-badge">First seen ${escHtml(String(c.introduced_scene))}</span>` : '';
+          return `<div class="mem-item"><strong>${escHtml(c.name)}</strong> ${badge}`
+               + (parts ? `<span style="color:var(--text-dim);font-size:.8rem;"> ${escHtml(parts)}</span>` : '')
+               + `</div>`;
+        }).join('');
+        charsCard.style.display = '';
+      } else {
+        charsCard.style.display = 'none';
+      }
+
+      // Progress label
+      const ts = document.getElementById('memory-last-updated');
+      ts.textContent = data.last_scene
+        ? `Through Scene ${data.last_scene}` + (data.story_title ? ` \u2014 ${data.story_title}` : '')
+        : (data.story_title || '');
+    })
+    .catch(e => console.warn('Memory load failed:', e));
+}
+
+function _renderMemItems(cardId, listId, items, colorClass) {
+  _renderMemSection(cardId, listId, items, item => {
+    const badge = item.scene ? `<span class="mem-badge">Scene ${escHtml(String(item.scene))}</span>` : '';
+    return `<li class="mem-item mem-${colorClass}">${badge}${escHtml(item.detail || '')}</li>`;
+  }, true);
+}
+
+function _renderMemSection(cardId, listId, items, renderFn, isList) {
+  const card = document.getElementById(cardId);
+  const container = document.getElementById(listId);
+  if (!items || items.length === 0) {
+    card.style.display = 'none';
+    return;
+  }
+  container.innerHTML = items.map(renderFn).join('');
+  card.style.display = '';
 }
 
 /* ==========================================================

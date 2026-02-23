@@ -436,7 +436,7 @@ def _format_story_memory(memory):
     """Format relevant story memory entries for the prompt.
 
     Args:
-        memory: Dict with 'characters', 'facts', 'commitments'.
+        memory: Dict with 'characters', 'facts', 'actions', 'commitments'.
 
     Returns:
         Formatted string, or empty string if nothing relevant.
@@ -463,6 +463,15 @@ def _format_story_memory(memory):
             detail = fact.get("detail", "")
             if detail:
                 parts.append(f"  - Established fact: {detail}")
+
+    actions = memory.get("actions", [])
+    if isinstance(actions, list):
+        for action in actions[:5]:
+            if not isinstance(action, dict):
+                continue
+            detail = action.get("detail", "")
+            if detail:
+                parts.append(f"  - Action taken: {detail}")
 
     commitments = memory.get("commitments", [])
     if isinstance(commitments, list):
