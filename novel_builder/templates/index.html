@@ -3101,18 +3101,6 @@ ${V(1,'- "unbeknownst"')}
   document.getElementById('yaml-help-content').innerHTML = schema.html;
   document.getElementById('modal-yaml-help').classList.add('show');
 }
-<div style="margin-top:.8rem;font-size:.76rem;color:var(--text-dim);line-height:1.65;font-family:var(--font);">
-<strong style="color:var(--text);">Tip:</strong> Write it like you&rsquo;d brief a human editor — &ldquo;Favour sensory detail over exposition&rdquo;, &ldquo;Short punchy paragraphs for tense scenes&rdquo;, &ldquo;Never use adverbs&rdquo;. Plain prose works fine; no YAML required.
-</div>`
-    }
-  };
-
-  const schema = schemas[role];
-  if (!schema) return;
-  document.getElementById('yaml-help-title').textContent = schema.title + ' — YAML Fields';
-  document.getElementById('yaml-help-content').innerHTML = schema.html;
-  document.getElementById('modal-yaml-help').classList.add('show');
-}
 
 /* ==========================================================
    Mobile: swipe left/right between tabs
