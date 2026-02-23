@@ -922,6 +922,7 @@ textarea {
 <div class="tab-panel" id="panel-memory">
   <div style="display:flex; gap:.5rem; margin-bottom:.75rem; align-items:center;">
     <button class="btn btn-sm" onclick="loadMemory()">🔄 Refresh</button>
+    <button class="btn btn-sm" id="btn-mem-rebuild" onclick="rebuildMemories()">🔁 Rebuild from Story</button>
     <button class="btn btn-sm btn-primary" id="btn-mem-save" onclick="saveMemory()" disabled style="opacity:.4;">💾 Save</button>
     <span id="memory-last-updated" style="font-size:.75rem; color:var(--text-dim);"></span>
   </div>
@@ -1851,6 +1852,7 @@ function connectSSE() {
           toast('Generation complete!', 'ok');
         } else if (event.data.status === 'error') {
           toast('Error: ' + (event.data.message || 'Unknown'), 'error');
+          { const btn = document.getElementById('btn-mem-rebuild'); if (btn) { btn.disabled = false; btn.textContent = '🔁 Rebuild from Story'; } }
         }
         break;
       case 'scene_complete':
@@ -1865,6 +1867,13 @@ function connectSSE() {
         if (!_memoryDirty && document.querySelector('[data-tab="memory"]')?.classList.contains('active')) {
           loadMemory();
         }
+        break;
+      case 'memories_rebuilt':
+        toast(`Memory rebuilt from ${event.data.scenes_processed} scenes`, 'ok');
+        _memoryDirty = false;
+        _memoryData = null;
+        loadMemory();
+        { const btn = document.getElementById('btn-mem-rebuild'); if (btn) { btn.disabled = false; btn.textContent = '🔁 Rebuild from Story'; } }
         break;
       case 'log':
         addLogEntry(event.data);
@@ -2793,6 +2802,19 @@ function _updateMemSaveBtn() {
     btn.disabled = !_memoryDirty;
     btn.style.opacity = _memoryDirty ? '1' : '.4';
   }
+}
+
+async function rebuildMemories() {
+  if (!confirm('Re-summarise every scene in the story and rebuild all memory from scratch?\n\nThis will overwrite current facts, actions, commitments, recent scenes and story summary.\nYour edits will be lost. Continue?')) return;
+  const btn = document.getElementById('btn-mem-rebuild');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Rebuilding…'; }
+  const r = await apiPost('/api/rebuild-memories');
+  if (!r || !r.ok) {
+    toast('Rebuild failed: ' + (r?.error || 'unknown error'), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '🔁 Rebuild from Story'; }
+  }
+  // On success, the SSE memories_rebuilt event reloads the tab automatically
+  // Button is re-enabled when status returns to idle (handled via status_change)
 }
 
 async function saveMemory() {

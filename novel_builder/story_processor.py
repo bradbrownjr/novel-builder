@@ -677,3 +677,128 @@ def regenerate_chapter(config, args, chapter_num, event_callback=None):
             return {"ok": False, "error": f"Scene {sc_id} failed: {result.get('error', '')}", "scenes": results}
 
     return {"ok": True, "scenes": results}
+
+
+def rebuild_memories(config, args, event_callback=None):
+    """Rebuild story memory from scratch by re-running the summary model
+    over every scene in the existing output file.
+
+    This is useful when:
+    - The summary model was poorly calibrated and produced bad extractions
+    - The user wants to correct accumulated errors quickly
+    - The checkpoint memory is out of sync with the actual story text
+
+    The function reads the .md output file, extracts each scene via its
+    HTML-comment markers, re-summarises with the improved prompt, and
+    rebuilds story_so_far / recent_scenes / facts / actions / commitments /
+    characters from the ground up.  Character appearances and generation
+    progress (last_completed_*) are preserved.
+
+    Args:
+        config: Story configuration dict.
+        args: SimpleNamespace with host, summary_model, checkpoint_path, output.
+        event_callback: Optional callable(type, data) for SSE progress.
+
+    Returns:
+        Dict with 'ok', 'scenes_processed' count, optional 'error'.
+    """
+    def emit(etype, **kw):
+        if event_callback:
+            event_callback(etype, kw)
+
+    output_file = getattr(args, "output", None)
+    checkpoint_path = getattr(args, "checkpoint_path", None)
+
+    if not output_file or not os.path.exists(output_file):
+        return {"ok": False, "error": "Output file not found — generate the story first."}
+    if not checkpoint_path or not os.path.exists(checkpoint_path):
+        return {"ok": False, "error": "Checkpoint not found — generate the story first."}
+
+    from .state import load_checkpoint, save_checkpoint, _sanitize_story_memory, compress_story_so_far
+    from .characters import load_characters
+    from .ollama_client import call_summary_model, OllamaError
+
+    state = load_checkpoint(checkpoint_path)
+
+    # Extract all (scene_id, text) pairs from the output file in order
+    with open(output_file, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    scene_pattern = _re.compile(
+        r'<!--\s*scene:([\w.]+)\s*-->\n(.*?)<!--\s*/scene:[\w.]+\s*-->',
+        _re.DOTALL,
+    )
+    scenes_in_file = [(m.group(1), m.group(2).strip()) for m in scene_pattern.finditer(content)]
+
+    if not scenes_in_file:
+        return {"ok": False, "error": "No scene markers found in output file. Re-generate to add markers."}
+
+    emit("log", message=f"Rebuilding memory from {len(scenes_in_file)} scenes…", level="info")
+
+    # Load characters for scene_meta building
+    all_characters = {}
+    try:
+        all_characters = load_characters(config)
+    except Exception:
+        pass
+
+    # Reset only memory-related fields — preserve generation progress/appearances
+    state["story_so_far"] = ""
+    state["recent_scenes"] = []
+    state["story_memory"] = {
+        "characters": {},
+        "facts": [],
+        "actions": [],
+        "commitments": [],
+    }
+    state["_scenes_since_compress"] = 0
+
+    processed = 0
+    for scene_id, scene_text in scenes_in_file:
+        _, scene_dict, ch_num = _find_scene_in_config(config, scene_id)
+
+        # Build scene_meta for grounding
+        scene_meta = {"scene_id": scene_id, "title": "", "characters": []}
+        if scene_dict:
+            scene_meta["title"] = scene_dict.get("title", "")
+            for cid in (scene_dict.get("characters") or []):
+                cdata = all_characters.get(cid, {})
+                scene_meta["characters"].append(cdata.get("Name") or cid)
+
+        present_char_ids = (scene_dict.get("characters") or []) if scene_dict else []
+        chapter_num = ch_num or 0
+
+        emit("log", message=f"  Summarising scene {scene_id}…", level="info")
+        emit("model_active", model="summarization", name=getattr(args, "summary_model", "gemma3:1b"))
+
+        try:
+            summary, extraction = call_summary_model(
+                args.host, args.summary_model, scene_text,
+                scene_meta=scene_meta,
+            )
+        except OllamaError as e:
+            emit("log", message=f"  Scene {scene_id} summary failed: {e}", level="warn")
+            summary = scene_text[:200].rsplit(" ", 1)[0] + "..."
+            extraction = {"characters": [], "facts": [], "actions": [], "commitments": []}
+        finally:
+            emit("model_active", model="idle", name="")
+
+        from .state import update_after_scene
+        update_after_scene(state, chapter_num, scene_id, summary, extraction, present_char_ids)
+        processed += 1
+
+    # Compress story_so_far if it's long
+    try:
+        emit("log", message="Compressing story summary…", level="info")
+        emit("model_active", model="summarization", name=getattr(args, "summary_model", "gemma3:1b"))
+        compress_story_so_far(state, args.host, args.summary_model)
+        emit("model_active", model="idle", name="")
+    except Exception as e:
+        emit("log", message=f"Compression skipped: {e}", level="warn")
+        emit("model_active", model="idle", name="")
+
+    save_checkpoint(state, checkpoint_path)
+    emit("log", message=f"Memory rebuilt from {processed} scenes.", level="info")
+    emit("memories_rebuilt", scenes_processed=processed)
+
+    return {"ok": True, "scenes_processed": processed}
