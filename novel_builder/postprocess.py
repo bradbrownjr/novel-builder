@@ -49,7 +49,17 @@ def clean_scene_text(text):
     text = re.sub(r"\n{3,}", "\n\n", text)
 
     # Remove bare divider lines (---, ==, etc.) — no scene dividers in book-like output
-    text = re.sub(r"^\s*(?:---|===|-{3,}|={3,})\s*$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*(?:---+|===+|\*\*\*+)\s*$", "", text, flags=re.MULTILINE)
+
+    # Remove ALL LLM-generated scene/chapter markdown headers from anywhere in the text.
+    # We write our own headers — any the model adds are noise.
+    # Matches: ## Chapter 3, ## Chapter 3: Title, ### Scene 1.1, ### Scene 1.1: Title, etc.
+    text = re.sub(
+        r"^#{1,6}\s*(?:Scene|Chapter|Part|Act|Section)\b.*$\n*",
+        "",
+        text,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
 
     # Remove trailing spaces on lines
     text = re.sub(r" +\n", "\n", text)
