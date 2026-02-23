@@ -800,6 +800,37 @@ def api_start():
     """Start story generation."""
     data = request.get_json(force=True) if request.is_json else {}
     resume = data.get("resume", False)
+    force = data.get("force", False)
+
+    # Guard: if starting fresh (not resuming) and not force-confirmed,
+    # check whether a checkpoint + output with real content already exists.
+    # If so, require explicit confirmation before overwriting.
+    if not resume and not force:
+        checkpoint_path = os.path.join(WORKSPACE_DIR, "checkpoint.yaml")
+        output_path = os.path.join(WORKSPACE_DIR, "full_story.md")
+        if os.path.exists(checkpoint_path):
+            try:
+                from .yaml_io import load_yaml_optional
+                cp = load_yaml_optional(checkpoint_path)
+                last_ch = cp.get("last_completed_chapter", 0) if cp else 0
+                if cp and last_ch:
+                    output_size = os.path.getsize(output_path) if os.path.exists(output_path) else 0
+                    if output_size > 200:  # More than just the title header
+                        last_sc = cp.get("last_completed_scene", "?")
+                        title = cp.get("story_title", "this story")
+                        return jsonify({
+                            "ok": False,
+                            "needs_confirm": True,
+                            "message": (
+                                f'"{title}" has progress through Chapter {last_ch}, '
+                                f'Scene {last_sc}. Starting fresh will permanently '
+                                f'overwrite the output file and reset the checkpoint.'
+                            ),
+                            "last_chapter": last_ch,
+                            "last_scene": last_sc,
+                        }), 409
+            except Exception:
+                pass  # If checkpoint is unreadable, allow fresh start
 
     cfg = _load_web_config()
     cfg["resume"] = resume
