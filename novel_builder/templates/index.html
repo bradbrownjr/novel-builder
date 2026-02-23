@@ -1126,15 +1126,21 @@ function renderValidation(results) {
 /* ==========================================================
    Generation control
    ========================================================== */
-async function startGeneration(resume) {
+async function startGeneration(resume, force = false) {
   // Save config first
   await saveConfig();
-  const r = await apiPost('/api/start', { resume });
+  const r = await apiPost('/api/start', { resume, force });
   if (r && r.ok) {
     toast('Generation started', 'ok');
     updateUIForStatus('running');
     // Switch to logs tab
     document.querySelector('[data-tab="logs"]').click();
+  } else if (r && r.needs_confirm) {
+    showConfirm(
+      'Overwrite existing output?',
+      r.message,
+      () => startGeneration(false, true)
+    );
   } else {
     toast(r?.message || r?.error || 'Start failed', 'error');
   }
