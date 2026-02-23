@@ -37,7 +37,7 @@ novel_builder/
 ├── config.py             # load_config(), discover_yaml_files()
 ├── ollama_client.py      # call_ollama(), call_ollama_with_retry()
 ├── prompt_builder.py     # build_system_prompt(), build_scene_prompt(), build_summary_prompt()
-├── state.py              # load_checkpoint(), save_checkpoint(), should_resume()
+├── state.py              # load_checkpoint(), save_checkpoint(), should_resume(), should_compress(), compress_story_so_far()
 ├── story_processor.py    # generate_story(), process_chapter(), process_scene()
 ├── characters.py         # load_characters(), filter_for_scene(), auto_detect_characters(), get_evolution_context()
 ├── locations.py          # load_locations(), resolve_location()
@@ -54,9 +54,6 @@ _(Update this tree when functions are added, renamed, or moved.)_
 
 - Catch phrases are injected indiscriminately into every scene prompt, causing overuse in output. → Fix: Phase 2.3 (frequency gating)
 - Full character bios are sent every scene, inhibiting character growth and adding unnecessary tokens. → Fix: Phase 2.2 (tiered context)
-- No retry logic on Ollama timeout — generation stops and progress is lost. → Fix: Phase 1.1
-- No checkpoint/resume capability — must restart from chapter 1 on failure. → Fix: Phase 1.2
-- `story_so_far` is a raw concatenation of chapter summaries, not a token-efficient AI-generated summary. → Fix: Phase 2.1
 - Scene/location models are mixed into character YAML — need separation or clear structure. → Fix: Phase 4.1
 
 ## Character Context Strategy
@@ -79,3 +76,9 @@ _(Update this tree when functions are added, renamed, or moved.)_
 ## Resolved Issues
 
 _(Track fixes here for reference.)_
+
+- Retry logic on Ollama timeout — 5 retries with 3m/5m/15m/30m/60m backoff (Phase 1.1).
+- Checkpoint/resume — generation can be paused and resumed from last completed scene (Phase 1.2).
+- `story_so_far` rolling compression — every 5 scenes, the summary model compresses the accumulated text to stay within token budget (Phase 2.1).
+- Story memory now extracts ACTIONS (who did what) alongside facts/commitments for continuity tracking.
+- Recent memory items (actions, commitments, facts from last 5 scenes) are always injected into prompts regardless of keyword matching.

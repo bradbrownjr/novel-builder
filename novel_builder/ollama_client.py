@@ -159,13 +159,17 @@ def call_summary_model(host, model, text, timeout=300):
         "SUMMARY: <2-3 sentence summary>\n"
         "NEW_CHARACTERS: <Full Name: brief description> or NONE\n"
         "NEW_FACTS: <one new world/story fact> or NONE\n"
+        "ACTIONS: <Character did what — concrete action or decision> or NONE\n"
         "COMMITMENTS: <one promise or obligation> or NONE\n\n"
         "Example output:\n"
         "SUMMARY: Morty apologized to Rick for breaking the portal gun. "
         "Rick reluctantly accepted but demanded Morty help with repairs.\n"
         "NEW_CHARACTERS: NONE\n"
         "NEW_FACTS: The portal gun requires dark matter to function.\n"
+        "ACTIONS: Morty broke the portal gun. Rick agreed to let Morty help repair it.\n"
         "COMMITMENTS: Morty will help Rick repair the portal gun tomorrow.\n\n"
+        "ACTIONS are concrete things characters DID — who performed what action, "
+        "who set up what, who gave what to whom. These prevent continuity errors.\n\n"
         "Only list genuinely NEW information not already established. "
         "Start your response with SUMMARY: — nothing else."
     )
@@ -188,8 +192,8 @@ def call_summary_model(host, model, text, timeout=300):
             f"{base_user_prompt}\n\n"
             "IMPORTANT: Your previous response did not follow the required "
             "format. You MUST begin your response with 'SUMMARY:' followed "
-            "by the summary text, then NEW_CHARACTERS:, NEW_FACTS:, and "
-            "COMMITMENTS: on separate lines."
+            "by the summary text, then NEW_CHARACTERS:, NEW_FACTS:, "
+            "ACTIONS:, and COMMITMENTS: on separate lines."
         )
 
     # Both attempts produced no summary — return what we have
@@ -209,6 +213,7 @@ def _parse_summary_response(text):
     extraction = {
         "characters": [],
         "facts": [],
+        "actions": [],
         "commitments": [],
     }
 
@@ -234,6 +239,11 @@ def _parse_summary_response(text):
             if content.upper() != "NONE" and content:
                 extraction["facts"].append(content)
             current_section = "facts"
+        elif upper.startswith("ACTIONS:"):
+            content = line[len("ACTIONS:"):].strip()
+            if content.upper() != "NONE" and content:
+                extraction["actions"].append(content)
+            current_section = "actions"
         elif upper.startswith("COMMITMENTS:"):
             content = line[len("COMMITMENTS:"):].strip()
             if content.upper() != "NONE" and content:

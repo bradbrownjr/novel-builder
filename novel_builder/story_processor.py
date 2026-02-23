@@ -23,6 +23,8 @@ from .state import (
     should_resume,
     update_after_scene,
     resumption_point,
+    should_compress,
+    compress_story_so_far,
 )
 
 
@@ -258,7 +260,7 @@ def _run_generation(config, args, event_callback=None):
 
             # Summarize scene
             summary = ""
-            extraction = {"characters": [], "facts": [], "commitments": []}
+            extraction = {"characters": [], "facts": [], "actions": [], "commitments": []}
             emit("model_active", model="summarization", name=getattr(args, 'summary_model', 'gemma3:1b'))
             try:
                 summary_model = args.summary_model
@@ -292,6 +294,15 @@ def _run_generation(config, args, event_callback=None):
             # Save checkpoint after every scene
             save_checkpoint(state, checkpoint_path)
             scenes_completed += 1
+
+            # Compress story_so_far periodically to stay within token budget
+            if should_compress(state):
+                try:
+                    compress_story_so_far(state, args.host, args.summary_model)
+                    save_checkpoint(state, checkpoint_path)
+                except Exception as e:
+                    emit("log", message=f"Compression skipped: {e}", level="warn")
+
             pct = int(100 * scenes_completed / all_scene_count) if all_scene_count else 0
             emit("scene_complete", scene_num=str(scene_num), title=scene_title,
                  text=text, summary=summary, chars=len(text))
