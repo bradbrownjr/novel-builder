@@ -634,6 +634,15 @@ def api_new_story():
 
     state.reset()
 
+    # Clear character voice assignments — they belong to the story, not the server
+    try:
+        cfg = _load_web_config()
+        if cfg.get("tts_voice_map"):
+            cfg["tts_voice_map"] = {}
+            _save_web_config(cfg)
+    except Exception:
+        pass
+
     return jsonify({"ok": True, "removed": removed})
 
 

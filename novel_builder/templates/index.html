@@ -1472,6 +1472,14 @@ function confirmNewStory() {
         document.getElementById('vresults-cross').innerHTML = '';
         document.getElementById('output-viewer').innerHTML = '(No output yet — workspace cleared)';
         document.getElementById('log-viewer').innerHTML = '';
+        // Clear TTS character voice map — voices belong to the story
+        const vme = document.getElementById('tts-voice-map-entries');
+        const vmw = document.getElementById('tts-voice-map');
+        if (vme) vme.innerHTML = '';
+        if (vmw) vmw.style.display = 'none';
+        // Clear in-memory TTS voice map
+        tts.voiceMap = {};
+        tts.yamlVoiceMap = {};
         updateUIForStatus('idle');
       } else {
         toast(r?.error || 'Reset failed', 'error');
