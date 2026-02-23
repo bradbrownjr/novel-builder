@@ -319,6 +319,74 @@ textarea {
   max-height: 70vh;
   overflow-y: auto;
 }
+.scene-header {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .3rem .6rem;
+  margin: .5rem 0 .25rem 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: .78rem;
+  white-space: normal;
+}
+.scene-header .scene-label {
+  font-weight: 600;
+  color: var(--accent);
+}
+.scene-header .scene-title {
+  color: var(--text-dim);
+  flex: 1;
+}
+.scene-header .btn-regen {
+  padding: .15rem .45rem;
+  font-size: .7rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.scene-header .btn-regen:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.chapter-header {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .4rem .6rem;
+  margin: 1rem 0 .25rem 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: .82rem;
+  white-space: normal;
+}
+.chapter-header .chapter-label {
+  font-weight: 700;
+  color: var(--text);
+  flex: 1;
+}
+.chapter-header .btn-regen {
+  padding: .15rem .45rem;
+  font-size: .7rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.chapter-header .btn-regen:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
 
 /* =========================================================
    Log viewer
@@ -497,6 +565,46 @@ textarea {
   color: var(--text);
   max-height: 260px;
   overflow-y: auto;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: .3rem;
+  transition: border-color .2s;
+}
+.mem-story-text:focus {
+  border-color: var(--accent);
+  outline: none;
+  background: var(--bg-input);
+}
+.mem-detail {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: .1rem .3rem;
+  transition: border-color .2s;
+}
+.mem-detail:focus {
+  border-color: var(--accent);
+  outline: none;
+  background: var(--bg-input);
+}
+.mem-item {
+  display: flex;
+  align-items: baseline;
+  gap: .4rem;
+  flex-wrap: wrap;
+}
+.mem-action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: .75rem;
+  padding: .1rem .25rem;
+  opacity: .4;
+  transition: opacity .15s;
+}
+.mem-action-btn:hover {
+  opacity: 1;
 }
 </style>
 </head>
@@ -545,8 +653,8 @@ textarea {
   <button class="tab-btn active" data-tab="story">Story</button>
   <button class="tab-btn" data-tab="settings">Settings</button>
   <button class="tab-btn" data-tab="logs">Logs</button>
-  <button class="tab-btn" data-tab="output">Output</button>
   <button class="tab-btn" data-tab="memory">Memory</button>
+  <button class="tab-btn" data-tab="output">Output</button>
 </div>
 </div><!-- /#top-chrome -->
 
@@ -750,6 +858,7 @@ textarea {
 <div class="tab-panel" id="panel-memory">
   <div style="display:flex; gap:.5rem; margin-bottom:.75rem; align-items:center;">
     <button class="btn btn-sm" onclick="loadMemory()">🔄 Refresh</button>
+    <button class="btn btn-sm btn-primary" id="btn-mem-save" onclick="saveMemory()" disabled style="opacity:.4;">💾 Save</button>
     <span id="memory-last-updated" style="font-size:.75rem; color:var(--text-dim);"></span>
   </div>
 
@@ -1382,6 +1491,49 @@ function updateProgress(p) {
 }
 
 /* ==========================================================
+   Regeneration
+   ========================================================== */
+async function regenerateScene(sceneId) {
+  if (!confirm(`Regenerate Scene ${sceneId}? The old text will be saved to Logs.`)) return;
+  toast(`Regenerating Scene ${sceneId}…`, 'warn');
+  const r = await api('/api/regenerate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scene_id: sceneId }),
+  });
+  if (!r?.ok) toast('Regen failed: ' + (r?.error || 'unknown'), 'error');
+}
+
+async function regenerateChapter(chapterNum) {
+  if (!confirm(`Regenerate ALL scenes in Chapter ${chapterNum}? Old text will be saved to Logs.`)) return;
+  toast(`Regenerating Chapter ${chapterNum}…`, 'warn');
+  const r = await api('/api/regenerate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chapter: chapterNum }),
+  });
+  if (!r?.ok) toast('Regen failed: ' + (r?.error || 'unknown'), 'error');
+}
+
+function _handleSceneRegenerated(data) {
+  const sceneId = data.scene_id || '';
+  const viewer = document.getElementById('output-viewer');
+  const block = viewer.querySelector(`.scene-block[data-scene-id="${sceneId}"]`);
+  if (block) {
+    block.textContent = '\n' + (data.text || '') + '\n\n';
+    block.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Flash effect
+    block.style.transition = 'background .5s';
+    block.style.background = 'rgba(78,202,163,.15)';
+    setTimeout(() => { block.style.background = ''; }, 2000);
+  } else {
+    // Markers missing — full refresh
+    refreshOutput();
+  }
+  toast(`Scene ${sceneId} regenerated`, 'ok');
+}
+
+/* ==========================================================
    Logs
    ========================================================== */
 function addLogEntry(entry) {
@@ -1405,12 +1557,23 @@ function appendSceneToOutput(data) {
   // Clear placeholder text on first real scene
   if (!viewer.querySelector('.scene-block')) viewer.innerHTML = '';
 
+  const sceneId = data.scene_num || '';
+  const title = data.title || '';
+
+  // Scene header bar with ID and regenerate button
+  const hdr = document.createElement('div');
+  hdr.className = 'scene-header';
+  hdr.innerHTML = `<span class="scene-label">Scene ${escHtml(String(sceneId))}</span>`
+    + (title ? `<span class="scene-title">${escHtml(title)}</span>` : '<span class="scene-title"></span>')
+    + `<button class="btn-regen" onclick="regenerateScene('${escHtml(String(sceneId))}')" title="Regenerate this scene">🔄 Regen</button>`;
+  viewer.appendChild(hdr);
+
   const idx = viewer.querySelectorAll('.scene-block').length;
-  const heading = `### Scene ${data.scene_num}${data.title ? ': ' + data.title : ''}\n\n`;
   const block = document.createElement('div');
   block.className = 'scene-block';
   block.dataset.sceneIdx = String(idx);
-  block.textContent = '\n' + heading + data.text + '\n\n---\n\n';
+  block.dataset.sceneId = String(sceneId);
+  block.textContent = '\n' + data.text + '\n\n';
   viewer.appendChild(block);
 
   if (document.getElementById('chk-autoscroll').checked) {
@@ -1429,18 +1592,87 @@ function renderScenes(text) {
     viewer.innerHTML = '(No output yet — start generation to see scenes here.)';
     return;
   }
-  // Split on chapter AND scene headers so DOM blocks == tts.scenes indices
-  const SCENE_SPLIT = /(?=\n#{2,3} (?:Chapter|Scene) |^#{2,3} (?:Chapter|Scene) )/m;
-  const parts = text.split(SCENE_SPLIT)
-    .map(p => p.trim()).filter(p => p.length > 0);
   viewer.innerHTML = '';
-  parts.forEach((p, i) => {
+
+  // Parse scene and chapter markers
+  const lines = text.split('\n');
+  let currentSceneId = null;
+  let currentSceneTitle = '';
+  let currentChapter = null;
+  let chapterTitle = '';
+  let buf = [];
+  let blockIdx = 0;
+
+  function flushScene() {
+    const raw = buf.join('\n').trim();
+    if (!raw) { buf = []; return; }
+
+    // Extract title from ### heading if present
+    let displayTitle = currentSceneTitle;
+    let bodyText = raw;
+    const hMatch = raw.match(/^###\s+(.+)/);
+    if (hMatch) {
+      displayTitle = hMatch[1];
+      bodyText = raw.replace(/^###\s+.+\n*/, '').trim();
+    }
+
+    if (currentSceneId) {
+      const hdr = document.createElement('div');
+      hdr.className = 'scene-header';
+      hdr.innerHTML = `<span class="scene-label">Scene ${escHtml(String(currentSceneId))}</span>`
+        + (displayTitle ? `<span class="scene-title">${escHtml(displayTitle)}</span>` : '<span class="scene-title"></span>')
+        + `<button class="btn-regen" onclick="regenerateScene('${escHtml(String(currentSceneId))}')" title="Regenerate this scene">🔄 Regen</button>`;
+      viewer.appendChild(hdr);
+    }
+
     const block = document.createElement('div');
     block.className = 'scene-block';
-    block.dataset.sceneIdx = String(i);
-    block.textContent = '\n' + p + '\n\n';
+    block.dataset.sceneIdx = String(blockIdx);
+    if (currentSceneId) block.dataset.sceneId = String(currentSceneId);
+    block.textContent = '\n' + bodyText + '\n\n';
     viewer.appendChild(block);
-  });
+    blockIdx++;
+    buf = [];
+  }
+
+  for (const line of lines) {
+    // Chapter marker: <!-- chapter:N -->
+    const chM = line.match(/^<!--\s*chapter:(\d+)\s*-->/);
+    if (chM) {
+      flushScene();
+      currentChapter = chM[1];
+      continue;
+    }
+    // Chapter heading: ## Chapter N: Title
+    const chH = line.match(/^##\s+Chapter\s+(\d+):\s+(.+)/);
+    if (chH) {
+      chapterTitle = `Chapter ${chH[1]}: ${chH[2]}`;
+      const chHdr = document.createElement('div');
+      chHdr.className = 'chapter-header';
+      chHdr.innerHTML = `<span class="chapter-label">${escHtml(chapterTitle)}</span>`
+        + `<button class="btn-regen" onclick="regenerateChapter(${parseInt(chH[1], 10)})" title="Regenerate entire chapter">🔄 Regen Chapter</button>`;
+      viewer.appendChild(chHdr);
+      continue;
+    }
+    // Scene open marker: <!-- scene:X.Y -->
+    const soM = line.match(/^<!--\s*scene:([\w.]+)\s*-->/);
+    if (soM) {
+      flushScene();
+      currentSceneId = soM[1];
+      currentSceneTitle = '';
+      continue;
+    }
+    // Scene close marker: <!-- /scene:X.Y -->
+    if (line.match(/^<!--\s*\/scene:[\w.]+\s*-->/)) {
+      flushScene();
+      currentSceneId = null;
+      currentSceneTitle = '';
+      continue;
+    }
+    buf.push(line);
+  }
+  // Flush any trailing content (legacy files without markers)
+  flushScene();
 }
 
 function getOutputText() {
@@ -1492,6 +1724,12 @@ function connectSSE() {
       case 'scene_complete':
         appendSceneToOutput(event.data);
         // Keep Memory tab current if it's open
+        if (document.querySelector('[data-tab="memory"]')?.classList.contains('active')) {
+          loadMemory();
+        }
+        break;
+      case 'scene_regenerated':
+        _handleSceneRegenerated(event.data);
         if (document.querySelector('[data-tab="memory"]')?.classList.contains('active')) {
           loadMemory();
         }
@@ -2214,8 +2452,11 @@ function setupDropZones() {
 }
 
 /* ==========================================================
-   Memory tab
+   Memory tab — editable + add items
    ========================================================== */
+let _memoryData = null;  // cached from last load
+let _memoryDirty = false;
+
 function loadMemory() {
   const CARDS = ['mem-story-card','mem-recent-card','mem-actions-card',
                  'mem-facts-card','mem-commitments-card','mem-chars-card'];
@@ -2228,76 +2469,193 @@ function loadMemory() {
         CARDS.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
         emptyEl.textContent = data.error || 'No memory available yet — start generation first.';
         emptyEl.style.display = '';
+        _memoryData = null;
+        _updateMemSaveBtn();
         return;
       }
       emptyEl.style.display = 'none';
-
-      // Story So Far
-      const storyCard = document.getElementById('mem-story-card');
-      if (data.story_so_far) {
-        document.getElementById('mem-story-text').textContent = data.story_so_far;
-        storyCard.style.display = '';
-      } else {
-        storyCard.style.display = 'none';
-      }
-
-      // Recent Scenes
-      _renderMemSection('mem-recent-card', 'mem-recent-list', data.recent_scenes || [], item => {
-        const badge = item.scene ? `<span class="mem-badge">Scene ${escHtml(String(item.scene))}</span>` : '';
-        return `<div class="mem-item">${badge}${escHtml(item.summary || '')}</div>`;
-      }, false);
-
-      // Actions
-      _renderMemItems('mem-actions-card', 'mem-actions-list', data.actions || [], 'green');
-
-      // Facts
-      _renderMemItems('mem-facts-card', 'mem-facts-list', data.facts || [], 'blue');
-
-      // Commitments
-      _renderMemItems('mem-commitments-card', 'mem-commitments-list', data.commitments || [], 'yellow');
-
-      // Extracted Characters
-      const charsCard = document.getElementById('mem-chars-card');
-      const charsDiv  = document.getElementById('mem-chars-list');
-      if (data.characters && data.characters.length > 0) {
-        charsDiv.innerHTML = data.characters.map(c => {
-          const parts = [c.description, c.notes].filter(Boolean).join(' \u2014 ');
-          const badge = c.introduced_scene
-            ? `<span class="mem-badge">First seen ${escHtml(String(c.introduced_scene))}</span>` : '';
-          return `<div class="mem-item"><strong>${escHtml(c.name)}</strong> ${badge}`
-               + (parts ? `<span style="color:var(--text-dim);font-size:.8rem;"> ${escHtml(parts)}</span>` : '')
-               + `</div>`;
-        }).join('');
-        charsCard.style.display = '';
-      } else {
-        charsCard.style.display = 'none';
-      }
-
-      // Progress label
-      const ts = document.getElementById('memory-last-updated');
-      ts.textContent = data.last_scene
-        ? `Through Scene ${data.last_scene}` + (data.story_title ? ` \u2014 ${data.story_title}` : '')
-        : (data.story_title || '');
+      _memoryData = data;
+      _memoryDirty = false;
+      _renderMemoryUI(data);
+      _updateMemSaveBtn();
     })
     .catch(e => console.warn('Memory load failed:', e));
 }
 
-function _renderMemItems(cardId, listId, items, colorClass) {
-  _renderMemSection(cardId, listId, items, item => {
+function _renderMemoryUI(data) {
+  // Story So Far (click to edit textarea)
+  const storyCard = document.getElementById('mem-story-card');
+  const storyEl = document.getElementById('mem-story-text');
+  if (data.story_so_far) {
+    storyEl.textContent = data.story_so_far;
+    storyEl.contentEditable = 'true';
+    storyEl.style.cursor = 'text';
+    storyEl.oninput = () => { _memoryData.story_so_far = storyEl.textContent; _markMemDirty(); };
+    storyCard.style.display = '';
+  } else {
+    storyCard.style.display = 'none';
+  }
+
+  // Recent Scenes (read-only — auto-generated)
+  _renderReadOnlyList('mem-recent-card', 'mem-recent-list', data.recent_scenes || [], item => {
     const badge = item.scene ? `<span class="mem-badge">Scene ${escHtml(String(item.scene))}</span>` : '';
-    return `<li class="mem-item mem-${colorClass}">${badge}${escHtml(item.detail || '')}</li>`;
-  }, true);
+    return `<div class="mem-item">${badge}${escHtml(item.summary || '')}</div>`;
+  });
+
+  // Editable list sections
+  _renderEditableList('mem-actions-card', 'mem-actions-list', data.actions || [], 'actions', 'green');
+  _renderEditableList('mem-facts-card', 'mem-facts-list', data.facts || [], 'facts', 'blue');
+  _renderEditableList('mem-commitments-card', 'mem-commitments-list', data.commitments || [], 'commitments', 'yellow');
+
+  // Editable characters
+  _renderEditableChars(data.characters || []);
+
+  // Progress label
+  const ts = document.getElementById('memory-last-updated');
+  ts.textContent = data.last_scene
+    ? `Through Scene ${data.last_scene}` + (data.story_title ? ` — ${data.story_title}` : '')
+    : (data.story_title || '');
 }
 
-function _renderMemSection(cardId, listId, items, renderFn, isList) {
+function _renderReadOnlyList(cardId, listId, items, renderFn) {
   const card = document.getElementById(cardId);
   const container = document.getElementById(listId);
-  if (!items || items.length === 0) {
-    card.style.display = 'none';
-    return;
-  }
+  if (!items || items.length === 0) { card.style.display = 'none'; return; }
   container.innerHTML = items.map(renderFn).join('');
   card.style.display = '';
+}
+
+function _renderEditableList(cardId, listId, items, key, colorClass) {
+  const card = document.getElementById(cardId);
+  const container = document.getElementById(listId);
+  card.style.display = '';
+
+  let html = items.map((item, i) => {
+    const badge = item.scene ? `<span class="mem-badge">Scene ${escHtml(String(item.scene))}</span>` : '';
+    return `<li class="mem-item mem-${colorClass}" data-key="${key}" data-idx="${i}">`
+      + badge
+      + `<span class="mem-detail" contenteditable="true" `
+      + `oninput="_onMemItemEdit('${key}', ${i}, this)">${escHtml(item.detail || '')}</span>`
+      + `<button class="mem-action-btn" onclick="_deleteMemItem('${key}', ${i})" title="Delete">🗑</button>`
+      + `</li>`;
+  }).join('');
+
+  // Add-new row
+  html += `<li class="mem-item" style="opacity:.7;">`
+    + `<button class="mem-action-btn" onclick="_addMemItem('${key}')" title="Add new" style="margin-right:.3rem;">＋</button>`
+    + `<span style="font-size:.78rem; color:var(--text-dim);">Add new ${key.slice(0, -1)}…</span></li>`;
+
+  container.innerHTML = html;
+}
+
+function _renderEditableChars(chars) {
+  const card = document.getElementById('mem-chars-card');
+  const container = document.getElementById('mem-chars-list');
+  card.style.display = '';
+
+  if (chars.length === 0) {
+    container.innerHTML = '<div style="font-size:.82rem;color:var(--text-dim);padding:.3rem;">No extracted characters yet.</div>';
+  } else {
+    container.innerHTML = chars.map((c, i) => {
+      const badge = c.introduced_scene
+        ? `<span class="mem-badge">First seen ${escHtml(String(c.introduced_scene))}</span>` : '';
+      return `<div class="mem-item">`
+        + `<strong contenteditable="true" oninput="_onCharEdit(${i},'name',this)">${escHtml(c.name)}</strong> ${badge}`
+        + `<span class="mem-detail" contenteditable="true" style="font-size:.8rem;color:var(--text-dim);" `
+        + `oninput="_onCharEdit(${i},'notes',this)">${escHtml([c.description, c.notes].filter(Boolean).join(' — ') || 'click to add notes')}</span>`
+        + `<button class="mem-action-btn" onclick="_deleteChar(${i})" title="Delete">🗑</button>`
+        + `</div>`;
+    }).join('');
+  }
+
+  // Add character
+  container.innerHTML += `<div class="mem-item" style="opacity:.7;">`
+    + `<button class="mem-action-btn" onclick="_addChar()" title="Add character" style="margin-right:.3rem;">＋</button>`
+    + `<span style="font-size:.78rem; color:var(--text-dim);">Add new character…</span></div>`;
+}
+
+/* --- Item-level mutations --- */
+function _onMemItemEdit(key, idx, el) {
+  if (!_memoryData) return;
+  _memoryData[key][idx].detail = el.textContent;
+  _markMemDirty();
+}
+
+function _deleteMemItem(key, idx) {
+  if (!_memoryData) return;
+  _memoryData[key].splice(idx, 1);
+  _markMemDirty();
+  _renderMemoryUI(_memoryData);
+}
+
+function _addMemItem(key) {
+  if (!_memoryData) return;
+  if (!_memoryData[key]) _memoryData[key] = [];
+  _memoryData[key].push({ scene: '', detail: '' });
+  _markMemDirty();
+  _renderMemoryUI(_memoryData);
+  // Focus the new item's contenteditable
+  const list = document.getElementById(`mem-${key}-list`);
+  const items = list.querySelectorAll('.mem-detail[contenteditable]');
+  if (items.length) items[items.length - 1].focus();
+}
+
+function _onCharEdit(idx, field, el) {
+  if (!_memoryData || !_memoryData.characters[idx]) return;
+  if (field === 'notes') {
+    _memoryData.characters[idx].notes = el.textContent;
+  } else {
+    _memoryData.characters[idx][field] = el.textContent;
+  }
+  _markMemDirty();
+}
+
+function _deleteChar(idx) {
+  if (!_memoryData) return;
+  _memoryData.characters.splice(idx, 1);
+  _markMemDirty();
+  _renderMemoryUI(_memoryData);
+}
+
+function _addChar() {
+  if (!_memoryData) return;
+  if (!_memoryData.characters) _memoryData.characters = [];
+  _memoryData.characters.push({ name: 'New Character', description: '', notes: '', introduced_scene: '', last_seen: '' });
+  _markMemDirty();
+  _renderMemoryUI(_memoryData);
+}
+
+/* --- Save / dirty tracking --- */
+function _markMemDirty() {
+  _memoryDirty = true;
+  _updateMemSaveBtn();
+}
+
+function _updateMemSaveBtn() {
+  const btn = document.getElementById('btn-mem-save');
+  if (btn) {
+    btn.disabled = !_memoryDirty;
+    btn.style.opacity = _memoryDirty ? '1' : '.4';
+  }
+}
+
+async function saveMemory() {
+  if (!_memoryData) return;
+  const body = {
+    story_so_far: _memoryData.story_so_far,
+    facts: _memoryData.facts,
+    actions: _memoryData.actions,
+    commitments: _memoryData.commitments,
+    characters: _memoryData.characters,
+  };
+  const r = await api('/api/memory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (r && r.ok) {
+    toast('Memory saved', 'ok');
+    _memoryDirty = false;
+    _updateMemSaveBtn();
+  } else {
+    toast('Save failed: ' + (r?.error || 'unknown error'), 'error');
+  }
 }
 
 /* ==========================================================
