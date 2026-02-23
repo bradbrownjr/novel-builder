@@ -706,59 +706,60 @@ textarea {
 }
 
 /* =========================================================
-   YAML Schema Help Modal content
+   YAML Schema Help Modal — tree view
    ========================================================= */
-.yaml-field-list {
+.yaml-tree {
+  font-family: var(--mono);
+  font-size: .8rem;
   display: flex;
   flex-direction: column;
-  gap: .28rem;
+  gap: 0;
 }
-.yaml-field-item {
-  display: grid;
-  grid-template-columns: auto auto 1fr;
-  gap: .25rem .45rem;
+/* row */
+.yr {
+  display: flex;
   align-items: baseline;
-  padding: .28rem .4rem;
-  border-radius: calc(var(--radius) - 2px);
-  background: var(--bg-input);
+  gap: 0;
+  padding: .19rem 0;
+  line-height: 1.35;
 }
-.yaml-field-name {
-  font-family: var(--mono);
-  font-size: .76rem;
-  color: var(--blue);
-  white-space: nowrap;
-}
-.yaml-field-req {
-  font-size: .63rem;
-  padding: .05rem .28rem;
-  border-radius: 3px;
-  white-space: nowrap;
-  font-weight: 600;
-}
-.yaml-field-req.req { background: rgba(233,69,96,0.18); color: var(--red); }
-.yaml-field-req.opt { background: var(--bg); color: var(--text-dim); border: 1px solid var(--border); }
-.yaml-field-desc {
+.yr:hover { background: rgba(255,255,255,0.03); border-radius: 3px; }
+/* indent levels */
+.yi0 { padding-left: 0; }
+.yi1 { padding-left: 1.6em; }
+.yi2 { padding-left: 3.2em; }
+.yi3 { padding-left: 4.8em; }
+/* dash prefix for list items */
+.ydash { color: var(--text-dim); flex-shrink: 0; }
+/* key */
+.yk      { color: var(--blue);  flex-shrink: 0; }
+.yk.ypar { color: var(--text);  font-weight: 600; }
+/* comment part: "  # required — desc" */
+.ycom {
   color: var(--text-dim);
-  font-size: .77rem;
-  line-height: 1.4;
+  font-size: .75rem;
+  margin-left: .6ch;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
-.yaml-field-desc strong { color: var(--text); }
-.yaml-field-desc code {
+.ycom .yreq {
+  color: var(--red);
+  font-weight: 700;
+  font-style: normal;
+}
+.ycom .yhint {
+  /* optional hint words e.g. "high impact" */
+  color: var(--yellow);
+  font-style: italic;
+}
+/* inline code inside comments */
+.ycom code {
   font-family: var(--mono);
-  font-size: .72rem;
+  font-size: .73rem;
   background: var(--bg);
-  padding: .05rem .25rem;
+  padding: .02rem .22rem;
   border-radius: 3px;
   color: var(--blue);
-}
-.yaml-help-section {
-  font-size: .7rem;
-  text-transform: uppercase;
-  letter-spacing: .07em;
-  color: var(--accent);
-  margin: .6rem 0 .2rem 0;
-  font-weight: 700;
-  padding-left: .2rem;
 }
 </style>
 </head>
@@ -2969,88 +2970,117 @@ async function saveMemory() {
    YAML Schema Help Modal
    ========================================================== */
 function showYamlHelp(role) {
-  const F = (name, req, desc) =>
-    `<div class="yaml-field-item"><span class="yaml-field-name">${name}</span><span class="yaml-field-req ${req ? 'req' : 'opt'}">${req ? 'required' : 'optional'}</span><span class="yaml-field-desc">${desc}</span></div>`;
-  const S = label => `<div class="yaml-help-section">${label}</div>`;
+  // P  = parent/container key (no annotation)
+  // F  = field with annotation
+  // params: indent(0-3), key, required(bool), desc, isList(bool)
+  // hint = optional yellow-highlighted word inserted before " — desc"
+  const P = (i, key, isList=false) =>
+    `<div class="yr yi${i}">${isList?'<span class="ydash">- </span>':''}<span class="yk ypar">${key}:</span></div>`;
+
+  const F = (i, key, req, desc, isList=false, hint='') => {
+    const pre  = isList ? '<span class="ydash">- </span>' : (i > 0 ? '' : '');
+    const badge = req ? '<em class="yreq">required</em>' : '<em style="color:var(--text-dim);font-style:normal;">optional</em>';
+    const hintHtml = hint ? ` <span class="yhint">${hint}</span> —` : ' —';
+    return `<div class="yr yi${i}">${pre}<span class="yk">${key}:</span><span class="ycom">  # ${badge}${hintHtml} ${desc}</span></div>`;
+  };
+
+  // A plain YAML value line (e.g. list value placeholder, no annotation)
+  const V = (i, text) =>
+    `<div class="yr yi${i}"><span style="color:var(--text-dim);">${text}</span></div>`;
 
   const schemas = {
     outline: {
       title: '📘 Story Outline',
-      html: `<div class="yaml-field-list">
-        ${F('story_title', true, 'Title of the story')}
-        ${F('world', false, 'Global setting context — era, genre rules, tech level. Included in every scene prompt.')}
-        ${F('style_directives', false, 'Global prose style instructions for the AI (tone, POV, voice)')}
-        ${F('pov_character', false, 'Full name of the first-person narrator — used for TTS &ldquo;I said&rdquo; attribution')}
-        ${F('overall_arc.theme', false, 'Central theme(s) of the story')}
-        ${F('overall_arc.tone', false, 'Narrative tone/mood')}
-        ${F('overall_arc.pov', false, 'Point of view e.g. &ldquo;Third-person limited&rdquo;')}
-        ${F('anti_patterns', false, 'List of AI clichés/phrases to suppress — adds to built-in defaults')}
-        ${S('narrative_hooks (story-level plot beats)')}
-        ${F('narrative_hooks[].hook', true, 'Description of the plot beat')}
-        ${F('narrative_hooks[].chapters', false, '[start, end] active chapter range. Omit for always-available hooks.')}
-        ${S('chapters')}
-        ${F('chapters[].chapter_number', true, 'Chapter number (integer)')}
-        ${F('chapters[].title', true, 'Chapter heading displayed in the output')}
-        ${F('chapters[].summary', true, 'Brief description of the chapter arc')}
-        ${F('chapters[].style_override', false, 'Per-chapter prose style tweaks')}
-        ${S('scenes (within each chapter)')}
-        ${F('scenes[].scene_number', true, 'Scene identifier e.g. <code>1.1</code>, <code>1.2</code>')}
-        ${F('scenes[].setting', true, 'Location ID from locations file, or inline description string')}
-        ${F('scenes[].events', true, 'What happens — the AI writes the scene from this')}
-        ${F('scenes[].characters_present', false, 'List of character IDs. Auto-detected from events/notes if omitted.')}
-        ${F('scenes[].emotional_arc', false, 'Emotional trajectory e.g. <code>Calm → dread</code>')}
-        ${F('scenes[].pacing', false, '<code>slow-burn</code> | <code>action</code> | <code>dialogue-heavy</code> | <code>introspective</code>')}
-        ${F('scenes[].notes', false, 'Authorial guidance — direct instructions to the AI for this scene')}
-      </div>`
+      html: `<div class="yaml-tree">
+${F(0,'story_title',true,'Title of the story')}
+${F(0,'world',false,'Global setting context — era, genre rules, tech level. Included in every scene prompt.')}
+${F(0,'style_directives',false,'Global prose style instructions for the AI (tone, POV, voice)')}
+${F(0,'pov_character',false,'First-person narrator name — used for TTS &ldquo;I said&rdquo; attribution')}
+${P(0,'overall_arc')}
+${F(1,'theme',false,'Central theme(s) of the story')}
+${F(1,'tone',false,'Narrative tone and mood')}
+${F(1,'pov',false,'Point of view e.g. &ldquo;Third-person limited&rdquo;')}
+${F(0,'anti_patterns',false,'List of AI clichés/phrases to suppress — adds to built-in defaults')}
+${V(1,'- "phrase to avoid"')}
+${P(0,'narrative_hooks')}
+${F(1,'hook',true,'Description of the plot beat',true)}
+${F(1,'chapters',false,'<code>[start, end]</code> active chapter range. Omit = always available.',false)}
+${P(0,'chapters')}
+${F(1,'chapter_number',true,'Chapter number (integer)',true)}
+${F(1,'title',true,'Chapter heading displayed in the output',false)}
+${F(1,'summary',true,'Brief description of the chapter arc',false)}
+${F(1,'style_override',false,'Per-chapter prose style tweaks',false)}
+${P(1,'scenes',false)}
+${F(2,'scene_number',true,'Scene identifier e.g. <code>1.1</code>, <code>1.2</code>',true)}
+${F(2,'setting',true,'Location ID from locations file, or an inline description string',false)}
+${F(2,'events',true,'What happens — the AI writes the scene prose from this',false)}
+${F(2,'characters_present',false,'List of character IDs. Auto-detected from events/notes if omitted.',false)}
+${V(3,'- character_id')}
+${F(2,'emotional_arc',false,'Emotional trajectory e.g. <code>Calm → dread</code>',false)}
+${F(2,'pacing',false,'<code>slow-burn</code> | <code>action</code> | <code>dialogue-heavy</code> | <code>introspective</code>',false)}
+${F(2,'notes',false,'Authorial guidance — direct instructions to the AI for this scene',false)}
+</div>`
     },
     characters: {
       title: '👤 Characters',
-      html: `<p style="font-size:.78rem;color:var(--text-dim);margin-bottom:.6rem;">Top-level key: <code style="font-family:var(--mono);font-size:.74rem;color:var(--blue);">characters:</code>. Each entry uses the character&rsquo;s ID as the YAML key.</p>
-      <div class="yaml-field-list">
-        ${F('Name', true, 'Display name used in output and the UI')}
-        ${F('role', false, 'Character role — e.g. protagonist, antagonist, supporting')}
-        ${F('summary', false, 'Background/bio. Sent to AI on first appearance only, then dropped.')}
-        ${F('vibe', false, '<strong>High impact.</strong> Tonal anchor for how this character feels to the reader. Always sent to the AI.')}
-        ${F('voice', false, 'Speech patterns and dialogue style. Always sent — strongly improves dialogue quality.')}
-        ${F('personality', false, 'List of personality traits. Sent on first appearance only.')}
-        ${F('habit', false, 'Recurring behavioral quirk — always sent when present')}
-        ${F('catchphrase', false, 'Signature phrase. Probability-gated — not injected every scene.')}
-        ${F('catchphrase_frequency', false, '<code>rare</code> (1/8) | <code>occasional</code> (1/4) | <code>frequent</code> (1/2). Default: <code>occasional</code>')}
-        ${F('catchphrases', false, 'Multi-phrase format: list of <code>{phrase, frequency}</code> objects')}
-        ${F('secret', false, 'Hidden info — only included when scene notes reference tension or subtext')}
-        ${F('relationships', false, 'Map of <code>character_id: description</code>. Sent when both characters are in the scene.')}
-        ${F('evolution', false, 'List of <code>{after_chapter, note}</code> — character growth over time')}
-        ${F('heritage', false, 'Heritage ID or list of IDs — group traits merged on first appearance')}
-        ${S('heritage (shared group traits — optional section)')}
-        ${F('heritage.*.label', false, 'Display name for the group')}
-        ${F('heritage.*.traits', false, 'Physical/behavioral traits common to this group')}
-        ${F('heritage.*.speech_patterns', false, 'How members of this group typically speak')}
-        ${F('heritage.*.cultural_notes', false, 'Customs, rituals, social norms')}
-      </div>`
+      html: `<div style="font-size:.75rem;color:var(--text-dim);margin-bottom:.55rem;font-family:var(--font);">Each character uses a snake_case ID as its YAML key under <code style="font-family:var(--mono);color:var(--blue);">characters:</code></div>
+<div class="yaml-tree">
+${P(0,'characters')}
+${P(1,'your_character_id',true)}
+${F(2,'Name',true,'Display name used in the output')}
+${F(2,'role',false,'e.g. protagonist, antagonist, supporting')}
+${F(2,'summary',false,'Background/bio — sent to AI on first appearance only, then dropped')}
+${F(2,'vibe',false,'How this character feels to the reader — always sent to the AI','','high impact')}
+${F(2,'voice',false,'Speech patterns and dialogue style — always sent; strongly improves dialogue quality')}
+${F(2,'personality',false,'Trait list — sent on first appearance only')}
+${V(3,'- stoic')}
+${F(2,'habit',false,'Recurring behavioral quirk — always sent when present')}
+${F(2,'catchphrase',false,'Signature phrase — probability-gated, not injected every scene')}
+${F(2,'catchphrase_frequency',false,'<code>rare</code>&thinsp;(1/8) | <code>occasional</code>&thinsp;(1/4) | <code>frequent</code>&thinsp;(1/2). Default: <code>occasional</code>')}
+${F(2,'secret',false,'Hidden info — only sent when scene notes reference tension or subtext')}
+${P(2,'relationships')}
+${V(3,'other_char_id: "description"')}
+${P(2,'evolution')}
+${F(3,'after_chapter',false,'Chapter number after which this note takes effect',true)}
+${F(3,'note',false,'Character growth note included in subsequent scene prompts',false)}
+${F(2,'heritage',false,'Heritage ID or list of IDs — group traits merged into bio on first appearance')}
+</div>
+<div style="font-size:.75rem;color:var(--text-dim);margin:.7rem 0 .4rem;font-family:var(--font);">Optional: define shared group traits in a <code style="font-family:var(--mono);color:var(--blue);">heritage:</code> section</div>
+<div class="yaml-tree">
+${P(0,'heritage')}
+${P(1,'group_id',true)}
+${F(2,'label',false,'Display name for the group')}
+${F(2,'traits',false,'Physical/behavioral traits common to this group')}
+${F(2,'speech_patterns',false,'How members of this group typically speak')}
+${F(2,'cultural_notes',false,'Customs, rituals, social norms')}
+</div>`
     },
     locations: {
       title: '🗺 Locations',
-      html: `<p style="font-size:.78rem;color:var(--text-dim);margin-bottom:.6rem;">Top-level key: <code style="font-family:var(--mono);font-size:.74rem;color:var(--blue);">setting:</code> or <code style="font-family:var(--mono);font-size:.74rem;color:var(--blue);">locations:</code>. Each entry uses the location&rsquo;s ID as the YAML key (referenced in scene <code style="font-family:var(--mono);font-size:.74rem;color:var(--blue);">setting:</code> fields).</p>
-      <div class="yaml-field-list">
-        ${F('(id key)', true, 'Unique identifier used in <code>scene.setting</code> references e.g. <code>the_lighthouse</code>')}
-        ${F('name', false, 'Proper name — rendered first in the prompt so the AI uses it in prose')}
-        ${F('type', false, 'Brief classification of the place')}
-        ${F('atmosphere', false, 'Default sensory/mood description')}
-        ${F('mood_shift', false, 'Map of keyed variants e.g. <code>{night: &ldquo;…&rdquo;, storm: &ldquo;…&rdquo;}</code>')}
-        ${F('(any other keys)', false, 'Sub-areas or descriptive attributes — all included in the prompt. Schema is flexible.')}
-      </div>`
+      html: `<div style="font-size:.75rem;color:var(--text-dim);margin-bottom:.55rem;font-family:var(--font);">Top-level key: <code style="font-family:var(--mono);color:var(--blue);">setting:</code> or <code style="font-family:var(--mono);color:var(--blue);">locations:</code>. Each location&rsquo;s ID matches the <code style="font-family:var(--mono);color:var(--blue);">setting:</code> value used in scenes.</div>
+<div class="yaml-tree">
+${P(0,'setting')}
+${P(1,'location_id',true)}
+${F(2,'name',false,'Proper name — the AI will reference this in prose')}
+${F(2,'type',false,'Brief classification of the place')}
+${F(2,'atmosphere',false,'Default sensory/mood description')}
+${P(2,'mood_shift')}
+${V(3,'night: "description for nighttime"')}
+${V(3,'storm: "description during a storm"')}
+${V(2,'any_other_key: "sub-areas or details — all included in the prompt"')}
+</div>`
     },
     style: {
       title: '🎨 Custom Style Prompt',
-      html: `<p style="font-size:.78rem;color:var(--text-dim);margin-bottom:.6rem;">Free-form text or YAML. Appended to the system prompt for every scene. Supplements — does not replace — style set in <code style="font-family:var(--mono);font-size:.74rem;color:var(--blue);">story_outline.yaml</code>.</p>
-      <div class="yaml-field-list">
-        ${F('style_directives', false, 'Plain text or YAML string with prose style instructions')}
-        ${F('anti_patterns', false, 'List of phrases/patterns the AI should avoid')}
-      </div>
-      <div style="margin-top:.8rem;font-size:.78rem;color:var(--text-dim);line-height:1.6;">
-        <strong style="color:var(--text);">Tips:</strong><br>
-        Write what you&rsquo;d tell a human editor: &ldquo;Favour sensory detail over exposition&rdquo;, &ldquo;Avoid adverbs&rdquo;, &ldquo;Short paragraphs for tension&rdquo;. Plain prose instructions work well here.
-      </div>`
+      html: `<div style="font-size:.75rem;color:var(--text-dim);margin-bottom:.55rem;font-family:var(--font);">Free-form text or YAML. Appended to the system prompt for every scene — supplements, does not replace, style set in the story outline.</div>
+<div class="yaml-tree">
+${F(0,'style_directives',false,'Prose style instructions for the AI — tone, rhythm, POV, what to avoid')}
+${F(0,'anti_patterns',false,'List of phrases/patterns the AI should suppress')}
+${V(1,'- "a wave of emotion"')}
+</div>
+<div style="margin-top:.8rem;font-size:.76rem;color:var(--text-dim);line-height:1.65;font-family:var(--font);">
+<strong style="color:var(--text);">Tip:</strong> Write it like you&rsquo;d brief a human editor — &ldquo;Favour sensory detail over exposition&rdquo;, &ldquo;Short punchy paragraphs for tense scenes&rdquo;, &ldquo;Never use adverbs&rdquo;. Plain prose works fine; no YAML required.
+</div>`
     }
   };
 
