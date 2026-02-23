@@ -768,13 +768,14 @@ def api_parse_yaml():
                 if isinstance(ldata, dict):
                     loc_list.append({
                         "id": lid,
+                        "name": ldata.get("name", ""),
                         "type": ldata.get("type", ""),
                         "description": (ldata.get("description", "")[:80] + "...")
                             if len(ldata.get("description", "")) > 80
                             else ldata.get("description", ""),
                     })
                 elif isinstance(ldata, str):
-                    loc_list.append({"id": lid, "type": "", "description": ldata[:80]})
+                    loc_list.append({"id": lid, "name": "", "type": "", "description": ldata[:80]})
             result["locations"] = {"total": len(loc_list), "locations": loc_list}
         except Exception as e:
             result["locations"] = {"error": str(e)}

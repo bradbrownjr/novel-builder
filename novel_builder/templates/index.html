@@ -1057,7 +1057,7 @@ async function refreshParsed() {
       <ul>
         ${lo.locations.map(l => `
           <li>
-            <strong>${escHtml(l.id)}</strong>
+            <strong>${escHtml(l.name || l.id)}</strong>${l.name ? ` <span style="font-size:.75rem;color:var(--text-dim);">(${escHtml(l.id)})</span>` : ''}
             ${l.type ? `<span class="tag">${escHtml(l.type)}</span>` : ''}
             ${l.description ? `<span style="font-size:.75rem;color:var(--text-dim);">${escHtml(l.description)}</span>` : ''}
           </li>

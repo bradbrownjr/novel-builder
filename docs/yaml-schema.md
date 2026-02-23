@@ -351,6 +351,7 @@ Both `setting:` and `locations:` are recognized as top-level keys.
 ```yaml
 setting:
   the_lighthouse:
+    name: "The Harrow Point Lighthouse"     # Optional proper name the LLM will reference
     type: "19th-century stone lighthouse on a rocky peninsula"
     atmosphere: >
       Salt-crusted windows, the constant low vibration of the sea.
@@ -386,6 +387,7 @@ setting:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | *(key)* | string | Yes | Location ID used for scene references |
+| `name` | string | No | Proper name of the location — rendered first in the prompt so the LLM references it by name |
 | `type` | string | No | Brief classification of the place |
 | `atmosphere` | string | No | Default sensory/mood description |
 | `mood_shift` | map | No | Keyed variants (time of day, weather, story phase) |
