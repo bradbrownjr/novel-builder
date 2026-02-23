@@ -58,6 +58,10 @@ def format_location_for_prompt(location_data, mood_key=None):
 
     parts = []
 
+    # Name (proper noun the LLM should reference)
+    if location_data.get("name"):
+        parts.append(f"Location name: {location_data['name']}")
+
     # Type / classification
     if location_data.get("type"):
         parts.append(f"Location type: {location_data['type']}")
@@ -77,7 +81,7 @@ def format_location_for_prompt(location_data, mood_key=None):
             parts.append(f"Current mood: {shift}")
 
     # Any other string/list fields (sub-areas, details, etc.)
-    _skip = {"type", "description", "atmosphere", "mood_shift"}
+    _skip = {"name", "type", "description", "atmosphere", "mood_shift"}
     for key, value in location_data.items():
         if key in _skip:
             continue
