@@ -133,7 +133,7 @@ def call_ollama_with_retry(host, model, system_prompt, user_prompt,
     )
 
 
-def call_summary_model(host, model, text, timeout=300):
+def call_summary_model(host, model, text, timeout=300, scene_meta=None):
     """Call the summary model to summarize a scene and extract story memory.
 
     Uses a combined prompt that produces both a scene summary and
@@ -144,37 +144,52 @@ def call_summary_model(host, model, text, timeout=300):
         model: Summary model name (e.g., gemma3:1b).
         text: The generated scene text to summarize.
         timeout: Request timeout.
+        scene_meta: Optional dict with 'scene_id', 'title', 'characters'
+                    (list of character names in the scene).
 
     Returns:
         Tuple of (summary_text, extraction_text).
         extraction_text contains structured memory data.
     """
     system_prompt = (
-        "You are a precise literary assistant. You perform two tasks:\n"
-        "1. Summarize the scene in 2-3 concise sentences focusing on key "
-        "plot developments, emotional shifts, and character actions.\n"
-        "2. Extract any NEW persistent details established in the scene.\n\n"
-        "You MUST format your entire response exactly as shown below — "
-        "no extra text before or after:\n\n"
-        "SUMMARY: <2-3 sentence summary>\n"
-        "NEW_CHARACTERS: <Full Name: brief description> or NONE\n"
-        "NEW_FACTS: <one new world/story fact> or NONE\n"
-        "ACTIONS: <Character did what — concrete action or decision> or NONE\n"
-        "COMMITMENTS: <one promise or obligation> or NONE\n\n"
-        "Example output:\n"
-        "SUMMARY: Morty apologized to Rick for breaking the portal gun. "
-        "Rick reluctantly accepted but demanded Morty help with repairs.\n"
-        "NEW_CHARACTERS: NONE\n"
-        "NEW_FACTS: The portal gun requires dark matter to function.\n"
-        "ACTIONS: Morty broke the portal gun. Rick agreed to let Morty help repair it.\n"
-        "COMMITMENTS: Morty will help Rick repair the portal gun tomorrow.\n\n"
-        "ACTIONS are concrete things characters DID — who performed what action, "
-        "who set up what, who gave what to whom. These prevent continuity errors.\n\n"
-        "Only list genuinely NEW information not already established. "
-        "Start your response with SUMMARY: — nothing else."
+        "You are a precise literary assistant that extracts information "
+        "ONLY from what is explicitly written in the scene text.\n\n"
+        "RULES:\n"
+        "- Use ONLY character names provided in the metadata. Do NOT swap, "
+        "  confuse, or invent character names.\n"
+        "- SUMMARY must describe what actually happened — not what might happen.\n"
+        "- Extract only facts/actions/commitments that are NEW and clearly "
+        "  stated in the text. If nothing new, write NONE.\n"
+        "- Do NOT infer, speculate, or embellish. Stick to what the text says.\n"
+        "- Keep extractions brief and specific.\n\n"
+        "FORMAT (follow exactly — no extra text before or after):\n\n"
+        "SUMMARY: <2-3 sentence summary of key events>\n"
+        "NEW_CHARACTERS: <Full Name: brief role> or NONE\n"
+        "NEW_FACTS: <one fact established in this scene> or NONE\n"
+        "ACTIONS: <Character Name did what> or NONE\n"
+        "COMMITMENTS: <Character Name will/must do what> or NONE\n\n"
+        "IMPORTANT:\n"
+        "- Always attribute actions/commitments to the CORRECT character "
+        "  by name. Double-check against the character list.\n"
+        "- Omit trivial details (e.g., 'character walked across room'). "
+        "  Only extract plot-relevant facts, actions, and commitments.\n"
+        "- Start your response with SUMMARY: — nothing else."
     )
 
-    base_user_prompt = f"Analyze this scene:\n\n{text}"
+    # Build user prompt with scene metadata for grounding
+    meta_lines = []
+    if scene_meta:
+        if scene_meta.get("scene_id"):
+            meta_lines.append(f"Scene: {scene_meta['scene_id']}")
+        if scene_meta.get("title"):
+            meta_lines.append(f"Title: {scene_meta['title']}")
+        if scene_meta.get("characters"):
+            meta_lines.append(f"Characters in scene: {', '.join(scene_meta['characters'])}")
+    meta_block = "\n".join(meta_lines)
+    if meta_block:
+        base_user_prompt = f"Scene metadata:\n{meta_block}\n\nScene text:\n\n{text}"
+    else:
+        base_user_prompt = f"Analyze this scene:\n\n{text}"
     user_prompt = base_user_prompt
 
     for format_attempt in range(2):

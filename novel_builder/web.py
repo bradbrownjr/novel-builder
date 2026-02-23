@@ -1056,6 +1056,14 @@ def _save_memory(path):
 
     memory = cp.setdefault("story_memory", {})
 
+    # Recent scenes — list of {scene, summary}
+    if "recent_scenes" in body:
+        cp["recent_scenes"] = [
+            {"scene": item.get("scene", ""), "summary": item.get("summary", "")}
+            for item in body["recent_scenes"]
+            if isinstance(item, dict) and item.get("summary", "").strip()
+        ]
+
     # List-based fields
     for key in ("facts", "actions", "commitments"):
         if key in body:
