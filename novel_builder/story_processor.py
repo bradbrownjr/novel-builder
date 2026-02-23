@@ -264,8 +264,18 @@ def _run_generation(config, args, event_callback=None):
             emit("model_active", model="summarization", name=getattr(args, 'summary_model', 'gemma3:1b'))
             try:
                 summary_model = args.summary_model
+                char_names = [
+                    (all_characters.get(cid, {}).get("Name") or cid)
+                    for cid in present_ids
+                ]
+                scene_meta = {
+                    "scene_id": str(scene_num),
+                    "title": scene_title,
+                    "characters": char_names,
+                }
                 summary, extraction = call_summary_model(
                     args.host, summary_model, text,
+                    scene_meta=scene_meta,
                 )
                 print(f"    Summary: {summary[:100]}...")
             except OllamaError as e:
@@ -593,7 +603,21 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
     extraction = {"characters": [], "facts": [], "actions": [], "commitments": []}
     try:
         emit("model_active", model="summarization", name=getattr(args, 'summary_model', 'gemma3:1b'))
-        summary, extraction = call_summary_model(args.host, args.summary_model, text)
+        # Build scene meta for grounding
+        char_names = []
+        if scene_dict.get("characters"):
+            for cid in scene_dict["characters"]:
+                cdata = config.get("characters", {}).get(cid, {})
+                char_names.append(cdata.get("Name") or cid)
+        scene_meta = {
+            "scene_id": scene_id,
+            "title": scene_dict.get("title", ""),
+            "characters": char_names,
+        }
+        summary, extraction = call_summary_model(
+            args.host, args.summary_model, text,
+            scene_meta=scene_meta,
+        )
         emit("model_active", model="idle", name="")
     except Exception as e:
         emit("model_active", model="idle", name="")

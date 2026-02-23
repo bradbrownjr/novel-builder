@@ -650,13 +650,18 @@ textarea {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: .75rem;
-  padding: .1rem .25rem;
-  opacity: .4;
-  transition: opacity .15s;
+  font-size: .82rem;
+  padding: .15rem .35rem;
+  color: var(--text-dim);
+  opacity: .7;
+  transition: opacity .15s, color .15s;
 }
 .mem-action-btn:hover {
   opacity: 1;
+  color: var(--red);
+}
+.mem-action-btn.mem-add-btn:hover {
+  color: var(--green);
 }
 </style>
 </head>
@@ -930,7 +935,7 @@ textarea {
 
   <div class="card" id="mem-recent-card">
     <h3>Recent Scenes</h3>
-    <div id="mem-recent-list"></div>
+    <ul class="mem-list" id="mem-recent-list"></ul>
   </div>
 
   <div class="card" id="mem-actions-card">
@@ -2602,11 +2607,8 @@ function _renderMemoryUI(data) {
     storyCard.style.display = 'none';
   }
 
-  // Recent Scenes (read-only — auto-generated)
-  _renderReadOnlyList('mem-recent-card', 'mem-recent-list', data.recent_scenes || [], item => {
-    const badge = item.scene ? `<span class="mem-badge">Scene ${escHtml(String(item.scene))}</span>` : '';
-    return `<div class="mem-item">${badge}${escHtml(item.summary || '')}</div>`;
-  });
+  // Recent Scenes (editable summaries)
+  _renderEditableList('mem-recent-card', 'mem-recent-list', data.recent_scenes || [], 'recent_scenes', 'dim');
 
   // Editable list sections
   _renderEditableList('mem-actions-card', 'mem-actions-list', data.actions || [], 'actions', 'green');
@@ -2623,33 +2625,29 @@ function _renderMemoryUI(data) {
     : (data.story_title || '');
 }
 
-function _renderReadOnlyList(cardId, listId, items, renderFn) {
-  const card = document.getElementById(cardId);
-  const container = document.getElementById(listId);
-  if (!items || items.length === 0) { card.style.display = 'none'; return; }
-  container.innerHTML = items.map(renderFn).join('');
-  card.style.display = '';
-}
-
 function _renderEditableList(cardId, listId, items, key, colorClass) {
   const card = document.getElementById(cardId);
   const container = document.getElementById(listId);
-  card.style.display = '';
+  if (!items || items.length === 0) { card.style.display = 'none'; }
+  else { card.style.display = ''; }
+
+  // Determine which field holds the text — recent_scenes use 'summary', others use 'detail'
+  const textField = key === 'recent_scenes' ? 'summary' : 'detail';
 
   let html = items.map((item, i) => {
     const badge = item.scene ? `<span class="mem-badge">Scene ${escHtml(String(item.scene))}</span>` : '';
     return `<li class="mem-item mem-${colorClass}" data-key="${key}" data-idx="${i}">`
       + badge
-      + `<span class="mem-detail" contenteditable="true" `
-      + `oninput="_onMemItemEdit('${key}', ${i}, this)">${escHtml(item.detail || '')}</span>`
-      + `<button class="mem-action-btn" onclick="_deleteMemItem('${key}', ${i})" title="Delete">🗑</button>`
+      + `<span class="mem-detail" contenteditable="true" data-field="${textField}">${escHtml(item[textField] || '')}</span>`
+      + `<button class="mem-action-btn mem-del-btn" data-key="${key}" data-idx="${i}" title="Delete">✕</button>`
       + `</li>`;
   }).join('');
 
   // Add-new row
+  const label = key === 'recent_scenes' ? 'scene summary' : key.slice(0, -1);
   html += `<li class="mem-item" style="opacity:.7;">`
-    + `<button class="mem-action-btn" onclick="_addMemItem('${key}')" title="Add new" style="margin-right:.3rem;">＋</button>`
-    + `<span style="font-size:.78rem; color:var(--text-dim);">Add new ${key.slice(0, -1)}…</span></li>`;
+    + `<button class="mem-action-btn mem-add-btn" data-key="${key}" title="Add new" style="margin-right:.3rem;">＋</button>`
+    + `<span style="font-size:.78rem; color:var(--text-dim);">Add new ${label}…</span></li>`;
 
   container.innerHTML = html;
 }
@@ -2665,71 +2663,102 @@ function _renderEditableChars(chars) {
     container.innerHTML = chars.map((c, i) => {
       const badge = c.introduced_scene
         ? `<span class="mem-badge">First seen ${escHtml(String(c.introduced_scene))}</span>` : '';
-      return `<div class="mem-item">`
-        + `<strong contenteditable="true" oninput="_onCharEdit(${i},'name',this)">${escHtml(c.name)}</strong> ${badge}`
-        + `<span class="mem-detail" contenteditable="true" style="font-size:.8rem;color:var(--text-dim);" `
-        + `oninput="_onCharEdit(${i},'notes',this)">${escHtml([c.description, c.notes].filter(Boolean).join(' — ') || 'click to add notes')}</span>`
-        + `<button class="mem-action-btn" onclick="_deleteChar(${i})" title="Delete">🗑</button>`
+      return `<div class="mem-item" data-char-idx="${i}">`
+        + `<strong class="mem-char-name" contenteditable="true">${escHtml(c.name)}</strong> ${badge}`
+        + `<span class="mem-detail mem-char-notes" contenteditable="true" style="font-size:.8rem;color:var(--text-dim);">`
+        + `${escHtml([c.description, c.notes].filter(Boolean).join(' — ') || 'click to add notes')}</span>`
+        + `<button class="mem-action-btn mem-del-btn" data-key="characters" data-idx="${i}" title="Delete">✕</button>`
         + `</div>`;
     }).join('');
   }
 
   // Add character
   container.innerHTML += `<div class="mem-item" style="opacity:.7;">`
-    + `<button class="mem-action-btn" onclick="_addChar()" title="Add character" style="margin-right:.3rem;">＋</button>`
+    + `<button class="mem-action-btn mem-add-btn" data-key="characters" title="Add character" style="margin-right:.3rem;">＋</button>`
     + `<span style="font-size:.78rem; color:var(--text-dim);">Add new character…</span></div>`;
 }
 
-/* --- Item-level mutations --- */
-function _onMemItemEdit(key, idx, el) {
-  if (!_memoryData) return;
-  _memoryData[key][idx].detail = el.textContent;
-  _markMemDirty();
-}
+/* --- Event delegation for memory editing --- */
+(function setupMemoryDelegation() {
+  const panel = document.getElementById('panel-memory');
+  if (!panel) return;
 
-function _deleteMemItem(key, idx) {
-  if (!_memoryData) return;
-  _memoryData[key].splice(idx, 1);
-  _markMemDirty();
-  _renderMemoryUI(_memoryData);
-}
+  // Input events on contenteditable spans (bubbles)
+  panel.addEventListener('input', (e) => {
+    if (!_memoryData) return;
+    const el = e.target;
 
-function _addMemItem(key) {
-  if (!_memoryData) return;
-  if (!_memoryData[key]) _memoryData[key] = [];
-  _memoryData[key].push({ scene: '', detail: '' });
-  _markMemDirty();
-  _renderMemoryUI(_memoryData);
-  // Focus the new item's contenteditable
-  const list = document.getElementById(`mem-${key}-list`);
-  const items = list.querySelectorAll('.mem-detail[contenteditable]');
-  if (items.length) items[items.length - 1].focus();
-}
+    // Character name
+    if (el.classList.contains('mem-char-name')) {
+      const item = el.closest('[data-char-idx]');
+      if (item) { _memoryData.characters[+item.dataset.charIdx].name = el.textContent; _markMemDirty(); }
+      return;
+    }
+    // Character notes
+    if (el.classList.contains('mem-char-notes')) {
+      const item = el.closest('[data-char-idx]');
+      if (item) { _memoryData.characters[+item.dataset.charIdx].notes = el.textContent; _markMemDirty(); }
+      return;
+    }
+    // List item detail
+    if (el.classList.contains('mem-detail')) {
+      const li = el.closest('[data-key][data-idx]');
+      if (li) {
+        const key = li.dataset.key;
+        const idx = +li.dataset.idx;
+        const field = el.dataset.field || 'detail';
+        _memoryData[key][idx][field] = el.textContent;
+        _markMemDirty();
+      }
+      return;
+    }
+  });
 
-function _onCharEdit(idx, field, el) {
-  if (!_memoryData || !_memoryData.characters[idx]) return;
-  if (field === 'notes') {
-    _memoryData.characters[idx].notes = el.textContent;
-  } else {
-    _memoryData.characters[idx][field] = el.textContent;
-  }
-  _markMemDirty();
-}
+  // Click events for delete / add buttons
+  panel.addEventListener('click', (e) => {
+    if (!_memoryData) return;
+    const btn = e.target.closest('.mem-action-btn');
+    if (!btn) return;
+    const key = btn.dataset.key;
 
-function _deleteChar(idx) {
-  if (!_memoryData) return;
-  _memoryData.characters.splice(idx, 1);
-  _markMemDirty();
-  _renderMemoryUI(_memoryData);
-}
+    // Delete
+    if (btn.classList.contains('mem-del-btn') && key && btn.dataset.idx !== undefined) {
+      const idx = +btn.dataset.idx;
+      if (key === 'characters') {
+        _memoryData.characters.splice(idx, 1);
+      } else {
+        _memoryData[key].splice(idx, 1);
+      }
+      _markMemDirty();
+      _renderMemoryUI(_memoryData);
+      return;
+    }
 
-function _addChar() {
-  if (!_memoryData) return;
-  if (!_memoryData.characters) _memoryData.characters = [];
-  _memoryData.characters.push({ name: 'New Character', description: '', notes: '', introduced_scene: '', last_seen: '' });
-  _markMemDirty();
-  _renderMemoryUI(_memoryData);
-}
+    // Add
+    if (btn.classList.contains('mem-add-btn') && key) {
+      if (key === 'characters') {
+        if (!_memoryData.characters) _memoryData.characters = [];
+        _memoryData.characters.push({ name: 'New Character', description: '', notes: '', introduced_scene: '', last_seen: '' });
+        _markMemDirty();
+        _renderMemoryUI(_memoryData);
+        return;
+      }
+      if (!_memoryData[key]) _memoryData[key] = [];
+      const textField = key === 'recent_scenes' ? 'summary' : 'detail';
+      const newItem = { scene: '' };
+      newItem[textField] = '';
+      _memoryData[key].push(newItem);
+      _markMemDirty();
+      _renderMemoryUI(_memoryData);
+      // Focus new item
+      const listId = key === 'recent_scenes' ? 'mem-recent-list' : `mem-${key}-list`;
+      const list = document.getElementById(listId);
+      const spans = list.querySelectorAll('.mem-detail[contenteditable]');
+      if (spans.length) spans[spans.length - 1].focus();
+      return;
+    }
+  });
+})();
 
 /* --- Save / dirty tracking --- */
 function _markMemDirty() {
@@ -2749,6 +2778,7 @@ async function saveMemory() {
   if (!_memoryData) return;
   const body = {
     story_so_far: _memoryData.story_so_far,
+    recent_scenes: _memoryData.recent_scenes,
     facts: _memoryData.facts,
     actions: _memoryData.actions,
     commitments: _memoryData.commitments,
