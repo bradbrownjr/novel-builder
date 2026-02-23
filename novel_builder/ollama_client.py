@@ -80,7 +80,7 @@ def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
 
 
 def call_ollama_with_retry(host, model, system_prompt, user_prompt,
-                           timeout=900, retries=3, temperature=0.75,
+                           timeout=900, retries=10, temperature=0.75,
                            num_ctx=12288, emit_callback=None):
     """Call Ollama with exponential backoff retry logic.
 
@@ -102,7 +102,7 @@ def call_ollama_with_retry(host, model, system_prompt, user_prompt,
         OllamaError: If all retry attempts fail.
     """
     _emit_callback = emit_callback
-    backoff_delays = [60, 300, 900]  # 1 min, 5 min, 15 min — gives Docker time to restart
+    backoff_delays = [60, 120, 300, 300, 300, 300, 300, 300, 300]  # 1m, 2m, then 5m — survives Docker restarts
 
     last_error = None
     for attempt in range(1, retries + 1):
