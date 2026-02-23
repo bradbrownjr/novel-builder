@@ -500,82 +500,15 @@ textarea {
 
 <!-- ==================== TABS ==================== -->
 <div class="tabs">
-  <button class="tab-btn active" data-tab="setup">Setup</button>
+  <button class="tab-btn active" data-tab="story">Story</button>
+  <button class="tab-btn" data-tab="settings">Settings</button>
   <button class="tab-btn" data-tab="logs">Logs</button>
   <button class="tab-btn" data-tab="output">Output</button>
 </div>
 
 <!-- ==================== SETUP TAB ==================== -->
-<div class="tab-panel active" id="panel-setup">
-
-  <!-- Config card -->
-  <div class="card">
-    <h3>⚙ Connection & Models</h3>
-    <div class="form-row">
-      <div class="form-group">
-        <label for="cfg-host">Ollama Host URL</label>
-        <input type="url" id="cfg-host" placeholder="http://192.168.1.50:11434">
-      </div>
-      <div class="form-group">
-        <label for="cfg-model">Generation Model</label>
-        <input type="text" id="cfg-model" placeholder="gemma3:12b">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label for="cfg-summary-model">Summary Model</label>
-        <input type="text" id="cfg-summary-model" placeholder="gemma3:1b">
-      </div>
-      <div class="form-group" style="display:grid; grid-template-columns:1fr 1fr; gap:.5rem;">
-        <div>
-          <label for="cfg-retries">Retries</label>
-          <input type="number" id="cfg-retries" min="1" max="10" value="3">
-        </div>
-        <div>
-          <label for="cfg-timeout">Timeout (s)</label>
-          <input type="number" id="cfg-timeout" min="60" max="3600" value="900">
-        </div>
-      </div>
-    </div>
-    <button class="btn btn-sm" onclick="saveConfig()">Save Config</button>
-  </div>
-
-  <!-- File upload cards — one per role -->
-
-  <!-- TTS config card -->
-  <div class="card" id="card-tts">
-    <h3>🔊 Text-to-Speech</h3>
-    <div class="form-row">
-      <div class="form-group">
-        <label for="cfg-tts-host">TTS Server URL (Speaches)</label>
-        <input type="url" id="cfg-tts-host" placeholder="http://192.168.1.x:8001">
-      </div>
-      <div class="form-group">
-        <label for="cfg-tts-model">TTS Model</label>
-        <select id="cfg-tts-model" onchange="onTTSModelChange()">
-          <option value="">-- check connection first --</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-group">
-      <label for="cfg-tts-narrator-voice">Narrator Voice</label>
-      <div style="display:flex; gap:.5rem; align-items:center;">
-        <input type="text" id="cfg-tts-narrator-voice" list="tts-voices-list"
-               placeholder="e.g., af_heart" style="flex:1;">
-        <button class="btn btn-sm" onclick="testVoice('narrator')" title="Preview narrator voice">🔊 Test</button>
-      </div>
-    </div>
-    <div id="tts-voice-map" style="display:none;">
-      <label style="margin-top:.5rem;">Character Voices</label>
-      <div id="tts-voice-map-entries"></div>
-    </div>
-    <div style="display:flex; gap:.5rem; margin-top:.75rem;">
-      <button class="btn btn-sm" onclick="checkTTSHealth()">Check Connection</button>
-      <button class="btn btn-sm" onclick="saveTTSConfig()">💾 Save TTS Config</button>
-    </div>
-    <div id="tts-status" style="font-size:.78rem; margin-top:.5rem; color:var(--text-dim);"></div>
-  </div>
-  <datalist id="tts-voices-list"></datalist>
+<!-- ==================== STORY TAB ==================== -->
+<div class="tab-panel active" id="panel-story">
 
   <div class="card" id="card-outline">
     <h3>📘 Story Outline</h3>
@@ -657,6 +590,78 @@ textarea {
     <button class="btn btn-danger" id="btn-stop" onclick="stopGeneration()" style="display:none;">⏹ Stop</button>
     <button class="btn" onclick="refreshParsed()">🔄 Refresh Preview</button>
   </div>
+</div>
+
+<!-- ==================== SETTINGS TAB ==================== -->
+<div class="tab-panel" id="panel-settings">
+
+  <!-- LLM Connection & Models -->
+  <div class="card">
+    <h3>⚙ Connection & Models</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="cfg-host">Ollama Host URL</label>
+        <input type="url" id="cfg-host" placeholder="http://192.168.1.50:11434">
+      </div>
+      <div class="form-group">
+        <label for="cfg-model">Generation Model</label>
+        <input type="text" id="cfg-model" placeholder="gemma3:12b">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="cfg-summary-model">Summary Model</label>
+        <input type="text" id="cfg-summary-model" placeholder="gemma3:1b">
+      </div>
+      <div class="form-group" style="display:grid; grid-template-columns:1fr 1fr; gap:.5rem;">
+        <div>
+          <label for="cfg-retries">Retries</label>
+          <input type="number" id="cfg-retries" min="1" max="10" value="3">
+        </div>
+        <div>
+          <label for="cfg-timeout">Timeout (s)</label>
+          <input type="number" id="cfg-timeout" min="60" max="3600" value="900">
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-sm" onclick="saveConfig()">Save Config</button>
+  </div>
+
+  <!-- TTS config card -->
+  <div class="card" id="card-tts">
+    <h3>🔊 Text-to-Speech</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="cfg-tts-host">TTS Server URL (Speaches)</label>
+        <input type="url" id="cfg-tts-host" placeholder="http://192.168.1.x:8001">
+      </div>
+      <div class="form-group">
+        <label for="cfg-tts-model">TTS Model</label>
+        <select id="cfg-tts-model" onchange="onTTSModelChange()">
+          <option value="">-- check connection first --</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label for="cfg-tts-narrator-voice">Narrator Voice</label>
+      <div style="display:flex; gap:.5rem; align-items:center;">
+        <input type="text" id="cfg-tts-narrator-voice" list="tts-voices-list"
+               placeholder="e.g., af_heart" style="flex:1;">
+        <button class="btn btn-sm" onclick="testVoice('narrator')" title="Preview narrator voice">🔊 Test</button>
+      </div>
+    </div>
+    <div id="tts-voice-map" style="display:none;">
+      <label style="margin-top:.5rem;">Character Voices</label>
+      <div id="tts-voice-map-entries"></div>
+    </div>
+    <div style="display:flex; gap:.5rem; margin-top:.75rem;">
+      <button class="btn btn-sm" onclick="checkTTSHealth()">Check Connection</button>
+      <button class="btn btn-sm" onclick="saveTTSConfig()">💾 Save TTS Config</button>
+    </div>
+    <div id="tts-status" style="font-size:.78rem; margin-top:.5rem; color:var(--text-dim);"></div>
+  </div>
+  <datalist id="tts-voices-list"></datalist>
+
 </div>
 
 <!-- ==================== OUTPUT TAB ==================== -->
@@ -1163,8 +1168,20 @@ function confirmNewStory() {
       const r = await apiPost('/api/new-story');
       if (r && r.ok) {
         toast(`Workspace cleared (${r.removed.length} files removed)`, 'ok');
-        refreshFiles();
-        refreshParsed();
+        // Explicitly reset all file cards and summaries so old data doesn't linger
+        ['outline', 'characters', 'locations', 'style'].forEach(role => {
+          const fstat = document.getElementById('fstat-' + role);
+          const factions = document.getElementById('factions-' + role);
+          const summary = document.getElementById('summary-' + role);
+          const vresults = document.getElementById('vresults-' + role);
+          if (fstat) { fstat.className = 'file-status empty'; fstat.textContent = 'No file loaded'; }
+          if (factions) factions.style.display = 'none';
+          if (summary) summary.innerHTML = '';
+          if (vresults) vresults.innerHTML = '';
+        });
+        document.getElementById('card-loaded').style.display = 'none';
+        document.getElementById('loaded-overview').innerHTML = '';
+        document.getElementById('vresults-cross').innerHTML = '';
         document.getElementById('output-viewer').innerHTML = '(No output yet — workspace cleared)';
         document.getElementById('log-viewer').innerHTML = '';
         updateUIForStatus('idle');
@@ -1686,8 +1703,8 @@ async function playAllScenes() {
   tts.voiceMap = cfg.tts_voice_map || {};
 
   if (!tts.model || !tts.narratorVoice) {
-    toast('Configure TTS model and narrator voice in the Setup tab first', 'warn');
-    document.querySelector('[data-tab="setup"]').click();
+    toast('Configure TTS model and narrator voice in the Settings tab first', 'warn');
+    document.querySelector('[data-tab="settings"]').click();
     return;
   }
 
@@ -1752,8 +1769,8 @@ async function downloadAudiobook() {
   tts.voiceMap = cfg.tts_voice_map || {};
 
   if (!tts.host || !tts.model || !tts.narratorVoice) {
-    toast('Configure TTS host, model and narrator voice in the Setup tab first', 'warn');
-    document.querySelector('[data-tab="setup"]').click();
+    toast('Configure TTS host, model and narrator voice in the Settings tab first', 'warn');
+    document.querySelector('[data-tab="settings"]').click();
     return;
   }
 
