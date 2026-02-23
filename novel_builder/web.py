@@ -856,6 +856,88 @@ def api_stop():
     return jsonify({"ok": True, "message": "Stop requested"})
 
 
+@app.route("/api/regenerate", methods=["POST"])
+def api_regenerate():
+    """Regenerate a scene or chapter.
+
+    JSON body: { "scene_id": "2.3" } or { "chapter": 3 }
+    Runs synchronously in a background thread and streams progress via SSE.
+    """
+    _lazy_imports()
+
+    if state.status == "running":
+        return jsonify({"ok": False, "error": "Generation is currently running — stop it first."}), 409
+
+    body = request.get_json(force=True) or {}
+    scene_id = body.get("scene_id")
+    chapter_num = body.get("chapter")
+
+    if not scene_id and chapter_num is None:
+        return jsonify({"ok": False, "error": "Provide scene_id or chapter"}), 400
+
+    web_config = _load_web_config()
+
+    # Build args the same way _start_generation does
+    args = SimpleNamespace(
+        host=_normalize_host(web_config.get("host", "")),
+        model=web_config.get("model", "gemma3:12b"),
+        summary_model=web_config.get("summary_model", "gemma3:1b"),
+        retries=int(web_config.get("retries", 5)),
+        timeout=int(web_config.get("timeout", 900)),
+        output=os.path.join(WORKSPACE_DIR, "full_story.md"),
+        checkpoint_path=os.path.join(WORKSPACE_DIR, "checkpoint.yaml"),
+    )
+
+    # Load config
+    try:
+        config = _config_loader(args)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Config load failed: {e}"}), 500
+
+    # Inject custom style if present
+    style_path = os.path.join(WORKSPACE_DIR, FILE_ROLES.get("style", "style.yaml"))
+    if os.path.exists(style_path):
+        try:
+            with open(style_path, "r", encoding="utf-8") as f:
+                custom_style = f.read().strip()
+            if custom_style:
+                existing = config.get("style_directives", "")
+                config["style_directives"] = f"{existing}\n{custom_style}".strip()
+        except OSError:
+            pass
+
+    from .story_processor import regenerate_scene as _regen_scene
+    from .story_processor import regenerate_chapter as _regen_chapter
+
+    state.status = "running"
+    state.emit("status_change", {"status": "running"})
+    state.emit("log", {"message": f"Regenerating {'Chapter ' + str(chapter_num) if chapter_num else 'Scene ' + str(scene_id)}…", "level": "info"})
+
+    def worker():
+        try:
+            if chapter_num is not None:
+                result = _regen_chapter(config, args, chapter_num, event_callback=_event_callback)
+            else:
+                result = _regen_scene(config, args, scene_id, event_callback=_event_callback)
+
+            if result.get("ok"):
+                state.emit("log", {"message": "Regeneration complete", "level": "info"})
+                state.emit("status_change", {"status": "idle"})
+            else:
+                state.emit("log", {"message": f"Regeneration failed: {result.get('error', '')}", "level": "error"})
+                state.emit("status_change", {"status": "error", "message": result.get("error", "")})
+        except Exception as e:
+            state.emit("log", {"message": f"Regeneration error: {e}", "level": "error"})
+            state.emit("status_change", {"status": "error", "message": str(e)})
+        finally:
+            state.status = "idle"
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+
+    return jsonify({"ok": True, "message": "Regeneration started"})
+
+
 @app.route("/api/ollama-health")
 def api_ollama_health():
     """Ping the Ollama server to check connectivity and list models."""
@@ -928,28 +1010,99 @@ def api_output():
 
 @app.route("/api/download")
 def api_download():
-    """Download the output .md file."""
+    """Download the output .md file with scene/chapter markers stripped."""
+    import re
+    from io import BytesIO
     output_path = os.path.join(WORKSPACE_DIR, "full_story.md")
     if not os.path.exists(output_path):
         return jsonify({"ok": False, "error": "No output file yet"}), 404
 
+    with open(output_path, "r", encoding="utf-8") as f:
+        raw = f.read()
+
+    # Strip HTML comment markers (scene/chapter) for clean book output
+    cleaned = re.sub(r'<!--\s*/?(?:scene|chapter):[^\n]*-->\n?', '', raw)
+    # Collapse excessive blank lines left behind
+    cleaned = re.sub(r'\n{4,}', '\n\n\n', cleaned)
+
+    buf = BytesIO(cleaned.encode("utf-8"))
     return send_file(
-        output_path,
+        buf,
         mimetype="text/markdown",
         as_attachment=True,
         download_name="novel_output.md",
     )
 
 
-@app.route("/api/memory")
+def _save_memory(path):
+    """Write edited memory fields back to checkpoint.yaml.
+
+    Expects JSON body with optional keys: story_so_far, facts, actions,
+    commitments, characters.  Each list item is {scene, detail}.
+    Characters is [{name, description, notes, ...}].
+    """
+    if path is None:
+        _ensure_workspace()
+        path = os.path.join(WORKSPACE_DIR, "checkpoint.yaml")
+
+    from .yaml_io import load_yaml_optional, save_yaml
+    cp = load_yaml_optional(path) or {}
+
+    body = request.get_json(force=True) or {}
+
+    # Story so far — simple string overwrite
+    if "story_so_far" in body:
+        cp["story_so_far"] = body["story_so_far"]
+
+    memory = cp.setdefault("story_memory", {})
+
+    # List-based fields
+    for key in ("facts", "actions", "commitments"):
+        if key in body:
+            memory[key] = [
+                {"scene": item.get("scene", ""), "detail": item.get("detail", "")}
+                for item in body[key]
+                if isinstance(item, dict) and item.get("detail", "").strip()
+            ]
+
+    # Characters — keyed by derived ID
+    if "characters" in body:
+        char_dict = {}
+        for c in body["characters"]:
+            if not isinstance(c, dict):
+                continue
+            name = c.get("name", "").strip()
+            if not name:
+                continue
+            char_id = name.lower().replace(" ", "_").replace("'", "")
+            char_dict[char_id] = {
+                "name": name,
+                "description": c.get("description", ""),
+                "notes": c.get("notes", ""),
+                "introduced_scene": c.get("introduced_scene", ""),
+                "last_seen": c.get("last_seen", ""),
+            }
+        memory["characters"] = char_dict
+
+    cp["story_memory"] = memory
+    save_yaml(path, cp)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/memory", methods=["GET", "POST"])
 def api_memory():
-    """Return the full story memory from the current checkpoint."""
+    """GET: return full story memory.  POST: save edits back to checkpoint."""
     checkpoint_path = os.path.join(WORKSPACE_DIR, "checkpoint.yaml")
     cwd_path = os.path.join(os.getcwd(), "checkpoint.yaml")
 
     path = checkpoint_path if os.path.exists(checkpoint_path) else (
         cwd_path if os.path.exists(cwd_path) else None
     )
+
+    if request.method == "POST":
+        return _save_memory(path)
+
+    # --- GET ---
     if path is None:
         return jsonify({"ok": False, "error": "No checkpoint found — start generation first."})
 

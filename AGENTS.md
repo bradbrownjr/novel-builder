@@ -38,13 +38,13 @@ novel_builder/
 ├── ollama_client.py      # call_ollama(), call_ollama_with_retry()
 ├── prompt_builder.py     # build_system_prompt(), build_scene_prompt(), build_summary_prompt()
 ├── state.py              # load_checkpoint(), save_checkpoint(), should_resume(), should_compress(), compress_story_so_far()
-├── story_processor.py    # generate_story(), process_chapter(), process_scene()
+├── story_processor.py    # generate_story(), process_chapter(), process_scene(), regenerate_scene(), regenerate_chapter()
 ├── characters.py         # load_characters(), filter_for_scene(), auto_detect_characters(), get_evolution_context()
 ├── locations.py          # load_locations(), resolve_location()
 ├── yaml_io.py            # load_yaml(), save_yaml()
 ├── postprocess.py        # clean_scene_text(), apply_anti_patterns()
 ├── tts.py                # segment_text_for_tts(), _find_speaker(), _name_matches_attribution()
-├── web.py                # Flask web UI, TTS proxy routes (/api/tts/health, /api/tts/voices, /api/tts/speak, /api/tts/segments)
+├── web.py                # Flask web UI, TTS proxy, /api/memory (GET+POST), /api/regenerate, /api/download (marker-stripped)
 └── validator.py          # validate_all()
 ```
 
@@ -82,3 +82,35 @@ _(Track fixes here for reference.)_
 - `story_so_far` rolling compression — every 5 scenes, the summary model compresses the accumulated text to stay within token budget (Phase 2.1).
 - Story memory now extracts ACTIONS (who did what) alongside facts/commitments for continuity tracking.
 - Recent memory items (actions, commitments, facts from last 5 scenes) are always injected into prompts regardless of keyword matching.
+- Editable Memory tab — users can edit, add, and delete story memory items (facts, actions, commitments, characters) and save back to checkpoint.
+- Scene/chapter regeneration — users can regenerate individual scenes or entire chapters from the Output tab. Old text is logged before replacement.
+- Scene markers (`<!-- scene:X.Y -->` / `<!-- /scene:X.Y -->`, `<!-- chapter:N -->`) embedded in .md output for regeneration targeting. Stripped from downloads.
+
+## Scene Marker Format
+
+Output `.md` files contain HTML comment markers for scene identification:
+
+```
+<!-- chapter:1 -->
+## Chapter 1 — Title
+
+<!-- scene:1.1 -->
+Scene text here...
+<!-- /scene:1.1 -->
+
+<!-- scene:1.2 -->
+Scene text here...
+<!-- /scene:1.2 -->
+```
+
+- Markers are invisible in rendered Markdown.
+- `/api/download` strips all markers and collapses excess blank lines for a clean book file.
+- `renderScenes()` in the UI parses these markers to create per-scene blocks with Regen buttons.
+
+## Regeneration Workflow
+
+1. User clicks 🔄 Regen on a scene or chapter in the Output tab.
+2. `POST /api/regenerate` starts a background thread.
+3. For each scene: build prompt (with current memory/edits) → LLM call → postprocess → replace in file → log old text → re-summarize → merge extraction → save checkpoint.
+4. SSE event `scene_regenerated` updates the UI live (replaces scene text, flashes green).
+5. Old scene text is sent as a warn-level log entry visible in the Logs tab.

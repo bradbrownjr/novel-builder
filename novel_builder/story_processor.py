@@ -405,7 +405,8 @@ def _init_output_file(filepath, config):
 def _write_chapter_header(filepath, chapter_num, title):
     """Append a chapter header to the output file."""
     with open(filepath, "a", encoding="utf-8") as f:
-        f.write(f"\n## Chapter {chapter_num}: {title}\n\n")
+        f.write(f"\n<!-- chapter:{chapter_num} -->\n")
+        f.write(f"## Chapter {chapter_num}: {title}\n\n")
 
 
 def _write_chapter_header_if_needed(filepath, chapter_num, title):
@@ -426,14 +427,18 @@ def _write_chapter_header_if_needed(filepath, chapter_num, title):
 def _write_scene(filepath, scene_num, scene_title, text):
     """Append a scene to the output file.
 
-    Titled scenes get a heading. Untitled scenes get a blank line separator
-    only — no heading, no divider — so the output reads like prose.
+    Each scene is wrapped with <!-- scene:ID --> / <!-- /scene:ID -->
+    markers so individual scenes can be located and replaced by the
+    regeneration feature.  The markers are invisible in rendered Markdown
+    and are stripped from the downloaded file for a clean book appearance.
     """
     with open(filepath, "a", encoding="utf-8") as f:
+        f.write(f"<!-- scene:{scene_num} -->\n")
         if scene_title:
             f.write(f"### {scene_title}\n\n{text}\n\n")
         else:
             f.write(f"{text}\n\n")
+        f.write(f"<!-- /scene:{scene_num} -->\n\n")
 
 
 def _print_scene(text):
@@ -446,3 +451,205 @@ def _print_scene(text):
         preview += "\n  [...continued in output file]"
     print(preview)
     print("─" * 40)
+
+
+# ===================================================================
+#  Scene / chapter regeneration
+# ===================================================================
+
+import re as _re
+
+
+def _find_scene_in_config(config, scene_id):
+    """Locate a scene dict and its parent chapter by scene_id.
+
+    Returns (chapter_dict, scene_dict, chapter_number) or (None, None, None).
+    """
+    scene_id = str(scene_id)
+    for ch_idx, chapter in enumerate(config.get("chapters", [])):
+        ch_num = chapter.get("chapter_number", ch_idx + 1)
+        for sc_idx, scene in enumerate(chapter.get("scenes", [])):
+            sc_id = str(scene.get("scene_number", f"{ch_num}.{sc_idx + 1}"))
+            if sc_id == scene_id:
+                return chapter, scene, ch_num
+    return None, None, None
+
+
+def _replace_scene_in_file(filepath, scene_id, new_text, scene_title=""):
+    """Replace a scene's content in the output markdown file using markers.
+
+    Looks for <!-- scene:ID --> ... <!-- /scene:ID --> and replaces the
+    content between them.  Returns the OLD text that was replaced (for
+    logging), or None if the markers weren't found.
+    """
+    if not os.path.exists(filepath):
+        return None
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    pattern = _re.compile(
+        r'(<!-- scene:' + _re.escape(str(scene_id)) + r' -->\n)'
+        r'(.*?)'
+        r'(<!-- /scene:' + _re.escape(str(scene_id)) + r' -->\n)',
+        _re.DOTALL,
+    )
+    match = pattern.search(content)
+    if not match:
+        return None
+
+    old_text = match.group(2)
+    if scene_title:
+        replacement = f"### {scene_title}\n\n{new_text}\n\n"
+    else:
+        replacement = f"{new_text}\n\n"
+
+    new_content = content[:match.start(2)] + replacement + content[match.end(2):]
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(new_content)
+
+    return old_text
+
+
+def regenerate_scene(config, args, scene_id, event_callback=None):
+    """Regenerate a single scene within an existing story.
+
+    Rebuilds the prompt using current checkpoint state (including any
+    user edits to memory), calls the LLM, replaces the scene in the
+    output file, re-summarises, and updates the checkpoint.
+
+    Args:
+        config: Story configuration dict.
+        args: SimpleNamespace with host, model, summary_model, timeout, retries, output, checkpoint_path.
+        scene_id: Scene identifier string (e.g., "2.3").
+        event_callback: Optional callable(event_type, data_dict).
+
+    Returns:
+        Dict with 'ok', 'text', 'old_text', 'summary', 'scene_id', 'title'.
+    """
+    def emit(event_type, **data):
+        if event_callback:
+            try:
+                event_callback(event_type, data)
+            except Exception:
+                pass
+
+    scene_id = str(scene_id)
+    chapter, scene, ch_num = _find_scene_in_config(config, scene_id)
+    if scene is None:
+        return {"ok": False, "error": f"Scene {scene_id} not found in story outline"}
+
+    scene_title = scene.get("title", "")
+    all_characters = load_characters(config)
+    locations = load_locations(config)
+    heritage_defs = config.get("heritage", {})
+
+    # Load checkpoint state
+    checkpoint_path = getattr(args, 'checkpoint_path', None)
+    state = load_checkpoint(checkpoint_path) or {}
+
+    output_file = args.output
+
+    # Build prompts
+    system_prompt = build_system_prompt(config)
+    try:
+        user_prompt = build_scene_prompt(
+            config, chapter, scene, state, heritage_defs,
+            all_characters, locations, ch_num,
+        )
+    except Exception as e:
+        return {"ok": False, "error": f"Prompt build failed: {e}"}
+
+    # Call LLM
+    emit("model_active", model="generation", name=args.model)
+    emit("log", message=f"Regenerating Scene {scene_id}…", level="info")
+    try:
+        raw_text = call_ollama_with_retry(
+            args.host, args.model, system_prompt, user_prompt,
+            timeout=args.timeout, retries=args.retries,
+            emit_callback=emit if event_callback else None,
+        )
+    except OllamaError as e:
+        emit("model_active", model="idle", name="")
+        return {"ok": False, "error": f"LLM generation failed: {e}"}
+    emit("model_active", model="idle", name="")
+
+    # Post-process
+    text = clean_scene_text(raw_text)
+    text = strip_scene_header(text, scene_id)
+
+    # Replace in output file
+    old_text = _replace_scene_in_file(output_file, scene_id, text, scene_title)
+
+    # Log old text
+    if old_text:
+        emit("log", message=f"Old Scene {scene_id} text saved to logs ({len(old_text)} chars)", level="info")
+        # Send the old text as a special log entry so it's preserved
+        emit("log", message=f"--- Old Scene {scene_id} ---\n{old_text.strip()[:2000]}", level="warn")
+
+    # Re-summarise
+    summary = ""
+    extraction = {"characters": [], "facts": [], "actions": [], "commitments": []}
+    try:
+        emit("model_active", model="summarization", name=getattr(args, 'summary_model', 'gemma3:1b'))
+        summary, extraction = call_summary_model(args.host, args.summary_model, text)
+        emit("model_active", model="idle", name="")
+    except Exception as e:
+        emit("model_active", model="idle", name="")
+        summary = text[:200].rsplit(" ", 1)[0] + "..."
+        emit("log", message=f"Summary failed for regen: {e}", level="warn")
+
+    # Update checkpoint — re-merge the extraction but don't advance scene counters
+    from .state import _merge_story_memory, _sanitize_story_memory
+    state.setdefault("story_memory", {})
+    state["story_memory"] = _sanitize_story_memory(state["story_memory"])
+    _merge_story_memory(state, extraction, scene_id)
+    save_checkpoint(state, checkpoint_path)
+
+    emit("scene_regenerated", scene_id=scene_id, title=scene_title, text=text, summary=summary)
+    emit("log", message=f"✓ Scene {scene_id} regenerated ({len(text)} chars)", level="info")
+
+    return {
+        "ok": True,
+        "scene_id": scene_id,
+        "title": scene_title,
+        "text": text,
+        "old_text": (old_text or "").strip()[:2000],
+        "summary": summary,
+    }
+
+
+def regenerate_chapter(config, args, chapter_num, event_callback=None):
+    """Regenerate all scenes in a chapter sequentially.
+
+    Args:
+        config: Story configuration dict.
+        args: SimpleNamespace (same as regenerate_scene).
+        chapter_num: Integer chapter number.
+        event_callback: Optional callable.
+
+    Returns:
+        Dict with 'ok', 'scenes' (list of per-scene results).
+    """
+    chapter_num = int(chapter_num)
+    chapters = config.get("chapters", [])
+    target = None
+    for ch in chapters:
+        if ch.get("chapter_number") == chapter_num:
+            target = ch
+            break
+    if target is None:
+        return {"ok": False, "error": f"Chapter {chapter_num} not found"}
+
+    results = []
+    for scene in target.get("scenes", []):
+        sc_id = str(scene.get("scene_number", ""))
+        if not sc_id:
+            continue
+        result = regenerate_scene(config, args, sc_id, event_callback)
+        results.append(result)
+        if not result.get("ok"):
+            return {"ok": False, "error": f"Scene {sc_id} failed: {result.get('error', '')}", "scenes": results}
+
+    return {"ok": True, "scenes": results}
