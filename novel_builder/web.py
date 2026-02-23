@@ -856,6 +856,60 @@ def api_stop():
     return jsonify({"ok": True, "message": "Stop requested"})
 
 
+@app.route("/api/rebuild-memories", methods=["POST"])
+def api_rebuild_memories():
+    """Rebuild story memory by re-summarising every scene in the output file.
+
+    Resets story_so_far, recent_scenes, facts, actions, commitments, and
+    characters, then replays every marked scene through the summary model.
+    Generation progress (last_completed_*) and character appearances are
+    preserved.  Runs in a background thread and streams progress via SSE.
+    """
+    _lazy_imports()
+
+    if state.status == "running":
+        return jsonify({"ok": False, "error": "Generation is currently running — stop it first."}), 409
+
+    web_config = _load_web_config()
+
+    args = SimpleNamespace(
+        host=_normalize_host(web_config.get("host", "")),
+        summary_model=web_config.get("summary_model", "gemma3:1b"),
+        output=os.path.join(WORKSPACE_DIR, "full_story.md"),
+        checkpoint_path=os.path.join(WORKSPACE_DIR, "checkpoint.yaml"),
+    )
+
+    try:
+        config = _config_loader(args)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Config load failed: {e}"}), 500
+
+    from .story_processor import rebuild_memories as _rebuild_memories
+
+    state.status = "running"
+    state.emit("status_change", {"status": "running"})
+    state.emit("log", {"message": "Rebuilding memory from story output…", "level": "info"})
+
+    def worker():
+        try:
+            result = _rebuild_memories(config, args, event_callback=_event_callback)
+            if result.get("ok"):
+                state.emit("log", {"message": f"Memory rebuild complete ({result['scenes_processed']} scenes)", "level": "info"})
+                state.emit("status_change", {"status": "idle"})
+            else:
+                state.emit("log", {"message": f"Rebuild failed: {result.get('error', '')}", "level": "error"})
+                state.emit("status_change", {"status": "error", "message": result.get("error", "")})
+        except Exception as e:
+            state.emit("log", {"message": f"Rebuild error: {e}", "level": "error"})
+            state.emit("status_change", {"status": "error", "message": str(e)})
+        finally:
+            state.status = "idle"
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    return jsonify({"ok": True, "message": "Memory rebuild started"})
+
+
 @app.route("/api/regenerate", methods=["POST"])
 def api_regenerate():
     """Regenerate a scene or chapter.
