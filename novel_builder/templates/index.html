@@ -340,6 +340,15 @@ textarea {
   color: var(--text-dim);
   flex: 1;
 }
+.regen-pending {
+  display: block;
+  padding: 1.2rem 1rem;
+  color: var(--text-muted, #aaa);
+  font-style: italic;
+  font-size: .95em;
+}
+.regen-failed { color: #e07070; }
+
 .scene-header .btn-regen {
   padding: .15rem .45rem;
   font-size: .7rem;
@@ -1711,12 +1720,29 @@ function updateProgress(p) {
 async function regenerateScene(sceneId) {
   if (!confirm(`Regenerate Scene ${sceneId}? The old text will be saved to Logs.`)) return;
   toast(`Regenerating Scene ${sceneId}…`, 'warn');
+
+  // Immediately show a placeholder so the author knows the old text is gone
+  const viewer = document.getElementById('output-viewer');
+  const block = viewer.querySelector(`.scene-block[data-scene-id="${sceneId}"]`);
+  if (block) {
+    block.dataset.regenPending = '1';
+    block.innerHTML = '<em class="regen-pending">⏳ Regenerating scene — please wait…</em>';
+    block.style.background = 'rgba(255,200,50,.08)';
+  }
+
   const r = await api('/api/regenerate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ scene_id: sceneId }),
   });
-  if (!r?.ok) toast('Regen failed: ' + (r?.error || 'unknown'), 'error');
+  if (!r?.ok) {
+    // Restore note that regen failed so it's obvious
+    if (block) {
+      block.innerHTML = '<em class="regen-pending regen-failed">⚠ Regen failed — reload page to see original text.</em>';
+      block.style.background = 'rgba(220,50,50,.1)';
+    }
+    toast('Regen failed: ' + (r?.error || 'unknown'), 'error');
+  }
 }
 
 async function regenerateChapter(chapterNum) {
@@ -1735,10 +1761,11 @@ function _handleSceneRegenerated(data) {
   const viewer = document.getElementById('output-viewer');
   const block = viewer.querySelector(`.scene-block[data-scene-id="${sceneId}"]`);
   if (block) {
+    delete block.dataset.regenPending;
+    block.style.transition = 'background .5s';
     block.textContent = '\n' + (data.text || '') + '\n\n';
     block.scrollIntoView({ behavior: 'smooth', block: 'start' });
     // Flash effect
-    block.style.transition = 'background .5s';
     block.style.background = 'rgba(78,202,163,.15)';
     setTimeout(() => { block.style.background = ''; }, 2000);
   } else {
