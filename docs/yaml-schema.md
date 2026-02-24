@@ -74,6 +74,7 @@ chapters:
     scenes:                              # REQUIRED (at least one scene)
       - scene_number: 1.1               # REQUIRED
         setting: "the_lighthouse"        # Reference to locations/settings ID, or inline string
+        setting_detail: "The watch room at the top of the spiral staircase"  # Optional — zooms into a specific area
         characters_present:              # Optional explicit list (auto-detected if omitted)
           - silas_marsh
         events: >                        # REQUIRED
@@ -137,6 +138,7 @@ chapters:
 |---|---|---|---|
 | `scene_number` | string/number | Yes | Identifier (e.g., `1.1`, `1.2`) |
 | `setting` | string | Yes | Location ID (from settings file) or inline description |
+| `setting_detail` | string | No | Zooms into a specific area within the setting (e.g., "the back stockroom", "the parking lot"). Appended after the base location. Works with or without `setting`. |
 | `characters_present` | list of strings | No | Character IDs. Auto-detected from events/notes if omitted. |
 | `events` | string | Yes | What happens in the scene |
 | `emotional_arc` | string | No | Emotional trajectory (e.g., "Calm → dread") |
@@ -403,6 +405,20 @@ setting:
 
 The schema is intentionally flexible for nested sub-areas. Any key that isn't a recognized field name is treated as a sub-location or descriptive attribute and included when the scene references this setting.
 
+> **Tip:** To scope a scene to a specific area within a location (e.g., the aisles vs. the stockroom of a store), use `setting_detail` on the scene rather than duplicating the location definition. This keeps the base location data (name, atmosphere, mood_shift) while narrowing the focus:
+>
+> ```yaml
+> - scene_number: 3.1
+>   setting: toy_store
+>   setting_detail: "The narrow aisles between towering shelves of vintage action figures"
+>   events: "..."
+>
+> - scene_number: 3.2
+>   setting: toy_store
+>   setting_detail: "The dimly lit stockroom behind the counter"
+>   events: "..."
+> ```
+
 ---
 
 ## Checkpoint (Auto-Generated)
@@ -525,6 +541,8 @@ The script detects top-level keys (`characters`, `setting`/`locations`, `chapter
 
 8. **Use `mood_shift` for locations that change.** A house at night vs. morning, a street in rain vs. sun — these small variants add atmospheric depth without duplicating location entries.
 
-9. **Use `heritage` for shared group traits.** If multiple characters share species, profession, or faction traits, define them once in `heritage:` and reference by ID. Saves repetition and ensures consistency.
+9. **Use `setting_detail` to zoom in.** When a scene takes place in a specific part of a location (the parking lot, the break room, a particular aisle), add `setting_detail` to the scene instead of creating a new location. The base location's data is still included — `setting_detail` just narrows the focus.
 
-10. **Don't worry about story memory.** The tool automatically tracks throw-away characters, world facts, and commitments. If the AI invents a bartender in chapter 2, it'll remember them in chapter 7.
+10. **Use `heritage` for shared group traits.** If multiple characters share species, profession, or faction traits, define them once in `heritage:` and reference by ID. Saves repetition and ensures consistency.
+
+11. **Don't worry about story memory.** The tool automatically tracks throw-away characters, world facts, and commitments. If the AI invents a bartender in chapter 2, it'll remember them in chapter 7.
