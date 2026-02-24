@@ -9,6 +9,7 @@ import os
 import signal
 import sys
 import threading
+import time
 import traceback
 
 from .characters import auto_detect_characters, load_characters
@@ -221,6 +222,7 @@ def _run_generation(config, args, event_callback=None):
 
             # Call generation model
             emit("model_active", model="generation", name=args.model)
+            _scene_gen_t0 = time.time()
             try:
                 raw_text = call_ollama_with_retry(
                     args.host,
@@ -239,6 +241,7 @@ def _run_generation(config, args, event_callback=None):
                 emit("status_change", status="error", message=str(e))
                 save_checkpoint(state, checkpoint_path)
                 return
+            _scene_gen_elapsed = round(time.time() - _scene_gen_t0, 1)
             emit("model_active", model="idle", name="")
 
             # Post-process
@@ -329,7 +332,8 @@ def _run_generation(config, args, event_callback=None):
 
             pct = int(100 * scenes_completed / all_scene_count) if all_scene_count else 0
             emit("scene_complete", scene_num=str(scene_num), title=scene_title,
-                 text=text, summary=summary, chars=len(text))
+                 text=text, summary=summary, chars=len(text),
+                 elapsed_s=_scene_gen_elapsed, words=len(text.split()))
             emit("progress", chapter=ch_num, total_chapters=total_chapters,
                  scene=scenes_completed, total_scenes=all_scene_count, percent=pct)
             emit("log", message=f"✓ Scene {scene_num} complete ({len(text)} chars)", level="info")
