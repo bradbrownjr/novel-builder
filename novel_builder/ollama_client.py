@@ -156,8 +156,12 @@ def call_summary_model(host, model, text, timeout=300, scene_meta=None):
         "You are a precise literary assistant that extracts information "
         "ONLY from what is explicitly written in the scene text.\n\n"
         "RULES:\n"
-        "- Use ONLY character names provided in the metadata. Do NOT swap, "
+        "- Use ONLY character names listed in the metadata. Do NOT swap, "
         "  confuse, or invent character names.\n"
+        "- NEW_CHARACTERS is ONLY for genuinely minor, unnamed, or walk-on "
+        "  characters NOT already in the known character list. If a name in "
+        "  the text is a variant of a known character, do NOT add it — write NONE.\n"
+        "- Do NOT combine parts of different characters' names into a new name.\n"
         "- SUMMARY must describe what actually happened — not what might happen.\n"
         "- Extract only facts/actions/commitments that are NEW and clearly "
         "  stated in the text. If nothing new, write NONE.\n"
@@ -186,6 +190,11 @@ def call_summary_model(host, model, text, timeout=300, scene_meta=None):
             meta_lines.append(f"Title: {scene_meta['title']}")
         if scene_meta.get("characters"):
             meta_lines.append(f"Characters in scene: {', '.join(scene_meta['characters'])}")
+        if scene_meta.get("all_characters"):
+            meta_lines.append(
+                f"All known story characters (already exist — do NOT add to NEW_CHARACTERS): "
+                f"{', '.join(scene_meta['all_characters'])}"
+            )
     meta_block = "\n".join(meta_lines)
     if meta_block:
         base_user_prompt = f"Scene metadata:\n{meta_block}\n\nScene text:\n\n{text}"

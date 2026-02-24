@@ -130,6 +130,27 @@ def build_system_prompt(config):
     elif isinstance(arc, str) and arc:
         parts.append(f"\nStory arc: {arc}")
 
+    # Canonical character roster — ground the model on exact full names so it
+    # cannot invent variants (e.g. "Elias Bloom" instead of "Elias Thorne").
+    characters = config.get("characters", {})
+    if characters:
+        roster_lines = []
+        for char_data in characters.values():
+            name = char_data.get("Name") or char_data.get("name", "")
+            role = char_data.get("role", "")
+            if name:
+                entry = f"- {name}"
+                if role:
+                    entry += f" ({role})"
+                roster_lines.append(entry)
+        if roster_lines:
+            parts.append(
+                "\nKnown story characters — you MUST use these exact full names "
+                "whenever referring to these characters. "
+                "Never substitute, truncate, or blend these names:\n"
+                + "\n".join(roster_lines)
+            )
+
     # Anti-pattern suppression — always includes built-in defaults
     user_patterns = config.get("anti_patterns", [])
     merged = _merge_anti_patterns(user_patterns if user_patterns else None)

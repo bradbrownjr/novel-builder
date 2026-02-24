@@ -6,6 +6,8 @@ This file is the persistent memory for the Novel Builder project. Copilot reads 
 
 _(Add directives here when the user says "always" or "never" do something.)_
 
+- **Always** commit and push changes to the repository after making code changes.
+
 - **Always** write generated scenes to the output file immediately after generation (never buffer full chapters).
 - **Always** default to outputting scenes to both file and terminal unless overridden by CLI flags.
 - **Never** hardcode style directives in Python — they belong in the YAML outline.
