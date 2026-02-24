@@ -657,6 +657,11 @@ textarea {
 .consult-pass-body strong { color: var(--text); }
 .consult-pass-body code { font-family: var(--mono); font-size: .78rem; background: var(--bg); padding: .05rem .2rem; border-radius: 3px; }
 .consult-pass-actions { display: flex; gap: .5rem; margin-top: .6rem; }
+.consult-pass-stats {
+  font-size: .72rem; color: var(--text-dim); margin-top: .35rem;
+  display: flex; gap: .75rem; flex-wrap: wrap;
+}
+.consult-pass-stats span { white-space: nowrap; }
 
 /* =========================================================
    Diff view modal
@@ -3589,6 +3594,10 @@ async function runConsult() {
   statusEl.textContent = 'Starting audit…';
   resultsEl.innerHTML = '';
 
+  const _now = () => new Date().toLocaleTimeString();
+  const passTimers = {}; // pass_name → {interval, t0, tokenCount}
+  addLogEntry({ time: _now(), message: '🔍 AI Consult audit starting…', level: 'info' });
+
   try {
     const resp = await fetch('/api/consult', {
       method: 'POST',
@@ -3605,8 +3614,9 @@ async function runConsult() {
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buf = '';
-    const passEls = {};   // pass_name → {body, status, text}
+    const passEls = {};   // pass_name → {body, status, text, statsEl}
     const passTexts = {}; // pass_name → accumulated raw text
+    let totalPasses = 0;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -3623,28 +3633,45 @@ async function runConsult() {
 
         switch (ev.type) {
           case 'passes':
-            statusEl.textContent = `Running ${ev.passes.length} analysis passes…`;
+            totalPasses = ev.passes.length;
+            statusEl.textContent = `Running ${totalPasses} analysis pass(es)…`;
             break;
 
           case 'pass_start': {
             const passDiv = document.createElement('div');
             passDiv.className = 'consult-pass';
             passDiv.id = 'consult-pass-' + ev.pass;
+            const passProgress = totalPasses ? ` (${ev.index}/${ev.total})` : '';
             passDiv.innerHTML = `
               <div class="consult-pass-header">
                 <span class="pass-emoji">${escHtml(ev.emoji)}</span>
-                <span>${escHtml(ev.label)} Analysis</span>
-                <span class="pass-status running" id="pstatus-${ev.pass}">analyzing…</span>
+                <span>${escHtml(ev.label)} Analysis${passProgress}</span>
+                <span class="pass-status running" id="pstatus-${ev.pass}">analyzing… 0s</span>
               </div>
               <div class="consult-pass-body" id="pbody-${ev.pass}"></div>
+              <div class="consult-pass-stats" id="pstats-${ev.pass}"></div>
             `;
             resultsEl.appendChild(passDiv);
             passEls[ev.pass] = {
               body: document.getElementById('pbody-' + ev.pass),
               status: document.getElementById('pstatus-' + ev.pass),
+              statsEl: document.getElementById('pstats-' + ev.pass),
             };
             passTexts[ev.pass] = '';
-            statusEl.textContent = `Analyzing ${ev.label.toLowerCase()}…`;
+            // Start live timer
+            const t0 = Date.now();
+            const statusBadge = passEls[ev.pass].status;
+            const interval = setInterval(() => {
+              const elapsed = Math.round((Date.now() - t0) / 1000);
+              const tc = passTimers[ev.pass] ? passTimers[ev.pass].tokenCount : 0;
+              statusBadge.textContent = `analyzing… ${elapsed}s · ${tc} tokens`;
+            }, 1000);
+            passTimers[ev.pass] = { interval, t0, tokenCount: 0 };
+
+            statusEl.textContent = totalPasses
+              ? `Pass ${ev.index}/${ev.total} — analyzing ${ev.label.toLowerCase()}…`
+              : `Analyzing ${ev.label.toLowerCase()}…`;
+            addLogEntry({ time: _now(), message: `Consult: ${ev.emoji} ${ev.label} analysis started`, level: 'info' });
             break;
           }
 
@@ -3653,15 +3680,35 @@ async function runConsult() {
               passTexts[ev.pass] += ev.text;
               passEls[ev.pass].body.innerHTML = _simpleMarkdown(passTexts[ev.pass]);
               passEls[ev.pass].body.scrollTop = passEls[ev.pass].body.scrollHeight;
+              if (passTimers[ev.pass]) passTimers[ev.pass].tokenCount++;
             }
             break;
 
-          case 'pass_complete':
+          case 'pass_complete': {
             if (passEls[ev.pass]) {
+              // Stop timer
+              if (passTimers[ev.pass]) {
+                clearInterval(passTimers[ev.pass].interval);
+              }
               passEls[ev.pass].status.className = 'pass-status done';
-              passEls[ev.pass].status.textContent = 'complete';
+              const st = ev.stats || {};
+              passEls[ev.pass].status.textContent = st.elapsed_s != null
+                ? `complete · ${st.elapsed_s}s`
+                : 'complete';
               passEls[ev.pass].body.innerHTML = _simpleMarkdown(ev.text);
               _consultResults[ev.pass] = ev.text;
+
+              // Show stats
+              if (st) {
+                const parts = [];
+                if (st.words) parts.push(`<span>${st.words} words</span>`);
+                if (st.tokens) parts.push(`<span>${st.tokens} tokens generated</span>`);
+                if (st.prompt_tokens) parts.push(`<span>${st.prompt_tokens} prompt tokens</span>`);
+                if (st.tokens_per_sec) parts.push(`<span>${st.tokens_per_sec} tok/s</span>`);
+                if (st.elapsed_s != null) parts.push(`<span>${st.elapsed_s}s</span>`);
+                passEls[ev.pass].statsEl.innerHTML = parts.join('');
+              }
+
               // Add action buttons for file-specific passes
               if (['characters', 'outline', 'locations'].includes(ev.pass)) {
                 const actionsDiv = document.createElement('div');
@@ -3669,30 +3716,43 @@ async function runConsult() {
                 actionsDiv.innerHTML = `<button class="btn btn-sm btn-primary" onclick="generateFix('${ev.pass}')">✨ Generate Fixed ${escHtml(PASS_LABELS[ev.pass] || ev.pass)}</button>`;
                 passEls[ev.pass].body.parentElement.appendChild(actionsDiv);
               }
+
+              const speedNote = st.tokens_per_sec ? ` (${st.tokens_per_sec} tok/s)` : '';
+              addLogEntry({ time: _now(), message: `Consult: ✓ ${PASS_LABELS[ev.pass] || ev.pass} complete — ${st.words || '?'} words, ${st.elapsed_s || '?'}s${speedNote}`, level: 'info' });
             }
             break;
+          }
 
           case 'pass_error':
             if (passEls[ev.pass]) {
+              if (passTimers[ev.pass]) clearInterval(passTimers[ev.pass].interval);
               passEls[ev.pass].status.className = 'pass-status error';
               passEls[ev.pass].status.textContent = 'error';
               passEls[ev.pass].body.innerHTML = `<p style="color:var(--red);">${escHtml(ev.error)}</p>`;
+              addLogEntry({ time: _now(), message: `Consult: ✗ ${PASS_LABELS[ev.pass] || ev.pass} failed — ${ev.error}`, level: 'error' });
             }
             break;
 
-          case 'done':
-            statusEl.textContent = 'Audit complete';
+          case 'done': {
+            const totalTime = ev.elapsed_s != null ? ` in ${ev.elapsed_s}s` : '';
+            statusEl.textContent = `Audit complete${totalTime}`;
+            addLogEntry({ time: _now(), message: `🔍 AI Consult finished${totalTime}`, level: 'info' });
             break;
+          }
         }
       }
     }
   } catch (e) {
+    // Clean up any running timers
+    Object.values(passTimers).forEach(pt => pt && clearInterval(pt.interval));
     if (e.name === 'AbortError') {
       statusEl.textContent = 'Audit stopped';
       toast('Audit stopped', 'warn');
+      addLogEntry({ time: _now(), message: 'Consult: Audit stopped by user', level: 'warn' });
     } else {
       statusEl.textContent = 'Audit failed';
       toast('Consult error: ' + e.message, 'error');
+      addLogEntry({ time: _now(), message: 'Consult error: ' + e.message, level: 'error' });
     }
   } finally {
     _consultRunning = false;
