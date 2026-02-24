@@ -3723,6 +3723,44 @@ async function runConsult() {
             break;
           }
 
+          case 'pass_retry': {
+            if (passEls[ev.pass]) {
+              // Stop old timer; a new one will start on the next chunk/completion
+              if (passTimers[ev.pass]) {
+                clearInterval(passTimers[ev.pass].interval);
+                passTimers[ev.pass] = null;
+              }
+              // Reset accumulated text — fresh attempt
+              passTexts[ev.pass] = '';
+              passEls[ev.pass].body.innerHTML = '';
+              passEls[ev.pass].status.className = 'pass-status running';
+
+              // Show live countdown in the badge
+              let countdown = ev.delay;
+              passEls[ev.pass].status.textContent = `retrying (${ev.attempt}/${ev.max_attempts}) in ${countdown}s`;
+              const cdInterval = setInterval(() => {
+                countdown--;
+                if (countdown <= 0) {
+                  clearInterval(cdInterval);
+                  passEls[ev.pass].status.textContent = `retrying… 0s · 0 tokens`;
+                  // Restart elapsed timer for the new attempt
+                  const t0 = Date.now();
+                  const statusBadge = passEls[ev.pass].status;
+                  const interval = setInterval(() => {
+                    const elapsed = Math.round((Date.now() - t0) / 1000);
+                    const tc = passTimers[ev.pass] ? passTimers[ev.pass].tokenCount : 0;
+                    statusBadge.textContent = `analyzing… ${elapsed}s · ${tc} tokens`;
+                  }, 1000);
+                  passTimers[ev.pass] = { interval, t0, tokenCount: 0 };
+                } else {
+                  passEls[ev.pass].status.textContent = `retrying (${ev.attempt}/${ev.max_attempts}) in ${countdown}s`;
+                }
+              }, 1000);
+              addLogEntry({ time: _now(), message: `Consult: ↻ ${PASS_LABELS[ev.pass] || ev.pass} retrying (${ev.attempt}/${ev.max_attempts}) after ${ev.delay}s — ${ev.error}`, level: 'warn' });
+            }
+            break;
+          }
+
           case 'pass_error':
             if (passEls[ev.pass]) {
               if (passTimers[ev.pass]) clearInterval(passTimers[ev.pass].interval);
