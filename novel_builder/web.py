@@ -1068,9 +1068,20 @@ def api_consult():
                      for n, c in all_passes]
         yield f"data: {json.dumps({'type': 'passes', 'passes': pass_info})}\n\n"
 
+        total_passes = len(all_passes)
+        state.emit("log", {
+            "message": f"🔍 AI Consult started — {total_passes} analysis pass(es) using {model}",
+            "level": "info",
+        })
+        audit_t0 = time.time()
+
         results = {}
-        for pass_name, pass_cfg in all_passes:
-            yield f"data: {json.dumps({'type': 'pass_start', 'pass': pass_name, 'label': pass_cfg['label'], 'emoji': pass_cfg['emoji']})}\n\n"
+        for pass_idx, (pass_name, pass_cfg) in enumerate(all_passes, 1):
+            yield f"data: {json.dumps({'type': 'pass_start', 'pass': pass_name, 'label': pass_cfg['label'], 'emoji': pass_cfg['emoji'], 'index': pass_idx, 'total': total_passes})}\n\n"
+            state.emit("log", {
+                "message": f"Consult pass {pass_idx}/{total_passes}: {pass_cfg['emoji']} {pass_cfg['label']}…",
+                "level": "info",
+            })
 
             try:
                 system_prompt, user_prompt = build_pass_prompt(pass_name, files)
@@ -1088,11 +1099,14 @@ def api_consult():
                     },
                 }
 
+                pass_t0 = time.time()
                 response = _requests.post(url, json=payload,
                                           timeout=timeout, stream=True)
                 response.raise_for_status()
 
                 full_text = []
+                token_count = 0
+                ollama_stats = {}
                 for line in response.iter_lines(chunk_size=None):
                     if not line:
                         continue
@@ -1103,18 +1117,55 @@ def api_consult():
                     token = data.get("response", "")
                     if token:
                         full_text.append(token)
+                        token_count += 1
                         yield f"data: {json.dumps({'type': 'chunk', 'pass': pass_name, 'text': token})}\n\n"
                     if data.get("done"):
+                        # Capture Ollama metadata from the done chunk
+                        ollama_stats = {
+                            k: data.get(k)
+                            for k in ("total_duration", "prompt_eval_count",
+                                      "eval_count", "eval_duration")
+                            if data.get(k) is not None
+                        }
                         break
 
+                pass_elapsed = round(time.time() - pass_t0, 1)
                 result_text = "".join(full_text)
                 results[pass_name] = result_text
-                yield f"data: {json.dumps({'type': 'pass_complete', 'pass': pass_name, 'text': result_text})}\n\n"
+
+                # Build stats dict for the client
+                stats = {"elapsed_s": pass_elapsed, "tokens": token_count}
+                if ollama_stats.get("eval_count") and ollama_stats.get("eval_duration"):
+                    tps = ollama_stats["eval_count"] / (ollama_stats["eval_duration"] / 1e9)
+                    stats["tokens_per_sec"] = round(tps, 1)
+                    stats["eval_tokens"] = ollama_stats["eval_count"]
+                if ollama_stats.get("prompt_eval_count"):
+                    stats["prompt_tokens"] = ollama_stats["prompt_eval_count"]
+
+                word_count = len(result_text.split())
+                stats["words"] = word_count
+
+                yield f"data: {json.dumps({'type': 'pass_complete', 'pass': pass_name, 'text': result_text, 'stats': stats})}\n\n"
+
+                speed_note = f" ({stats.get('tokens_per_sec', '?')} tok/s)" if stats.get("tokens_per_sec") else ""
+                state.emit("log", {
+                    "message": f"  ✓ {pass_cfg['label']} complete — {word_count} words, {pass_elapsed}s{speed_note}",
+                    "level": "info",
+                })
 
             except Exception as e:
                 yield f"data: {json.dumps({'type': 'pass_error', 'pass': pass_name, 'error': str(e)})}\n\n"
+                state.emit("log", {
+                    "message": f"  ✗ {pass_cfg['label']} failed: {e}",
+                    "level": "error",
+                })
 
-        yield f"data: {json.dumps({'type': 'done', 'results': results})}\n\n"
+        audit_elapsed = round(time.time() - audit_t0, 1)
+        yield f"data: {json.dumps({'type': 'done', 'results': results, 'elapsed_s': audit_elapsed})}\n\n"
+        state.emit("log", {
+            "message": f"🔍 AI Consult finished — {len(results)}/{total_passes} passes in {audit_elapsed}s",
+            "level": "info",
+        })
 
     return Response(
         stream(),

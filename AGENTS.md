@@ -174,6 +174,13 @@ The Consult tab provides an AI-powered audit of uploaded YAML story files using 
 - Proposed pane is editable before applying — user can review and modify
 - Apply validates YAML before saving
 
+**Live feedback during audit:**
+- Each pass shows a live elapsed-time + token counter in the status badge ("analyzing… 12s · 45 tokens")
+- On completion, stats bar shows: words generated, tokens, prompt tokens, tok/s, elapsed time
+- Ollama's done-chunk metadata (`eval_count`, `eval_duration`, `prompt_eval_count`) captured for accurate stats
+- Pass progress indicator in header status bar ("Pass 2/4 — analyzing outline…")
+- All audit events (start, per-pass start/complete/error, finish) emitted to Logs tab via `state.emit("log")` and `addLogEntry()`
+
 **Tab order (wizard flow):** Story → Consult → Settings → Logs → Memory → Output
 
 ## Regeneration Workflow
