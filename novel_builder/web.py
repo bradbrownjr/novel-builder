@@ -881,11 +881,15 @@ def api_rebuild_memories():
 
     web_config = _load_web_config()
 
+    _loc_path_rb = os.path.join(WORKSPACE_DIR, FILE_ROLES["locations"])
     args = SimpleNamespace(
         host=_normalize_host(web_config.get("host", "")),
         summary_model=web_config.get("summary_model", "gemma3:1b"),
         output=os.path.join(WORKSPACE_DIR, "full_story.md"),
         checkpoint_path=os.path.join(WORKSPACE_DIR, "checkpoint.yaml"),
+        outline=os.path.join(WORKSPACE_DIR, FILE_ROLES["outline"]),
+        characters=os.path.join(WORKSPACE_DIR, FILE_ROLES["characters"]),
+        locations=_loc_path_rb if os.path.exists(_loc_path_rb) else None,
     )
 
     try:
@@ -941,6 +945,7 @@ def api_regenerate():
     web_config = _load_web_config()
 
     # Build args the same way _start_generation does
+    _loc_path = os.path.join(WORKSPACE_DIR, FILE_ROLES["locations"])
     args = SimpleNamespace(
         host=_normalize_host(web_config.get("host", "")),
         model=web_config.get("model", "gemma3:12b"),
@@ -949,6 +954,9 @@ def api_regenerate():
         timeout=int(web_config.get("timeout", 900)),
         output=os.path.join(WORKSPACE_DIR, "full_story.md"),
         checkpoint_path=os.path.join(WORKSPACE_DIR, "checkpoint.yaml"),
+        outline=os.path.join(WORKSPACE_DIR, FILE_ROLES["outline"]),
+        characters=os.path.join(WORKSPACE_DIR, FILE_ROLES["characters"]),
+        locations=_loc_path if os.path.exists(_loc_path) else None,
     )
 
     # Load config
