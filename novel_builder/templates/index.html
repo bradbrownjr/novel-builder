@@ -190,6 +190,83 @@ header {
 }
 
 /* =========================================================
+   Model selector (combo-box with dropdown + pull support)
+   ========================================================= */
+.model-selector { position: relative; }
+.model-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0; right: 0;
+  z-index: 100;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  max-height: 320px;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0,0,0,.3);
+}
+.model-dropdown.open { display: block; }
+.model-option {
+  padding: .5rem .7rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background .1s;
+}
+.model-option:last-child { border-bottom: none; }
+.model-option:hover { background: var(--bg-hover); }
+.model-option .mo-name {
+  font-weight: 600;
+  font-size: .85rem;
+  color: var(--text);
+}
+.model-option .mo-desc {
+  font-size: .72rem;
+  color: var(--text-dim);
+  margin-top: 2px;
+  line-height: 1.3;
+}
+.model-option .mo-tag {
+  display: inline-block;
+  font-size: .65rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: .4rem;
+  vertical-align: middle;
+}
+.mo-tag.installed { background: rgba(46,160,67,.2); color: #3fb950; }
+.mo-tag.not-installed { background: rgba(233,69,96,.15); color: var(--red); }
+.model-status {
+  font-size: .72rem;
+  margin-top: .3rem;
+  min-height: 1.1em;
+}
+.model-status .pull-btn {
+  cursor: pointer;
+  color: var(--accent);
+  text-decoration: underline;
+  background: none;
+  border: none;
+  font-size: .72rem;
+  padding: 0;
+}
+.model-status .pull-btn:hover { color: #d13350; }
+.pull-progress-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  margin-top: .3rem;
+  overflow: hidden;
+}
+.pull-progress-bar .fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width .3s;
+  width: 0%;
+}
+
+/* =========================================================
    Form elements
    ========================================================= */
 label { font-size: .82rem; color: var(--text-dim); display: block; margin-bottom: .25rem; }
@@ -934,13 +1011,29 @@ textarea {
       </div>
       <div class="form-group">
         <label for="cfg-model">Generation Model</label>
-        <input type="text" id="cfg-model" placeholder="gemma3:12b">
+        <div class="model-selector" id="sel-model">
+          <input type="text" id="cfg-model"
+                 placeholder="gemma3:12b"
+                 autocomplete="off"
+                 onfocus="openModelDropdown('model')"
+                 oninput="filterModelDropdown('model')">
+          <div class="model-dropdown" id="dd-model"></div>
+          <div class="model-status" id="ms-model"></div>
+        </div>
       </div>
     </div>
     <div class="form-row">
       <div class="form-group">
         <label for="cfg-summary-model">Summary Model</label>
-        <input type="text" id="cfg-summary-model" placeholder="gemma3:1b">
+        <div class="model-selector" id="sel-summary-model">
+          <input type="text" id="cfg-summary-model"
+                 placeholder="gemma3:4b"
+                 autocomplete="off"
+                 onfocus="openModelDropdown('summary-model')"
+                 oninput="filterModelDropdown('summary-model')">
+          <div class="model-dropdown" id="dd-summary-model"></div>
+          <div class="model-status" id="ms-summary-model"></div>
+        </div>
       </div>
       <div class="form-group" style="display:grid; grid-template-columns:1fr 1fr; gap:.5rem;">
         <div>
@@ -1232,7 +1325,7 @@ function loadConfigIntoForm(cfg) {
   if (!cfg) return;
   document.getElementById('cfg-host').value = cfg.host || '';
   document.getElementById('cfg-model').value = cfg.model || 'gemma3:12b';
-  document.getElementById('cfg-summary-model').value = cfg.summary_model || 'gemma3:1b';
+  document.getElementById('cfg-summary-model').value = cfg.summary_model || 'gemma3:4b';
   document.getElementById('cfg-retries').value = cfg.retries || 3;
   document.getElementById('cfg-timeout').value = cfg.timeout || 900;
   // TTS fields
@@ -1242,6 +1335,9 @@ function loadConfigIntoForm(cfg) {
   tts.model = cfg.tts_model || '';
   tts.narratorVoice = cfg.tts_narrator_voice || '';
   tts.voiceMap = cfg.tts_voice_map || {};
+  // Update model selector status after loading
+  updateModelStatus('model');
+  updateModelStatus('summary-model');
 }
 async function saveConfig() {
   const cfg = {
@@ -1255,6 +1351,174 @@ async function saveConfig() {
   if (r && r.ok) { toast('Config saved', 'ok'); checkOllamaHealth(); }
   else toast('Failed to save config', 'error');
 }
+
+/* ==========================================================
+   Model selector — combo-box with recommendations + pull
+   ========================================================== */
+const RECOMMENDED_MODELS = {
+  'model': [
+    { name: 'gemma3:4b',  desc: 'Good quality, fast — ~3 GB RAM',        ram: '~3 GB' },
+    { name: 'gemma3:12b', desc: 'High quality, balanced speed — ~8 GB RAM', ram: '~8 GB' },
+    { name: 'gemma3:27b', desc: 'Excellent quality, slower — ~17 GB RAM', ram: '~17 GB' },
+    { name: 'qwen2.5:7b', desc: 'Strong prose, good instruction following — ~5 GB RAM', ram: '~5 GB' },
+    { name: 'qwen2.5:14b', desc: 'Excellent prose quality — ~9 GB RAM',  ram: '~9 GB' },
+    { name: 'llama3.1:8b', desc: 'Solid all-rounder — ~5 GB RAM',        ram: '~5 GB' },
+    { name: 'mistral:7b',  desc: 'Fast, good creative writing — ~5 GB RAM', ram: '~5 GB' },
+    { name: 'deepseek-r1:8b', desc: 'Strong reasoning + prose — ~5 GB RAM', ram: '~5 GB' },
+  ],
+  'summary-model': [
+    { name: 'gemma3:1b',  desc: 'Minimal — very fast but lower extraction quality — ~1 GB RAM', ram: '~1 GB' },
+    { name: 'gemma3:4b',  desc: 'Recommended — good extraction, fast — ~3 GB RAM', ram: '~3 GB' },
+    { name: 'qwen2.5:3b', desc: 'Good structured output — ~2 GB RAM',    ram: '~2 GB' },
+    { name: 'qwen2.5:7b', desc: 'Excellent extraction quality — ~5 GB RAM', ram: '~5 GB' },
+    { name: 'phi4-mini',  desc: 'Strong instruction following — ~2.5 GB RAM', ram: '~2.5 GB' },
+    { name: 'gemma3:12b', desc: 'Best extraction quality, slower — ~8 GB RAM', ram: '~8 GB' },
+  ],
+};
+
+let _installedModels = [];  // populated by health check
+
+function _renderModelDropdown(kind) {
+  const dd = document.getElementById('dd-' + kind);
+  const input = document.getElementById(kind === 'model' ? 'cfg-model' : 'cfg-summary-model');
+  const filter = (input.value || '').toLowerCase();
+  const recs = RECOMMENDED_MODELS[kind] || [];
+
+  let html = '';
+  for (const m of recs) {
+    if (filter && !m.name.toLowerCase().includes(filter) && !m.desc.toLowerCase().includes(filter)) continue;
+    const installed = _installedModels.some(im => im === m.name || im.startsWith(m.name.split(':')[0] + ':') && im === m.name);
+    const isInstalled = _installedModels.includes(m.name);
+    const tag = isInstalled
+      ? '<span class="mo-tag installed">installed</span>'
+      : '<span class="mo-tag not-installed">not installed</span>';
+    html += `<div class="model-option" data-model="${m.name}" onclick="selectModel('${kind}','${m.name}')">
+      <div class="mo-name">${m.name} ${tag}</div>
+      <div class="mo-desc">${m.desc}</div>
+    </div>`;
+  }
+
+  // Show any installed models not in recommendations
+  for (const im of _installedModels) {
+    if (recs.some(r => r.name === im)) continue;
+    if (filter && !im.toLowerCase().includes(filter)) continue;
+    html += `<div class="model-option" data-model="${im}" onclick="selectModel('${kind}','${im}')">
+      <div class="mo-name">${im} <span class="mo-tag installed">installed</span></div>
+      <div class="mo-desc">Installed on server</div>
+    </div>`;
+  }
+
+  if (!html) {
+    html = '<div class="model-option" style="color:var(--text-dim);cursor:default;">No matching models — type a model name and press Enter</div>';
+  }
+  dd.innerHTML = html;
+}
+
+function openModelDropdown(kind) {
+  // Close any other open dropdown first
+  document.querySelectorAll('.model-dropdown.open').forEach(d => d.classList.remove('open'));
+  _renderModelDropdown(kind);
+  document.getElementById('dd-' + kind).classList.add('open');
+}
+
+function filterModelDropdown(kind) {
+  _renderModelDropdown(kind);
+  updateModelStatus(kind);
+}
+
+function selectModel(kind, modelName) {
+  const input = document.getElementById(kind === 'model' ? 'cfg-model' : 'cfg-summary-model');
+  input.value = modelName;
+  document.getElementById('dd-' + kind).classList.remove('open');
+  updateModelStatus(kind);
+}
+
+function updateModelStatus(kind) {
+  const input = document.getElementById(kind === 'model' ? 'cfg-model' : 'cfg-summary-model');
+  const statusEl = document.getElementById('ms-' + kind);
+  const val = (input.value || '').trim();
+  if (!val) { statusEl.innerHTML = ''; return; }
+
+  if (_installedModels.includes(val)) {
+    statusEl.innerHTML = '<span style="color:#3fb950;">✓ Installed</span>';
+  } else {
+    statusEl.innerHTML = `<span style="color:var(--text-dim);">Not installed</span> — `
+      + `<button class="pull-btn" onclick="pullModel('${kind}','${val}')">Pull from Ollama</button>`;
+  }
+}
+
+function pullModel(kind, modelName) {
+  const statusEl = document.getElementById('ms-' + kind);
+  statusEl.innerHTML = `<span style="color:var(--text-dim);">Pulling ${modelName}…</span>`
+    + `<div class="pull-progress-bar"><div class="fill" id="pull-fill-${kind}"></div></div>`;
+
+  const evtSource = new EventSource(
+    '/api/ollama-pull?' + new URLSearchParams({model: modelName})
+  );
+
+  // EventSource doesn't support POST, so we use fetch + ReadableStream instead
+  evtSource.close();  // close the GET attempt
+
+  fetch('/api/ollama-pull', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: modelName }),
+  }).then(async resp => {
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+
+      // Parse SSE lines
+      const lines = buf.split('\n');
+      buf = lines.pop();  // keep partial line
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const data = JSON.parse(line.slice(6));
+          if (data.total && data.completed) {
+            const pct = Math.round(100 * data.completed / data.total);
+            const fill = document.getElementById('pull-fill-' + kind);
+            if (fill) fill.style.width = pct + '%';
+            const mbDone = (data.completed / 1048576).toFixed(0);
+            const mbTotal = (data.total / 1048576).toFixed(0);
+            statusEl.querySelector('span').textContent = `Pulling ${modelName}… ${mbDone}/${mbTotal} MB (${pct}%)`;
+          } else if (data.status && !data.done) {
+            statusEl.querySelector('span').textContent = `${data.status}`;
+          }
+          if (data.done) {
+            if (data.error) {
+              statusEl.innerHTML = `<span style="color:var(--red);">Pull failed: ${data.error}</span>`;
+              toast('Model pull failed: ' + data.error, 'error');
+            } else {
+              statusEl.innerHTML = '<span style="color:#3fb950;">✓ Installed</span>';
+              toast(modelName + ' pulled successfully', 'ok');
+              // Refresh installed models list
+              checkOllamaHealth();
+            }
+            return;
+          }
+        } catch (e) { /* ignore parse errors */ }
+      }
+    }
+    // Stream ended — assume success
+    statusEl.innerHTML = '<span style="color:#3fb950;">✓ Installed</span>';
+    checkOllamaHealth();
+  }).catch(err => {
+    statusEl.innerHTML = `<span style="color:var(--red);">Pull failed: ${err.message}</span>`;
+  });
+}
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.model-selector')) {
+    document.querySelectorAll('.model-dropdown.open').forEach(d => d.classList.remove('open'));
+  }
+});
 
 /* ==========================================================
    File upload / drag-drop
@@ -2699,6 +2963,10 @@ async function checkOllamaHealth() {
     if (r && r.ok) {
       newStatus = 'connected';
       newText = 'Ollama: connected (' + r.models.length + ' models)';
+      // Update global installed models list for the model selectors
+      _installedModels = r.models || [];
+      updateModelStatus('model');
+      updateModelStatus('summary-model');
     } else {
       newStatus = 'unreachable';
       newText = 'Ollama: ' + (r?.error || 'unreachable');
