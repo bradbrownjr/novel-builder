@@ -621,6 +621,85 @@ textarea {
 .vitem-suggestion { color: var(--text-dim); font-size: .74rem; margin-top: .1rem; }
 
 /* =========================================================
+   Consult tab
+   ========================================================= */
+.consult-intro { color: var(--text-dim); font-size: .85rem; line-height: 1.55; margin-bottom: .75rem; }
+.consult-controls { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+.consult-pass {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .8rem 1rem;
+  margin-bottom: .6rem;
+}
+.consult-pass-header {
+  display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem;
+  font-weight: 600; font-size: .9rem;
+}
+.consult-pass-header .pass-emoji { font-size: 1.1rem; }
+.consult-pass-header .pass-status {
+  margin-left: auto; font-size: .72rem; font-weight: 400;
+  padding: .1rem .45rem; border-radius: 10px;
+}
+.pass-status.running { background: rgba(78,168,222,.15); color: var(--blue); }
+.pass-status.done    { background: rgba(78,202,163,.15); color: var(--green); }
+.pass-status.error   { background: rgba(233,69,96,.15);  color: var(--red); }
+.consult-pass-body {
+  font-size: .82rem; line-height: 1.6; color: var(--text);
+  max-height: 500px; overflow-y: auto;
+  padding: .3rem;
+}
+.consult-pass-body h2 { font-size: 1rem; margin: .8rem 0 .3rem; color: var(--accent); }
+.consult-pass-body h3 { font-size: .9rem; margin: .6rem 0 .2rem; }
+.consult-pass-body h4 { font-size: .85rem; margin: .5rem 0 .15rem; }
+.consult-pass-body ul, .consult-pass-body ol { margin: .25rem 0 .25rem 1.5rem; }
+.consult-pass-body li { margin-bottom: .15rem; }
+.consult-pass-body strong { color: var(--text); }
+.consult-pass-body code { font-family: var(--mono); font-size: .78rem; background: var(--bg); padding: .05rem .2rem; border-radius: 3px; }
+.consult-pass-actions { display: flex; gap: .5rem; margin-top: .6rem; }
+
+/* =========================================================
+   Diff view modal
+   ========================================================= */
+.diff-modal {
+  max-width: 95vw; width: 1100px; max-height: 90vh;
+  display: flex; flex-direction: column; padding: 1rem 1.25rem;
+}
+.diff-header {
+  display: flex; align-items: center; gap: .75rem; margin-bottom: .6rem; flex-shrink: 0;
+}
+.diff-header h3 { flex: 1; margin: 0; font-size: 1rem; }
+.diff-container {
+  display: grid; grid-template-columns: 1fr 1fr; gap: .5rem;
+  flex: 1; min-height: 0; overflow: hidden;
+}
+.diff-pane {
+  display: flex; flex-direction: column; min-height: 0;
+}
+.diff-pane-label {
+  font-size: .76rem; font-weight: 600; color: var(--text-dim);
+  padding: .3rem .5rem; background: var(--bg); border-radius: var(--radius) var(--radius) 0 0;
+  border: 1px solid var(--border); border-bottom: none;
+}
+.diff-pane textarea, .diff-pane .diff-rendered {
+  flex: 1; border: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius);
+  background: var(--bg); color: var(--text); font-family: var(--mono); font-size: .78rem;
+  padding: .5rem; resize: none; overflow-y: auto;
+  line-height: 1.5; tab-size: 2;
+}
+.diff-pane .diff-rendered { white-space: pre-wrap; word-break: break-word; }
+.diff-line-add { background: rgba(78,202,163,.12); }
+.diff-line-del { background: rgba(233,69,96,.12); text-decoration: line-through; opacity: .7; }
+.diff-line-ctx { }
+.diff-actions {
+  display: flex; gap: .5rem; margin-top: .6rem; flex-shrink: 0; justify-content: flex-end;
+}
+@media (max-width: 800px) {
+  .diff-container { grid-template-columns: 1fr; }
+  .diff-modal { width: 98vw; }
+}
+
+/* =========================================================
    Responsive
    ========================================================= */
 @media (max-width: 640px) {
@@ -892,6 +971,7 @@ textarea {
 <!-- ==================== TABS ==================== -->
 <div class="tabs">
   <button class="tab-btn active" data-tab="story">Story</button>
+  <button class="tab-btn" data-tab="consult">Consult</button>
   <button class="tab-btn" data-tab="settings">Settings</button>
   <button class="tab-btn" data-tab="logs">Logs</button>
   <button class="tab-btn" data-tab="memory">Memory</button>
@@ -993,8 +1073,31 @@ textarea {
 
   <!-- Action buttons -->
   <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
-    <button class="btn btn-primary" onclick="document.querySelector('[data-tab=&quot;settings&quot;]').click()">Next</button>
+    <button class="btn btn-primary" onclick="document.querySelector('[data-tab=&quot;consult&quot;]').click()">Next</button>
     <button class="btn" onclick="refreshParsed()">🔄 Refresh Preview</button>
+  </div>
+</div>
+
+<!-- ==================== CONSULT TAB ==================== -->
+<div class="tab-panel" id="panel-consult">
+  <div class="card">
+    <h3>🔍 AI Story Consultant</h3>
+    <p class="consult-intro">
+      Run an AI-powered audit of your YAML story files. The generation model will analyze
+      your characters, outline, locations, and cross-references for effectiveness, then
+      recommend specific improvements to produce the best possible story output.
+    </p>
+    <div class="consult-controls">
+      <button class="btn btn-primary" id="btn-consult-run" onclick="runConsult()">🔍 Run Full Audit</button>
+      <button class="btn btn-danger" id="btn-consult-stop" onclick="stopConsult()" style="display:none;">⏹ Stop</button>
+      <span id="consult-status" style="font-size:.78rem; color:var(--text-dim);"></span>
+    </div>
+    <div id="consult-results"></div>
+  </div>
+
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
+    <button class="btn" onclick="document.querySelector('[data-tab=&quot;story&quot;]').click()">← Back to Story</button>
+    <button class="btn btn-primary" onclick="document.querySelector('[data-tab=&quot;settings&quot;]').click()">Next →</button>
   </div>
 </div>
 
@@ -1204,6 +1307,31 @@ textarea {
       <button class="btn btn-sm" onclick="document.getElementById('modal-yaml-help').classList.remove('show')">✕ Close</button>
     </div>
     <div id="yaml-help-content" style="overflow-y:auto;flex:1;padding-right:.25rem;"></div>
+  </div>
+</div>
+
+<!-- ==================== DIFF VIEW MODAL ==================== -->
+<div class="modal-overlay" id="modal-diff" onclick="if(event.target===this)closeDiff()">
+  <div class="modal diff-modal">
+    <div class="diff-header">
+      <h3 id="diff-title">Review Changes</h3>
+      <button class="btn btn-sm" onclick="closeDiff()">✕ Close</button>
+    </div>
+    <div class="diff-container">
+      <div class="diff-pane">
+        <div class="diff-pane-label">Original</div>
+        <div class="diff-rendered" id="diff-original"></div>
+      </div>
+      <div class="diff-pane">
+        <div class="diff-pane-label">Proposed (editable)</div>
+        <textarea id="diff-proposed"></textarea>
+      </div>
+    </div>
+    <div class="diff-actions">
+      <button class="btn" onclick="closeDiff()">Cancel</button>
+      <button class="btn" onclick="refreshDiffHighlight()">🔄 Refresh Diff</button>
+      <button class="btn btn-primary" id="btn-diff-apply" onclick="applyDiff()">✓ Apply Changes</button>
+    </div>
   </div>
 </div>
 
@@ -3415,10 +3543,314 @@ ${V(1,'- "unbeknownst"')}
 }
 
 /* ==========================================================
+   AI Consult — YAML audit + diff view
+   ========================================================== */
+let _consultAbort = null;   // AbortController for stopping
+let _consultResults = {};   // pass_name → full analysis text
+let _consultRunning = false;
+
+function _simpleMarkdown(text) {
+  // Minimal markdown → HTML for the analysis display
+  if (!text) return '';
+  let html = escHtml(text);
+  // Headers
+  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  // Bold
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Italic
+  html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // List items
+  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
+  // Wrap consecutive <li> in <ul>
+  html = html.replace(/((?:<li>.*?<\/li>\n?)+)/g, '<ul>$1</ul>');
+  // Paragraphs (double newline)
+  html = html.replace(/\n\n/g, '<br><br>');
+  return html;
+}
+
+async function runConsult() {
+  if (_consultRunning) return;
+  _consultRunning = true;
+  _consultResults = {};
+  _consultAbort = new AbortController();
+
+  const statusEl = document.getElementById('consult-status');
+  const resultsEl = document.getElementById('consult-results');
+  const btnRun = document.getElementById('btn-consult-run');
+  const btnStop = document.getElementById('btn-consult-stop');
+
+  btnRun.style.display = 'none';
+  btnStop.style.display = '';
+  statusEl.textContent = 'Starting audit…';
+  resultsEl.innerHTML = '';
+
+  try {
+    const resp = await fetch('/api/consult', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+      signal: _consultAbort.signal,
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${resp.status}`);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    const passEls = {};   // pass_name → {body, status, text}
+    const passTexts = {}; // pass_name → accumulated raw text
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+
+      const lines = buf.split('\n');
+      buf = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+
+        switch (ev.type) {
+          case 'passes':
+            statusEl.textContent = `Running ${ev.passes.length} analysis passes…`;
+            break;
+
+          case 'pass_start': {
+            const passDiv = document.createElement('div');
+            passDiv.className = 'consult-pass';
+            passDiv.id = 'consult-pass-' + ev.pass;
+            passDiv.innerHTML = `
+              <div class="consult-pass-header">
+                <span class="pass-emoji">${escHtml(ev.emoji)}</span>
+                <span>${escHtml(ev.label)} Analysis</span>
+                <span class="pass-status running" id="pstatus-${ev.pass}">analyzing…</span>
+              </div>
+              <div class="consult-pass-body" id="pbody-${ev.pass}"></div>
+            `;
+            resultsEl.appendChild(passDiv);
+            passEls[ev.pass] = {
+              body: document.getElementById('pbody-' + ev.pass),
+              status: document.getElementById('pstatus-' + ev.pass),
+            };
+            passTexts[ev.pass] = '';
+            statusEl.textContent = `Analyzing ${ev.label.toLowerCase()}…`;
+            break;
+          }
+
+          case 'chunk':
+            if (passEls[ev.pass]) {
+              passTexts[ev.pass] += ev.text;
+              passEls[ev.pass].body.innerHTML = _simpleMarkdown(passTexts[ev.pass]);
+              passEls[ev.pass].body.scrollTop = passEls[ev.pass].body.scrollHeight;
+            }
+            break;
+
+          case 'pass_complete':
+            if (passEls[ev.pass]) {
+              passEls[ev.pass].status.className = 'pass-status done';
+              passEls[ev.pass].status.textContent = 'complete';
+              passEls[ev.pass].body.innerHTML = _simpleMarkdown(ev.text);
+              _consultResults[ev.pass] = ev.text;
+              // Add action buttons for file-specific passes
+              if (['characters', 'outline', 'locations'].includes(ev.pass)) {
+                const actionsDiv = document.createElement('div');
+                actionsDiv.className = 'consult-pass-actions';
+                actionsDiv.innerHTML = `<button class="btn btn-sm btn-primary" onclick="generateFix('${ev.pass}')">✨ Generate Fixed ${escHtml(PASS_LABELS[ev.pass] || ev.pass)}</button>`;
+                passEls[ev.pass].body.parentElement.appendChild(actionsDiv);
+              }
+            }
+            break;
+
+          case 'pass_error':
+            if (passEls[ev.pass]) {
+              passEls[ev.pass].status.className = 'pass-status error';
+              passEls[ev.pass].status.textContent = 'error';
+              passEls[ev.pass].body.innerHTML = `<p style="color:var(--red);">${escHtml(ev.error)}</p>`;
+            }
+            break;
+
+          case 'done':
+            statusEl.textContent = 'Audit complete';
+            break;
+        }
+      }
+    }
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      statusEl.textContent = 'Audit stopped';
+      toast('Audit stopped', 'warn');
+    } else {
+      statusEl.textContent = 'Audit failed';
+      toast('Consult error: ' + e.message, 'error');
+    }
+  } finally {
+    _consultRunning = false;
+    _consultAbort = null;
+    btnRun.style.display = '';
+    btnStop.style.display = 'none';
+  }
+}
+
+const PASS_LABELS = { characters: 'Characters', outline: 'Outline', locations: 'Locations' };
+
+function stopConsult() {
+  if (_consultAbort) _consultAbort.abort();
+}
+
+async function generateFix(role) {
+  const analysis = _consultResults[role];
+  if (!analysis) { toast('No analysis found for ' + role, 'error'); return; }
+
+  const btn = event.target;
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Generating…';
+
+  try {
+    const resp = await fetch('/api/consult-apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role, analysis }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${resp.status}`);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let correctedYaml = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+
+      const lines = buf.split('\n');
+      buf = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+
+        if (ev.type === 'chunk') {
+          correctedYaml += ev.text;
+        } else if (ev.type === 'done') {
+          correctedYaml = ev.yaml || correctedYaml;
+        } else if (ev.type === 'error') {
+          throw new Error(ev.error);
+        }
+      }
+    }
+
+    if (!correctedYaml.trim()) {
+      throw new Error('No corrected YAML generated');
+    }
+
+    // Fetch original for diff
+    const origResp = await api('/api/file-content/' + role);
+    const original = (origResp && origResp.ok) ? origResp.content : '';
+
+    showDiff(role, original, correctedYaml.trim());
+
+  } catch (e) {
+    toast('Fix generation failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+  }
+}
+
+/* ---------- Diff view ---------- */
+let _diffRole = null;
+
+function showDiff(role, original, proposed) {
+  _diffRole = role;
+  const labels = { outline: 'Story Outline', characters: 'Characters', locations: 'Locations' };
+  document.getElementById('diff-title').textContent = `Review Changes — ${labels[role] || role}`;
+
+  // Render original with line-level diff highlighting
+  const origEl = document.getElementById('diff-original');
+  const propEl = document.getElementById('diff-proposed');
+  propEl.value = proposed;
+
+  _renderDiffHighlight(original, proposed, origEl);
+  document.getElementById('modal-diff').classList.add('show');
+}
+
+function _renderDiffHighlight(original, proposed, origEl) {
+  // Simple line-level diff
+  const origLines = original.split('\n');
+  const propLines = proposed.split('\n');
+  const propSet = new Set(propLines);
+  const origSet = new Set(origLines);
+
+  let html = '';
+  for (const line of origLines) {
+    if (!propSet.has(line)) {
+      html += `<div class="diff-line-del">${escHtml(line)}</div>`;
+    } else {
+      html += `<div class="diff-line-ctx">${escHtml(line)}</div>`;
+    }
+  }
+  // Show new lines that aren't in original
+  const addedLines = propLines.filter(l => !origSet.has(l));
+  if (addedLines.length > 0) {
+    html += `<div style="margin-top:.5rem;color:var(--green);font-weight:600;">+ ${addedLines.length} new/changed lines in proposed version</div>`;
+  }
+  origEl.innerHTML = html;
+}
+
+function refreshDiffHighlight() {
+  if (!_diffRole) return;
+  api('/api/file-content/' + _diffRole).then(r => {
+    if (r && r.ok) {
+      const proposed = document.getElementById('diff-proposed').value;
+      _renderDiffHighlight(r.content, proposed, document.getElementById('diff-original'));
+    }
+  });
+}
+
+function closeDiff() {
+  document.getElementById('modal-diff').classList.remove('show');
+  _diffRole = null;
+}
+
+async function applyDiff() {
+  if (!_diffRole) return;
+  const content = document.getElementById('diff-proposed').value;
+  if (!content.trim()) { toast('Proposed content is empty', 'error'); return; }
+
+  const r = await apiPost('/api/consult-save', { role: _diffRole, content });
+  if (r && r.ok) {
+    toast(`${PASS_LABELS[_diffRole] || _diffRole} file updated (${formatBytes(r.size)})`, 'ok');
+    closeDiff();
+    refreshFiles();
+    refreshParsed();
+  } else {
+    toast('Save failed: ' + (r?.error || 'unknown error'), 'error');
+  }
+}
+
+/* ==========================================================
    Mobile: swipe left/right between tabs
    ========================================================== */
 (function () {
-  const TAB_ORDER = ['story', 'settings', 'logs', 'memory', 'output'];
+  const TAB_ORDER = ['story', 'consult', 'settings', 'logs', 'memory', 'output'];
   let _sx = 0, _sy = 0;
   document.addEventListener('touchstart', e => {
     _sx = e.touches[0].clientX;
