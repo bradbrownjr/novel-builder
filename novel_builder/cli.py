@@ -31,8 +31,8 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--summary-model",
-        default="gemma3:1b",
-        help="Ollama model for summarization (default: gemma3:1b).",
+        default="gemma3:4b",
+        help="Ollama model for summarization (default: gemma3:4b).",
     )
 
     # --- Files ---

@@ -267,7 +267,7 @@ def _load_web_config():
     defaults = {
         "host": os.environ.get("OLLAMA_HOST", ""),
         "model": "gemma3:12b",
-        "summary_model": "gemma3:1b",
+        "summary_model": "gemma3:4b",
         "retries": 5,
         "timeout": 900,
         # TTS (Speaches / Kokoro / Piper)
@@ -348,7 +348,7 @@ def _start_generation(web_config):
     args = SimpleNamespace(
         host=_normalize_host(web_config.get("host", "")),
         model=web_config.get("model", "gemma3:12b"),
-        summary_model=web_config.get("summary_model", "gemma3:1b"),
+        summary_model=web_config.get("summary_model", "gemma3:4b"),
         retries=int(web_config.get("retries", 5)),
         timeout=int(web_config.get("timeout", 900)),
         output=os.path.join(WORKSPACE_DIR, "full_story.md"),
@@ -884,7 +884,7 @@ def api_rebuild_memories():
     _loc_path_rb = os.path.join(WORKSPACE_DIR, FILE_ROLES["locations"])
     args = SimpleNamespace(
         host=_normalize_host(web_config.get("host", "")),
-        summary_model=web_config.get("summary_model", "gemma3:1b"),
+        summary_model=web_config.get("summary_model", "gemma3:4b"),
         output=os.path.join(WORKSPACE_DIR, "full_story.md"),
         checkpoint_path=os.path.join(WORKSPACE_DIR, "checkpoint.yaml"),
         outline=os.path.join(WORKSPACE_DIR, FILE_ROLES["outline"]),
@@ -949,7 +949,7 @@ def api_regenerate():
     args = SimpleNamespace(
         host=_normalize_host(web_config.get("host", "")),
         model=web_config.get("model", "gemma3:12b"),
-        summary_model=web_config.get("summary_model", "gemma3:1b"),
+        summary_model=web_config.get("summary_model", "gemma3:4b"),
         retries=int(web_config.get("retries", 5)),
         timeout=int(web_config.get("timeout", 900)),
         output=os.path.join(WORKSPACE_DIR, "full_story.md"),
@@ -1030,6 +1030,86 @@ def api_ollama_health():
         return jsonify({"ok": False, "error": "Timeout"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/api/ollama-pull", methods=["POST"])
+def api_ollama_pull():
+    """Pull (download) a model from Ollama, streaming progress as SSE.
+
+    Request JSON: {"model": "gemma3:4b"}
+    Response: text/event-stream with JSON events containing:
+        - status: "pulling ...", "downloading ...", etc.
+        - total, completed: byte counts for download progress
+        - error: if something went wrong
+    Final event has {"status": "success"} or {"error": "..."}.
+    """
+    data = request.get_json(force=True)
+    model_name = data.get("model", "").strip()
+    if not model_name:
+        return jsonify({"ok": False, "error": "No model specified"}), 400
+
+    cfg = _load_web_config()
+    host = _normalize_host(cfg.get("host", ""))
+    if not host:
+        return jsonify({"ok": False, "error": "No Ollama host configured"}), 400
+
+    def stream():
+        try:
+            resp = _requests.post(
+                f"{host}/api/pull",
+                json={"name": model_name, "stream": True},
+                stream=True,
+                timeout=7200,  # 2h — large models can take a while
+            )
+            resp.raise_for_status()
+
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                try:
+                    chunk = json.loads(line)
+                except (ValueError, TypeError):
+                    continue
+
+                # Forward progress to the client
+                event = {}
+                if "status" in chunk:
+                    event["status"] = chunk["status"]
+                if "total" in chunk:
+                    event["total"] = chunk["total"]
+                if "completed" in chunk:
+                    event["completed"] = chunk["completed"]
+                if "error" in chunk:
+                    event["error"] = chunk["error"]
+
+                yield f"data: {json.dumps(event)}\n\n"
+
+                # Ollama signals completion or error
+                if chunk.get("status") == "success":
+                    yield f"data: {json.dumps({'done': True, 'status': 'success'})}\n\n"
+                    return
+                if "error" in chunk:
+                    yield f"data: {json.dumps({'done': True, 'error': chunk['error']})}\n\n"
+                    return
+
+            # Stream ended without explicit success/error
+            yield f"data: {json.dumps({'done': True, 'status': 'success'})}\n\n"
+
+        except _requests.ConnectionError:
+            yield f"data: {json.dumps({'done': True, 'error': 'Connection to Ollama refused'})}\n\n"
+        except _requests.Timeout:
+            yield f"data: {json.dumps({'done': True, 'error': 'Pull request timed out'})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'done': True, 'error': str(e)})}\n\n"
+
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.route("/api/events")

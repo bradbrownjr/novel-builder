@@ -125,11 +125,8 @@ def _run_generation(config, args, event_callback=None):
         # Clear output file for fresh start
         _init_output_file(output_file, config)
 
-    # Build system prompt (consistent across scenes)
-    system_prompt = build_system_prompt(config)
-
     if args.dry_run:
-        _dry_run(config, chapters, system_prompt, state, heritage_defs,
+        _dry_run(config, chapters, state, heritage_defs,
                  all_characters, locations, start_ch, start_sc)
         return
 
@@ -202,7 +199,11 @@ def _run_generation(config, args, event_callback=None):
                 ]
                 print(f"    Characters: {', '.join(names)}")
 
-            # Build scene prompt
+            # Build system + scene prompts (system prompt is per-scene
+            # because the character roster is scoped to known characters)
+            system_prompt = build_system_prompt(
+                config, state=state, scene_char_ids=present_ids,
+            )
             try:
                 user_prompt = build_scene_prompt(
                     config, chapter, scene, state, heritage_defs,
@@ -360,16 +361,13 @@ def _run_generation(config, args, event_callback=None):
 # Dry run
 # ---------------------------------------------------------------------------
 
-def _dry_run(config, chapters, system_prompt, state, heritage_defs,
+def _dry_run(config, chapters, state, heritage_defs,
              all_characters, locations, start_ch, start_sc):
     """Print prompts without calling the LLM.
 
     Useful for inspecting what would be sent to the model.
     """
     print("\n=== DRY RUN — No LLM calls will be made ===\n")
-    print("--- System Prompt ---")
-    print(system_prompt)
-    print()
 
     for ch_idx in range(start_ch, len(chapters)):
         chapter = chapters[ch_idx]
@@ -382,11 +380,25 @@ def _dry_run(config, chapters, system_prompt, state, heritage_defs,
             scene_num = scene.get(
                 "scene_number", f"{ch_num}.{sc_idx + 1}")
 
+            # Detect characters for roster scoping
+            scene_text = f"{scene.get('events', '')} {scene.get('notes', '')}"
+            explicit_chars = scene.get("characters", [])
+            if explicit_chars:
+                present_ids = list(explicit_chars)
+            else:
+                present_ids = auto_detect_characters(
+                    scene_text, all_characters)
+
+            system_prompt = build_system_prompt(
+                config, state=state, scene_char_ids=present_ids,
+            )
             user_prompt = build_scene_prompt(
                 config, chapter, scene, state, heritage_defs,
                 all_characters, locations, ch_num,
             )
 
+            print(f"--- Scene {scene_num} System Prompt ---")
+            print(system_prompt)
             print(f"--- Scene {scene_num} User Prompt ---")
             print(user_prompt)
             print()
@@ -574,8 +586,18 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
 
     output_file = args.output
 
+    # Detect characters for roster scoping
+    scene_text = f"{scene.get('events', '')} {scene.get('notes', '')}"
+    explicit_chars = scene.get("characters", [])
+    if explicit_chars:
+        present_ids = list(explicit_chars)
+    else:
+        present_ids = auto_detect_characters(scene_text, all_characters)
+
     # Build prompts
-    system_prompt = build_system_prompt(config)
+    system_prompt = build_system_prompt(
+        config, state=state, scene_char_ids=present_ids,
+    )
     try:
         user_prompt = build_scene_prompt(
             config, chapter, scene, state, heritage_defs,

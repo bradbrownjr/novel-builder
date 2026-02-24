@@ -25,7 +25,7 @@ _(Add directives here when the user says "always" or "never" do something.)_
 - Markdown is the output format.
 - Ollama is the only supported LLM backend (for now).
 - Minimal dependencies: `pyyaml`, `requests`, stdlib only.
-- Default generation model: `gemma3:12b`. Default summary model: `gemma3:1b`.
+- Default generation model: `gemma3:12b`. Default summary model: `gemma3:4b`.
 - No word count targets — let the AI decide scene length.
 - Interactive mode is deferred (P3). Post-completion rewrite is the near-term alternative.
 
@@ -46,7 +46,7 @@ novel_builder/
 ├── yaml_io.py            # load_yaml(), save_yaml()
 ├── postprocess.py        # clean_scene_text(), apply_anti_patterns()
 ├── tts.py                # segment_text_for_tts(), _find_speaker(), _name_matches_attribution()
-├── web.py                # Flask web UI, TTS proxy, /api/memory (GET+POST), /api/regenerate, /api/download (marker-stripped)
+├── web.py                # Flask web UI, TTS proxy, /api/memory (GET+POST), /api/regenerate, /api/download (marker-stripped), /api/ollama-pull (model download)
 └── validator.py          # validate_all()
 ```
 
@@ -87,6 +87,10 @@ _(Track fixes here for reference.)_
 - Editable Memory tab — users can edit, add, and delete story memory items (facts, actions, commitments, characters) and save back to checkpoint.
 - Scene/chapter regeneration — users can regenerate individual scenes or entire chapters from the Output tab. Old text is logged before replacement.
 - Scene markers (`<!-- scene:X.Y -->` / `<!-- /scene:X.Y -->`, `<!-- chapter:N -->`) embedded in .md output for regeneration targeting. Stripped from downloads.
+- Character roster in system prompt scoped to appeared + current-scene characters only (prevents future character leakage).
+- Summary model upgraded to `gemma3:4b` (from `gemma3:1b`) for better extraction quality.
+- Extraction/summary prompt sharpened: focuses on plot-relevant facts, decisions, and commitments rather than trivial physical descriptions.
+- Web UI model selectors with recommended models, RAM estimates, install status, and auto-pull from Ollama.
 
 ## Scene Marker Format
 
@@ -108,6 +112,24 @@ Scene text here...
 - Markers are invisible in rendered Markdown.
 - `/api/download` strips all markers and collapses excess blank lines for a clean book file.
 - `renderScenes()` in the UI parses these markers to create per-scene blocks with Regen buttons.
+
+## Character Roster Scoping
+
+The system prompt's character roster is **scoped per scene** to prevent the generation model from introducing characters before their intended appearance:
+
+- Only characters that have **already appeared** (tracked in `character_appearances` in checkpoint) are listed.
+- Characters **explicitly assigned to the current scene** (via character list or auto-detection) are also included.
+- Characters not yet introduced are invisible to the generation model.
+- `build_system_prompt()` accepts `state` and `scene_char_ids` parameters for this scoping.
+
+## Model Selection & Pull
+
+- Web UI provides combo-box selectors with recommended models (including RAM estimates and quality notes).
+- Users can also type any model name directly.
+- If a selected model is not installed, a "Pull from Ollama" button appears.
+- `/api/ollama-pull` streams download progress from Ollama's `/api/pull` endpoint as SSE events.
+- Recommended generation models: gemma3:4b, gemma3:12b, gemma3:27b, qwen2.5:7b, qwen2.5:14b, llama3.1:8b, mistral:7b, deepseek-r1:8b.
+- Recommended summary models: gemma3:1b, gemma3:4b, qwen2.5:3b, qwen2.5:7b, phi4-mini, gemma3:12b.
 
 ## Regeneration Workflow
 

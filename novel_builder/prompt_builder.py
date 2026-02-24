@@ -79,14 +79,18 @@ def _merge_anti_patterns(user_patterns):
 # System prompt
 # ---------------------------------------------------------------------------
 
-def build_system_prompt(config):
+def build_system_prompt(config, state=None, scene_char_ids=None):
     """Build the system prompt for the generation model.
 
     Includes world context, style directives, and anti-pattern suppression.
-    This prompt is consistent across all scenes.
+    The character roster is scoped to characters that are either in the
+    current scene or have already appeared in the story, preventing leakage
+    of future character information.
 
     Args:
         config: Story configuration dict from load_config().
+        state: Optional checkpoint state dict (used for character_appearances).
+        scene_char_ids: Optional list of character IDs present in the current scene.
 
     Returns:
         System prompt string.
@@ -130,12 +134,24 @@ def build_system_prompt(config):
     elif isinstance(arc, str) and arc:
         parts.append(f"\nStory arc: {arc}")
 
-    # Canonical character roster — ground the model on exact full names so it
-    # cannot invent variants (e.g. "Elias Bloom" instead of "Elias Thorne").
+    # Canonical character roster — scoped to characters the story has seen
+    # so far (via character_appearances in state) plus characters explicitly
+    # listed in the current scene.  This prevents the model from introducing
+    # future characters it shouldn't know about yet.
     characters = config.get("characters", {})
     if characters:
+        # Determine which character IDs are "known" at this point
+        appeared_ids = set()
+        if state:
+            appeared_ids = set(state.get("character_appearances", {}).keys())
+        if scene_char_ids:
+            appeared_ids.update(scene_char_ids)
+
         roster_lines = []
-        for char_data in characters.values():
+        for char_id, char_data in characters.items():
+            # Only include characters that have appeared or are in this scene
+            if appeared_ids and char_id not in appeared_ids:
+                continue
             name = char_data.get("Name") or char_data.get("name", "")
             role = char_data.get("role", "")
             if name:
