@@ -131,6 +131,21 @@ The system prompt's character roster is **scoped per scene** to prevent the gene
 - Recommended generation models: gemma3:4b, gemma3:12b, gemma3:27b, qwen2.5:7b, qwen2.5:14b, llama3.1:8b, mistral:7b, deepseek-r1:8b.
 - Recommended summary models: gemma3:1b, gemma3:4b, qwen2.5:3b, qwen2.5:7b, phi4-mini, gemma3:12b.
 
+## Setting Detail
+
+Scenes support an optional `setting_detail` key that narrows the focus to a specific sub-area within a location:
+
+```yaml
+- scene_number: 3.1
+  setting: toy_store
+  setting_detail: "The narrow aisles between towering shelves"
+```
+
+- `setting_detail` is appended after the base location text in the prompt as `Specific area: ...`.
+- Works with or without a `setting` reference — can be used standalone for ad-hoc area descriptions.
+- Keeps the base location data (name, atmosphere, mood_shift) intact while zooming in.
+- Implemented in `build_scene_prompt()` in `prompt_builder.py`.
+
 ## Regeneration Workflow
 
 1. User clicks 🔄 Regen on a scene or chapter in the Output tab.

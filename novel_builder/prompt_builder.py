@@ -249,12 +249,21 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
 
     # -- Location --
     setting_ref = scene.get("setting", "")
-    if setting_ref:
-        location = resolve_location(setting_ref, locations)
-        mood_key = scene.get("mood_shift_key", None)
-        loc_text = format_location_for_prompt(location, mood_key)
+    setting_detail = scene.get("setting_detail", "")
+    if setting_ref or setting_detail:
+        if setting_ref:
+            location = resolve_location(setting_ref, locations)
+            mood_key = scene.get("mood_shift_key", None)
+            loc_text = format_location_for_prompt(location, mood_key)
+        else:
+            loc_text = ""
+        loc_parts = []
         if loc_text:
-            parts.append(f"\nSetting:\n{loc_text}")
+            loc_parts.append(loc_text)
+        if setting_detail:
+            loc_parts.append(f"Specific area: {setting_detail}")
+        if loc_parts:
+            parts.append(f"\nSetting:\n" + "\n".join(loc_parts))
 
     # -- Character context --
     char_block = _build_character_block(
