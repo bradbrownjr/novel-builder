@@ -1205,6 +1205,7 @@ textarea {
 
   <!-- Generation buttons -->
   <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
+    <button class="btn" onclick="document.querySelector('[data-tab=&quot;consult&quot;]').click()">← Previous</button>
     <button class="btn btn-primary" id="btn-start" onclick="startGeneration(false)">▶ Start Generation</button>
     <button class="btn" id="btn-resume" onclick="startGeneration(true)" style="display:none;">⏩ Resume</button>
     <button class="btn btn-danger" id="btn-stop" onclick="stopGeneration()" style="display:none;">⏹ Stop</button>
@@ -3809,6 +3810,21 @@ async function runConsult() {
             const totalTime = ev.elapsed_s != null ? ` in ${ev.elapsed_s}s` : '';
             statusEl.textContent = `Audit complete${totalTime}`;
             addLogEntry({ time: _now(), message: `🔍 AI Consult finished${totalTime}`, level: 'info' });
+            // Show Generate All Fixes button if any file-specific passes ran
+            const fixableRoles = Object.keys(_consultResults)
+              .filter(r => ['characters', 'outline', 'locations'].includes(r));
+            if (fixableRoles.length > 0) {
+              const allFixBtn = document.createElement('div');
+              allFixBtn.id = 'btn-gen-all-fixes-wrap';
+              allFixBtn.style.cssText = 'margin-top:.75rem; padding:.6rem .75rem; background:rgba(78,168,222,.08); border:1px solid rgba(78,168,222,.25); border-radius:var(--radius); display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;';
+              allFixBtn.innerHTML = `
+                <span style="font-size:.82rem; color:var(--text-dim); flex:1;">
+                  ✨ Audit complete — click to generate proposed YAML files and review changes:
+                </span>
+                <button class="btn btn-primary" id="btn-gen-all-fixes" onclick="generateAllFixes(${JSON.stringify(fixableRoles)})">Generate All Fixes</button>
+              `;
+              resultsEl.appendChild(allFixBtn);
+            }
             break;
           }
         }
@@ -3840,14 +3856,31 @@ function stopConsult() {
   if (_consultAbort) _consultAbort.abort();
 }
 
+async function generateAllFixes(roles) {
+  const wrapBtn = document.getElementById('btn-gen-all-fixes');
+  if (wrapBtn) { wrapBtn.disabled = true; wrapBtn.textContent = 'Generating…'; }
+  for (const role of roles) {
+    if (wrapBtn) wrapBtn.textContent = `Generating ${PASS_LABELS[role] || role}…`;
+    // Also show spinner on the per-pass button
+    let passBtn = null;
+    for (const b of document.querySelectorAll(`#consult-pass-${role} .consult-pass-actions button`)) {
+      if (b.textContent.includes('Generate Fixed')) { passBtn = b; break; }
+    }
+    await _doGenerateFix(role, passBtn);
+  }
+  if (wrapBtn) { wrapBtn.disabled = false; wrapBtn.textContent = 'Generate All Fixes'; }
+}
+
 async function generateFix(role) {
+  await _doGenerateFix(role, event?.target || null);
+}
+
+async function _doGenerateFix(role, btn) {
   const analysis = _consultResults[role];
   if (!analysis) { toast('No analysis found for ' + role, 'error'); return; }
 
-  const btn = event.target;
-  const origText = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = '⏳ Generating…';
+  const origText = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating…'; }
 
   try {
     const resp = await fetch('/api/consult-apply', {
@@ -3902,8 +3935,7 @@ async function generateFix(role) {
   } catch (e) {
     toast('Fix generation failed: ' + e.message, 'error');
   } finally {
-    btn.disabled = false;
-    btn.textContent = origText;
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
 }
 

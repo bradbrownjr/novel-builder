@@ -64,22 +64,32 @@ def _characters_prompt(char_yaml):
     return f"""\
 Analyze these character definitions for a Novel Builder story.
 
+CRITICAL: Before evaluating any character, read their `role` and `summary` \
+fields carefully. Characters may be non-human — mannequins, inflatable display \
+figures, automatons, spirits, animals, or other non-humanoid entities. Treat \
+non-human characters on their own terms. Do NOT assume a character is human or \
+has human motivations unless their profile states it. If a character's nature \
+(human vs non-human) is not clearly communicated in their YAML, that is itself \
+a critical issue to flag.
+
 For each character, evaluate:
-1. **vibe** — Is it vivid and specific? A vague vibe ("friendly") produces \
+1. **nature/role clarity** — Is it immediately clear what kind of being this \
+character is? Non-human characters need their nature established explicitly.
+2. **vibe** — Is it vivid and specific? A vague vibe ("friendly") produces \
 bland output. A strong vibe ("carries warmth like a campfire everyone gravitates \
 toward, but the ashes hide old burns") gives the AI a tonal anchor.
-2. **voice** — Does the speech pattern differentiate this character from others? \
+3. **voice** — Does the speech pattern differentiate this character from others? \
 Would you know who's speaking without dialogue tags?
-3. **personality** — Are traits specific enough to drive behavior, or generic \
+4. **personality** — Are traits specific enough to drive behavior, or generic \
 ("brave, kind")? Remember, personality is only sent on first appearance.
-4. **summary/role** — Does the summary establish enough for the AI to carry \
+5. **summary/role** — Does the summary establish enough for the AI to carry \
 forward after this is dropped from the prompt?
-5. **relationships** — Are they defined between characters who share scenes? \
+6. **relationships** — Are they defined between characters who share scenes? \
 Missing relationships = missed subtext.
-6. **evolution** — Does the character have growth notes for later chapters?
-7. **distinctiveness** — Could any two characters be confused? Do they have \
+7. **evolution** — Does the character have growth notes for later chapters?
+8. **distinctiveness** — Could any two characters be confused? Do they have \
 overlapping vibes/voices?
-8. **Missing fields** — What high-impact fields are absent (vibe, voice, \
+9. **Missing fields** — What high-impact fields are absent (vibe, voice, \
 personality, habit, appearance, species)?
 
 Keep criticism constructive and actionable. Give specific rewrite suggestions \
