@@ -268,10 +268,15 @@ def _run_generation(config, args, event_callback=None):
                     (all_characters.get(cid, {}).get("Name") or cid)
                     for cid in present_ids
                 ]
+                all_known_names = [
+                    (all_characters.get(cid, {}).get("Name") or cid)
+                    for cid in all_characters
+                ]
                 scene_meta = {
                     "scene_id": str(scene_num),
                     "title": scene_title,
                     "characters": char_names,
+                    "all_characters": all_known_names,
                 }
                 summary, extraction = call_summary_model(
                     args.host, summary_model, text,
@@ -290,6 +295,7 @@ def _run_generation(config, args, event_callback=None):
                 update_after_scene(
                     state, ch_num, scene_num, summary,
                     extraction, present_ids,
+                    known_names=all_known_names,
                 )
             except Exception as e:
                 tb = traceback.format_exc()
@@ -601,18 +607,23 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
     # Re-summarise
     summary = ""
     extraction = {"characters": [], "facts": [], "actions": [], "commitments": []}
+    all_known_names_regen = [
+        (cdata.get("Name") or cid)
+        for cid, cdata in config.get("characters", {}).items()
+    ]
     try:
         emit("model_active", model="summarization", name=getattr(args, 'summary_model', 'gemma3:1b'))
         # Build scene meta for grounding
         char_names = []
-        if scene_dict.get("characters"):
-            for cid in scene_dict["characters"]:
+        if scene and scene.get("characters"):
+            for cid in scene["characters"]:
                 cdata = config.get("characters", {}).get(cid, {})
                 char_names.append(cdata.get("Name") or cid)
         scene_meta = {
             "scene_id": scene_id,
-            "title": scene_dict.get("title", ""),
+            "title": scene.get("title", "") if scene else "",
             "characters": char_names,
+            "all_characters": all_known_names_regen,
         }
         summary, extraction = call_summary_model(
             args.host, args.summary_model, text,
@@ -624,11 +635,12 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
         summary = text[:200].rsplit(" ", 1)[0] + "..."
         emit("log", message=f"Summary failed for regen: {e}", level="warn")
 
-    # Update checkpoint — re-merge the extraction but don't advance scene counters
-    from .state import _merge_story_memory, _sanitize_story_memory
+    # Update checkpoint — clear stale memory for this scene, then re-merge fresh extraction
+    from .state import _merge_story_memory, _sanitize_story_memory, _clear_scene_memory
     state.setdefault("story_memory", {})
     state["story_memory"] = _sanitize_story_memory(state["story_memory"])
-    _merge_story_memory(state, extraction, scene_id)
+    _clear_scene_memory(state, scene_id)
+    _merge_story_memory(state, extraction, scene_id, known_names=all_known_names_regen)
     save_checkpoint(state, checkpoint_path)
 
     emit("scene_regenerated", scene_id=scene_id, title=scene_title, text=text, summary=summary)
@@ -764,6 +776,11 @@ def rebuild_memories(config, args, event_callback=None):
             for cid in (scene_dict.get("characters") or []):
                 cdata = all_characters.get(cid, {})
                 scene_meta["characters"].append(cdata.get("Name") or cid)
+        all_known_names_rebuild = [
+            (all_characters.get(cid, {}).get("Name") or cid)
+            for cid in all_characters
+        ]
+        scene_meta["all_characters"] = all_known_names_rebuild
 
         present_char_ids = (scene_dict.get("characters") or []) if scene_dict else []
         chapter_num = ch_num or 0
@@ -784,7 +801,8 @@ def rebuild_memories(config, args, event_callback=None):
             emit("model_active", model="idle", name="")
 
         from .state import update_after_scene
-        update_after_scene(state, chapter_num, scene_id, summary, extraction, present_char_ids)
+        update_after_scene(state, chapter_num, scene_id, summary, extraction, present_char_ids,
+                           known_names=all_known_names_rebuild)
         processed += 1
 
     # Compress story_so_far if it's long

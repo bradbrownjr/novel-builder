@@ -169,7 +169,7 @@ def init_state(config, output_file):
 
 
 def update_after_scene(state, chapter_num, scene_id, summary,
-                       extraction, present_char_ids):
+                       extraction, present_char_ids, known_names=None):
     """Update checkpoint state after a scene completes.
 
     Args:
@@ -179,6 +179,8 @@ def update_after_scene(state, chapter_num, scene_id, summary,
         summary: AI-generated scene summary string.
         extraction: Dict with 'characters', 'facts', 'commitments' lists.
         present_char_ids: List of character IDs that appeared in the scene.
+        known_names: Optional iterable of known character names from
+                     characters.yaml.  Used to block phantom extractions.
     """
     state["last_completed_chapter"] = chapter_num
     state["last_completed_scene"] = str(scene_id)
@@ -206,21 +208,38 @@ def update_after_scene(state, chapter_num, scene_id, summary,
     state["character_appearances"] = appearances
 
     # Merge story memory
-    _merge_story_memory(state, extraction, str(scene_id))
+    _merge_story_memory(state, extraction, str(scene_id), known_names=known_names)
 
     # Increment compression counter
     state["_scenes_since_compress"] = state.get("_scenes_since_compress", 0) + 1
 
 
-def _merge_story_memory(state, extraction, scene_id):
+def _merge_story_memory(state, extraction, scene_id, known_names=None):
     """Merge extracted story memory from a scene into checkpoint state.
 
     Args:
         state: Checkpoint state (mutated).
         extraction: Dict with 'characters', 'facts', 'commitments'.
         scene_id: Scene ID string.
+        known_names: Optional iterable of known character name strings from
+                     characters.yaml.  Any extracted character whose full name
+                     or first name matches a known character is silently
+                     discarded to prevent phantom entries.
     """
     memory = _sanitize_story_memory(state.get("story_memory", {}))
+
+    # Build a deduplication guard from known character names.
+    # We block on full name OR first name so that e.g. "Elias Bloom" is
+    # rejected when "Elias Thorne" is already a known character.
+    _known_full = set()
+    _known_first = set()
+    if known_names:
+        for n in known_names:
+            nl = n.lower().strip()
+            _known_full.add(nl)
+            first = nl.split()[0] if nl else ""
+            if first:
+                _known_first.add(first)
 
     # New characters
     for char_entry in extraction.get("characters", []):
@@ -232,6 +251,12 @@ def _merge_story_memory(state, extraction, scene_id):
         else:
             name = char_entry.strip()
             desc = ""
+
+        # Reject phantom extractions that share a name with a known character
+        name_lower = name.lower().strip()
+        first_name = name_lower.split()[0] if name_lower else ""
+        if name_lower in _known_full or first_name in _known_first:
+            continue
 
         char_id = name.lower().replace(" ", "_").replace("'", "")
 
@@ -280,6 +305,37 @@ def _merge_story_memory(state, extraction, scene_id):
                 "scene": scene_id,
                 "detail": commitment.strip(),
             })
+
+    state["story_memory"] = memory
+
+
+def _clear_scene_memory(state, scene_id):
+    """Remove story memory entries that were extracted from a specific scene.
+
+    Called before re-merging extraction after a scene regeneration, so
+    stale or hallucinated entries from the previous version are wiped
+    and replaced with fresh ones rather than accumulated.
+
+    Args:
+        state: Checkpoint state (mutated).
+        scene_id: Scene ID string whose extracted memory should be cleared.
+    """
+    scene_id = str(scene_id)
+    memory = state.get("story_memory", {})
+    if not memory:
+        return
+
+    # Remove list-based entries (facts, actions, commitments) from this scene
+    for key in ("facts", "actions", "commitments"):
+        entries = memory.get(key, [])
+        memory[key] = [e for e in entries if str(e.get("scene", "")) != scene_id]
+
+    # Remove extracted minor characters first seen in this scene
+    chars = memory.get("characters", {})
+    memory["characters"] = {
+        k: v for k, v in chars.items()
+        if str(v.get("introduced_scene", "")) != scene_id
+    }
 
     state["story_memory"] = memory
 
