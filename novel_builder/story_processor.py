@@ -276,13 +276,20 @@ def _run_generation(config, args, event_callback=None):
                     "scene_id": str(scene_num),
                     "title": scene_title,
                     "characters": char_names,
-                    "all_characters": all_known_names,
                 }
                 summary, extraction = call_summary_model(
                     args.host, summary_model, text,
                     scene_meta=scene_meta,
                 )
                 print(f"    Summary: {summary[:100]}...")
+                _exlog = (
+                    f"Extracted: {len(extraction.get('facts', []))} fact(s), "
+                    f"{len(extraction.get('actions', []))} action(s), "
+                    f"{len(extraction.get('commitments', []))} commitment(s), "
+                    f"{len(extraction.get('characters', []))} new char(s)"
+                )
+                print(f"    {_exlog}")
+                emit("log", message=_exlog, level="info")
             except OllamaError as e:
                 print(f"    Warning: Summary failed — {e}")
                 emit("log", message=f"Summary failed: {e}", level="warn")
@@ -623,7 +630,6 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
             "scene_id": scene_id,
             "title": scene.get("title", "") if scene else "",
             "characters": char_names,
-            "all_characters": all_known_names_regen,
         }
         summary, extraction = call_summary_model(
             args.host, args.summary_model, text,
@@ -797,7 +803,6 @@ def rebuild_memories(config, args, event_callback=None):
             (all_characters.get(cid, {}).get("Name") or cid)
             for cid in all_characters
         ]
-        scene_meta["all_characters"] = all_known_names_rebuild
 
         present_char_ids = (scene_dict.get("characters") or []) if scene_dict else []
         chapter_num = ch_num or 0

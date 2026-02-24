@@ -190,11 +190,6 @@ def call_summary_model(host, model, text, timeout=300, scene_meta=None):
             meta_lines.append(f"Title: {scene_meta['title']}")
         if scene_meta.get("characters"):
             meta_lines.append(f"Characters in scene: {', '.join(scene_meta['characters'])}")
-        if scene_meta.get("all_characters"):
-            meta_lines.append(
-                f"All known story characters (already exist — do NOT add to NEW_CHARACTERS): "
-                f"{', '.join(scene_meta['all_characters'])}"
-            )
     meta_block = "\n".join(meta_lines)
     if meta_block:
         base_user_prompt = f"Scene metadata:\n{meta_block}\n\nScene text:\n\n{text}"
