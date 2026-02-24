@@ -1008,6 +1008,253 @@ def api_regenerate():
     return jsonify({"ok": True, "message": "Regeneration started"})
 
 
+# ---------------------------------------------------------------------------
+# Consult — AI-powered YAML audit
+# ---------------------------------------------------------------------------
+
+@app.route("/api/consult", methods=["POST"])
+def api_consult():
+    """Run AI audit of uploaded YAML files.
+
+    Streams analysis results via SSE as they are generated.
+    Uses the generation model for analytical reasoning.
+
+    JSON body (optional):
+        passes: list of pass names to run (default: all available)
+    """
+    from .consult import get_analysis_passes, build_pass_prompt
+    from .ollama_client import call_ollama, OllamaError
+    import json as _json
+
+    web_config = _load_web_config()
+    host = _normalize_host(web_config.get("host", ""))
+    model = web_config.get("model", "gemma3:12b")
+    timeout = int(web_config.get("timeout", 900))
+
+    if not host:
+        return jsonify({"ok": False, "error": "Ollama host not configured"}), 400
+
+    # Load YAML files from workspace
+    files = {}
+    for role, key in [("outline", "outline"), ("characters", "characters"),
+                      ("locations", "locations")]:
+        path = os.path.join(WORKSPACE_DIR, FILE_ROLES[role])
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    files[key] = f.read()
+            except OSError:
+                pass
+
+    if not files.get("outline") and not files.get("characters"):
+        return jsonify({"ok": False,
+                        "error": "Upload at least an outline or characters file first"}), 400
+
+    # Determine passes
+    body = request.get_json(force=True) if request.is_json else {}
+    requested = body.get("passes")
+    all_passes = get_analysis_passes(files)
+
+    if requested:
+        all_passes = [(n, c) for n, c in all_passes if n in requested]
+
+    if not all_passes:
+        return jsonify({"ok": False,
+                        "error": "No analysis passes available for the uploaded files"}), 400
+
+    def stream():
+        # Send pass list
+        pass_info = [{"name": n, "label": c["label"], "emoji": c["emoji"]}
+                     for n, c in all_passes]
+        yield f"data: {json.dumps({'type': 'passes', 'passes': pass_info})}\n\n"
+
+        results = {}
+        for pass_name, pass_cfg in all_passes:
+            yield f"data: {json.dumps({'type': 'pass_start', 'pass': pass_name, 'label': pass_cfg['label'], 'emoji': pass_cfg['emoji']})}\n\n"
+
+            try:
+                system_prompt, user_prompt = build_pass_prompt(pass_name, files)
+
+                # Stream the response chunk by chunk
+                url = f"{host}/api/generate"
+                payload = {
+                    "model": model,
+                    "system": system_prompt,
+                    "prompt": user_prompt,
+                    "stream": True,
+                    "options": {
+                        "num_ctx": 16384,
+                        "temperature": 0.4,
+                    },
+                }
+
+                response = _requests.post(url, json=payload,
+                                          timeout=timeout, stream=True)
+                response.raise_for_status()
+
+                full_text = []
+                for line in response.iter_lines(chunk_size=None):
+                    if not line:
+                        continue
+                    try:
+                        data = _json.loads(line)
+                    except ValueError:
+                        continue
+                    token = data.get("response", "")
+                    if token:
+                        full_text.append(token)
+                        yield f"data: {json.dumps({'type': 'chunk', 'pass': pass_name, 'text': token})}\n\n"
+                    if data.get("done"):
+                        break
+
+                result_text = "".join(full_text)
+                results[pass_name] = result_text
+                yield f"data: {json.dumps({'type': 'pass_complete', 'pass': pass_name, 'text': result_text})}\n\n"
+
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'pass_error', 'pass': pass_name, 'error': str(e)})}\n\n"
+
+        yield f"data: {json.dumps({'type': 'done', 'results': results})}\n\n"
+
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.route("/api/consult-apply", methods=["POST"])
+def api_consult_apply():
+    """Generate a corrected YAML file based on audit analysis.
+
+    Streams the corrected YAML via SSE.
+
+    JSON body:
+        role: "outline" | "characters" | "locations"
+        analysis: The analysis text for this file
+    """
+    from .consult import build_fix_prompt
+    from .ollama_client import OllamaError
+    import json as _json
+
+    body = request.get_json(force=True) or {}
+    role = body.get("role", "").strip()
+    analysis = body.get("analysis", "").strip()
+
+    if role not in ("outline", "characters", "locations"):
+        return jsonify({"ok": False, "error": f"Invalid role: {role}"}), 400
+    if not analysis:
+        return jsonify({"ok": False, "error": "No analysis provided"}), 400
+
+    # Load original YAML
+    path = os.path.join(WORKSPACE_DIR, FILE_ROLES[role])
+    if not os.path.exists(path):
+        return jsonify({"ok": False, "error": f"No {role} file uploaded"}), 404
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            original_yaml = f.read()
+    except OSError as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    web_config = _load_web_config()
+    host = _normalize_host(web_config.get("host", ""))
+    model = web_config.get("model", "gemma3:12b")
+    timeout = int(web_config.get("timeout", 900))
+
+    system_prompt, user_prompt = build_fix_prompt(role, original_yaml, analysis)
+
+    def stream():
+        try:
+            url = f"{host}/api/generate"
+            payload = {
+                "model": model,
+                "system": system_prompt,
+                "prompt": user_prompt,
+                "stream": True,
+                "options": {
+                    "num_ctx": 16384,
+                    "temperature": 0.3,
+                },
+            }
+
+            response = _requests.post(url, json=payload,
+                                      timeout=timeout, stream=True)
+            response.raise_for_status()
+
+            full_text = []
+            for line in response.iter_lines(chunk_size=None):
+                if not line:
+                    continue
+                try:
+                    data = _json.loads(line)
+                except ValueError:
+                    continue
+                token = data.get("response", "")
+                if token:
+                    full_text.append(token)
+                    yield f"data: {json.dumps({'type': 'chunk', 'text': token})}\n\n"
+                if data.get("done"):
+                    break
+
+            result = "".join(full_text)
+            # Strip markdown fences if the model wrapped it
+            result = re.sub(r'^```(?:yaml)?\s*\n?', '', result)
+            result = re.sub(r'\n?```\s*$', '', result)
+            yield f"data: {json.dumps({'type': 'done', 'yaml': result.strip()})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.route("/api/consult-save", methods=["POST"])
+def api_consult_save():
+    """Save a corrected YAML file (possibly edited by user in diff view).
+
+    JSON body:
+        role: "outline" | "characters" | "locations"
+        content: The corrected YAML content
+    """
+    body = request.get_json(force=True) or {}
+    role = body.get("role", "").strip()
+    content = body.get("content", "")
+
+    if role not in ("outline", "characters", "locations"):
+        return jsonify({"ok": False, "error": f"Invalid role: {role}"}), 400
+    if not content.strip():
+        return jsonify({"ok": False, "error": "Content is empty"}), 400
+
+    _ensure_workspace()
+    path = os.path.join(WORKSPACE_DIR, FILE_ROLES[role])
+
+    # Validate YAML before saving
+    try:
+        _yaml.safe_load(content)
+    except _yaml.YAMLError as e:
+        return jsonify({"ok": False, "error": f"Invalid YAML: {e}"}), 400
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    return jsonify({
+        "ok": True,
+        "filename": FILE_ROLES[role],
+        "size": len(content.encode("utf-8")),
+    })
+
+
 @app.route("/api/ollama-health")
 def api_ollama_health():
     """Ping the Ollama server to check connectivity and list models."""

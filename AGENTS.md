@@ -46,7 +46,8 @@ novel_builder/
 ├── yaml_io.py            # load_yaml(), save_yaml()
 ├── postprocess.py        # clean_scene_text(), apply_anti_patterns()
 ├── tts.py                # segment_text_for_tts(), _find_speaker(), _name_matches_attribution()
-├── web.py                # Flask web UI, TTS proxy, /api/memory (GET+POST), /api/regenerate, /api/download (marker-stripped), /api/ollama-pull (model download)
+├── web.py                # Flask web UI, TTS proxy, /api/memory (GET+POST), /api/regenerate, /api/download (marker-stripped), /api/ollama-pull (model download), /api/consult (AI audit)
+├── consult.py            # AI-powered YAML audit: multi-pass analysis prompts, fix generation
 └── validator.py          # validate_all()
 ```
 
@@ -91,6 +92,7 @@ _(Track fixes here for reference.)_
 - Summary model upgraded to `gemma3:4b` (from `gemma3:1b`) for better extraction quality.
 - Extraction/summary prompt sharpened: focuses on plot-relevant facts, decisions, and commitments rather than trivial physical descriptions.
 - Web UI model selectors with recommended models, RAM estimates, install status, and auto-pull from Ollama.
+- AI Consult tab — multi-pass YAML audit with streaming analysis, per-file fix generation, and side-by-side diff review.
 
 ## Scene Marker Format
 
@@ -145,6 +147,34 @@ Scenes support an optional `setting_detail` key that narrows the focus to a spec
 - Works with or without a `setting` reference — can be used standalone for ad-hoc area descriptions.
 - Keeps the base location data (name, atmosphere, mood_shift) intact while zooming in.
 - Implemented in `build_scene_prompt()` in `prompt_builder.py`.
+
+## AI Consult (YAML Audit)
+
+The Consult tab provides an AI-powered audit of uploaded YAML story files using the generation model.
+
+**Architecture:**
+- `consult.py` — prompt construction for multi-pass analysis and fix generation
+- `web.py` — `/api/consult` (streaming SSE), `/api/consult-apply` (fix generation), `/api/consult-save`
+- UI: Consult tab between Story and Settings in wizard flow
+
+**Multi-pass analysis:**
+
+| Pass | Input | Focus |
+|---|---|---|
+| Characters | characters.yaml | Completeness, depth, distinctiveness, vibe/voice quality |
+| Outline | story_outline.yaml | Events quality, pacing variety, emotional arcs, chapter flow |
+| Locations | locations.yaml | Atmosphere quality, sensory detail, mood_shift usage |
+| Cross-refs | All files | Character-scene alignment, continuity risks, timing |
+
+- Each pass streams incrementally via SSE (`consult_chunk` events)
+- Uses `num_ctx=16384` for analytical depth
+- Temperature `0.4` for analysis, `0.3` for fix generation
+- "Generate Fixed" buttons appear per file-specific pass after completion
+- Corrected YAML shown in side-by-side diff view (original vs proposed)
+- Proposed pane is editable before applying — user can review and modify
+- Apply validates YAML before saving
+
+**Tab order (wizard flow):** Story → Consult → Settings → Logs → Memory → Output
 
 ## Regeneration Workflow
 
