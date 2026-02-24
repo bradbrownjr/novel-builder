@@ -641,6 +641,24 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
     state["story_memory"] = _sanitize_story_memory(state["story_memory"])
     _clear_scene_memory(state, scene_id)
     _merge_story_memory(state, extraction, scene_id, known_names=all_known_names_regen)
+
+    # Replace the summary for this scene in recent_scenes so the context
+    # fed to future scenes reflects the regenerated version, not the old one.
+    if summary:
+        recent = state.get("recent_scenes", [])
+        replaced = False
+        for entry in recent:
+            if str(entry.get("scene", "")) == str(scene_id):
+                entry["summary"] = summary
+                replaced = True
+                break
+        if not replaced:
+            recent.append({"scene": str(scene_id), "summary": summary})
+            max_recent = 10
+            state["recent_scenes"] = recent[-max_recent:]
+        else:
+            state["recent_scenes"] = recent
+
     save_checkpoint(state, checkpoint_path)
 
     emit("scene_regenerated", scene_id=scene_id, title=scene_title, text=text, summary=summary)
