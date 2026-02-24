@@ -1076,6 +1076,9 @@ def api_consult():
         audit_t0 = time.time()
 
         results = {}
+        _consult_retries = 2
+        _consult_backoff = [15, 45, 90]  # seconds between retries
+
         for pass_idx, (pass_name, pass_cfg) in enumerate(all_passes, 1):
             yield f"data: {json.dumps({'type': 'pass_start', 'pass': pass_name, 'label': pass_cfg['label'], 'emoji': pass_cfg['emoji'], 'index': pass_idx, 'total': total_passes})}\n\n"
             state.emit("log", {
@@ -1083,80 +1086,101 @@ def api_consult():
                 "level": "info",
             })
 
-            try:
-                system_prompt, user_prompt = build_pass_prompt(pass_name, files)
+            pass_success = False
+            last_error = None
+            for attempt in range(1, _consult_retries + 2):  # +2: 1 original + retries
+                if attempt > 1:
+                    delay = _consult_backoff[min(attempt - 2, len(_consult_backoff) - 1)]
+                    retry_msg = f"Pass error: {last_error}. Retrying in {delay}s… (attempt {attempt}/{_consult_retries + 1})"
+                    yield f"data: {json.dumps({'type': 'pass_retry', 'pass': pass_name, 'attempt': attempt, 'max_attempts': _consult_retries + 1, 'delay': delay, 'error': str(last_error)})}\n\n"
+                    state.emit("log", {"message": f"  ↻ {pass_cfg['label']}: {retry_msg}", "level": "warn"})
+                    time.sleep(delay)
 
-                # Stream the response chunk by chunk
-                url = f"{host}/api/generate"
-                payload = {
-                    "model": model,
-                    "system": system_prompt,
-                    "prompt": user_prompt,
-                    "stream": True,
-                    "options": {
-                        "num_ctx": 16384,
-                        "temperature": 0.4,
-                    },
-                }
+                try:
+                    system_prompt, user_prompt = build_pass_prompt(pass_name, files)
 
-                pass_t0 = time.time()
-                response = _requests.post(url, json=payload,
-                                          timeout=timeout, stream=True)
-                response.raise_for_status()
+                    # Stream the response chunk by chunk
+                    url = f"{host}/api/generate"
+                    payload = {
+                        "model": model,
+                        "system": system_prompt,
+                        "prompt": user_prompt,
+                        "stream": True,
+                        "options": {
+                            "num_ctx": 16384,
+                            "num_predict": 2048,  # cap analysis length to prevent timeout
+                            "temperature": 0.4,
+                        },
+                    }
 
-                full_text = []
-                token_count = 0
-                ollama_stats = {}
-                for line in response.iter_lines(chunk_size=None):
-                    if not line:
-                        continue
-                    try:
-                        data = _json.loads(line)
-                    except ValueError:
-                        continue
-                    token = data.get("response", "")
-                    if token:
-                        full_text.append(token)
-                        token_count += 1
-                        yield f"data: {json.dumps({'type': 'chunk', 'pass': pass_name, 'text': token})}\n\n"
-                    if data.get("done"):
-                        # Capture Ollama metadata from the done chunk
-                        ollama_stats = {
-                            k: data.get(k)
-                            for k in ("total_duration", "prompt_eval_count",
-                                      "eval_count", "eval_duration")
-                            if data.get(k) is not None
-                        }
-                        break
+                    pass_t0 = time.time()
+                    response = _requests.post(url, json=payload,
+                                              timeout=timeout, stream=True)
+                    response.raise_for_status()
 
-                pass_elapsed = round(time.time() - pass_t0, 1)
-                result_text = "".join(full_text)
-                results[pass_name] = result_text
+                    full_text = []
+                    token_count = 0
+                    ollama_stats = {}
+                    for line in response.iter_lines(chunk_size=None):
+                        if not line:
+                            continue
+                        try:
+                            data = _json.loads(line)
+                        except ValueError:
+                            continue
+                        token = data.get("response", "")
+                        if token:
+                            full_text.append(token)
+                            token_count += 1
+                            yield f"data: {json.dumps({'type': 'chunk', 'pass': pass_name, 'text': token})}\n\n"
+                        if data.get("done"):
+                            # Capture Ollama metadata from the done chunk
+                            ollama_stats = {
+                                k: data.get(k)
+                                for k in ("total_duration", "prompt_eval_count",
+                                          "eval_count", "eval_duration")
+                                if data.get(k) is not None
+                            }
+                            break
 
-                # Build stats dict for the client
-                stats = {"elapsed_s": pass_elapsed, "tokens": token_count}
-                if ollama_stats.get("eval_count") and ollama_stats.get("eval_duration"):
-                    tps = ollama_stats["eval_count"] / (ollama_stats["eval_duration"] / 1e9)
-                    stats["tokens_per_sec"] = round(tps, 1)
-                    stats["eval_tokens"] = ollama_stats["eval_count"]
-                if ollama_stats.get("prompt_eval_count"):
-                    stats["prompt_tokens"] = ollama_stats["prompt_eval_count"]
+                    pass_elapsed = round(time.time() - pass_t0, 1)
+                    result_text = "".join(full_text)
+                    results[pass_name] = result_text
 
-                word_count = len(result_text.split())
-                stats["words"] = word_count
+                    # Build stats dict for the client
+                    stats = {"elapsed_s": pass_elapsed, "tokens": token_count}
+                    if ollama_stats.get("eval_count") and ollama_stats.get("eval_duration"):
+                        tps = ollama_stats["eval_count"] / (ollama_stats["eval_duration"] / 1e9)
+                        stats["tokens_per_sec"] = round(tps, 1)
+                        stats["eval_tokens"] = ollama_stats["eval_count"]
+                    if ollama_stats.get("prompt_eval_count"):
+                        stats["prompt_tokens"] = ollama_stats["prompt_eval_count"]
 
-                yield f"data: {json.dumps({'type': 'pass_complete', 'pass': pass_name, 'text': result_text, 'stats': stats})}\n\n"
+                    word_count = len(result_text.split())
+                    stats["words"] = word_count
+                    if attempt > 1:
+                        stats["recovered_after_attempts"] = attempt
 
-                speed_note = f" ({stats.get('tokens_per_sec', '?')} tok/s)" if stats.get("tokens_per_sec") else ""
+                    yield f"data: {json.dumps({'type': 'pass_complete', 'pass': pass_name, 'text': result_text, 'stats': stats})}\n\n"
+
+                    speed_note = f" ({stats.get('tokens_per_sec', '?')} tok/s)" if stats.get("tokens_per_sec") else ""
+                    retry_note = f" (after {attempt} attempts)" if attempt > 1 else ""
+                    state.emit("log", {
+                        "message": f"  ✓ {pass_cfg['label']} complete — {word_count} words, {pass_elapsed}s{speed_note}{retry_note}",
+                        "level": "info",
+                    })
+                    pass_success = True
+                    break  # success — stop retrying
+
+                except Exception as e:
+                    last_error = e
+                    # If we've exhausted retries, fall through to error reporting
+                    continue
+
+            if not pass_success:
+                yield f"data: {json.dumps({'type': 'pass_error', 'pass': pass_name, 'error': str(last_error)})}\n\n"
                 state.emit("log", {
-                    "message": f"  ✓ {pass_cfg['label']} complete — {word_count} words, {pass_elapsed}s{speed_note}",
-                    "level": "info",
-                })
-
-            except Exception as e:
-                yield f"data: {json.dumps({'type': 'pass_error', 'pass': pass_name, 'error': str(e)})}\n\n"
-                state.emit("log", {
-                    "message": f"  ✗ {pass_cfg['label']} failed: {e}",
+                    "message": f"  ✗ {pass_cfg['label']} failed after {_consult_retries + 1} attempts: {last_error}",
                     "level": "error",
                 })
 
