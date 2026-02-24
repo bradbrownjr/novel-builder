@@ -1143,6 +1143,14 @@ textarea {
           <div class="model-status" id="ms-summary-model"></div>
         </div>
       </div>
+      <div class="form-group">
+        <label for="cfg-consult-model">Consult Model <span style="font-weight:400;color:var(--text-dim);font-size:.78rem;">(leave blank to use Summary Model)</span></label>
+        <input type="text" id="cfg-consult-model"
+               placeholder="defaults to summary model"
+               autocomplete="off">
+      </div>
+    </div>
+    <div class="form-row">
       <div class="form-group" style="display:grid; grid-template-columns:1fr 1fr; gap:.5rem;">
         <div>
           <label for="cfg-retries">Retries</label>
@@ -1459,6 +1467,7 @@ function loadConfigIntoForm(cfg) {
   document.getElementById('cfg-host').value = cfg.host || '';
   document.getElementById('cfg-model').value = cfg.model || 'gemma3:12b';
   document.getElementById('cfg-summary-model').value = cfg.summary_model || 'gemma3:4b';
+  document.getElementById('cfg-consult-model').value = cfg.consult_model || '';
   document.getElementById('cfg-retries').value = cfg.retries || 3;
   document.getElementById('cfg-timeout').value = cfg.timeout || 900;
   // TTS fields
@@ -1477,6 +1486,7 @@ async function saveConfig() {
     host: document.getElementById('cfg-host').value.trim(),
     model: document.getElementById('cfg-model').value.trim(),
     summary_model: document.getElementById('cfg-summary-model').value.trim(),
+    consult_model: document.getElementById('cfg-consult-model').value.trim(),
     retries: parseInt(document.getElementById('cfg-retries').value) || 3,
     timeout: parseInt(document.getElementById('cfg-timeout').value) || 900,
   };

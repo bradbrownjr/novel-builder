@@ -268,6 +268,7 @@ def _load_web_config():
         "host": os.environ.get("OLLAMA_HOST", ""),
         "model": "gemma3:12b",
         "summary_model": "gemma3:4b",
+        "consult_model": "",  # empty = use summary_model
         "retries": 5,
         "timeout": 900,
         # TTS (Speaches / Kokoro / Piper)
@@ -488,7 +489,7 @@ def api_config():
     data = request.get_json(force=True)
     # Sanitize — only accept known keys
     allowed = {
-        "host", "model", "summary_model", "retries", "timeout",
+        "host", "model", "summary_model", "consult_model", "retries", "timeout",
         "tts_host", "tts_model", "tts_narrator_voice", "tts_voice_map",
     }
     cfg = _load_web_config()
@@ -1017,7 +1018,8 @@ def api_consult():
     """Run AI audit of uploaded YAML files.
 
     Streams analysis results via SSE as they are generated.
-    Uses the generation model for analytical reasoning.
+    Uses consult_model (defaults to summary_model → gemma3:4b) for speed.
+    YAML prompts are small; num_ctx=4096 is plenty and avoids KV-cache timeout.
 
     JSON body (optional):
         passes: list of pass names to run (default: all available)
@@ -1028,7 +1030,11 @@ def api_consult():
 
     web_config = _load_web_config()
     host = _normalize_host(web_config.get("host", ""))
-    model = web_config.get("model", "gemma3:12b")
+    # Consult defaults to summary_model (smaller/faster) to avoid KV-cache timeout.
+    # Users can override via consult_model in settings.
+    model = (web_config.get("consult_model") or
+             web_config.get("summary_model") or
+             "gemma3:4b")
     timeout = int(web_config.get("timeout", 900))
 
     if not host:
@@ -1070,7 +1076,7 @@ def api_consult():
 
         total_passes = len(all_passes)
         state.emit("log", {
-            "message": f"🔍 AI Consult started — {total_passes} analysis pass(es) using {model}",
+            "message": f"🔍 AI Consult started — {total_passes} pass(es) using {model} (num_ctx=4096)",
             "level": "info",
         })
         audit_t0 = time.time()
@@ -1107,8 +1113,10 @@ def api_consult():
                         "prompt": user_prompt,
                         "stream": True,
                         "options": {
-                            "num_ctx": 16384,
-                            "num_predict": 2048,  # cap analysis length to prevent timeout
+                            # 4096 is plenty for YAML audit prompts and avoids the
+                            # massive KV-cache allocation that causes CPU timeouts.
+                            "num_ctx": 4096,
+                            "num_predict": 2048,
                             "temperature": 0.4,
                         },
                     }
