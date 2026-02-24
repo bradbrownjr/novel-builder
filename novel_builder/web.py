@@ -982,7 +982,6 @@ def api_regenerate():
 
     state.status = "running"
     state.emit("status_change", {"status": "running"})
-    state.emit("log", {"message": f"Regenerating {'Chapter ' + str(chapter_num) if chapter_num else 'Scene ' + str(scene_id)}…", "level": "info"})
 
     def worker():
         try:
