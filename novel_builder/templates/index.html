@@ -1095,6 +1095,9 @@ textarea {
     <div class="consult-controls">
       <button class="btn btn-primary" id="btn-consult-run" onclick="runConsult()">🔍 Run Full Audit</button>
       <button class="btn btn-danger" id="btn-consult-stop" onclick="stopConsult()" style="display:none;">⏹ Stop</button>
+      <label style="display:flex; align-items:center; gap:.3rem; font-size:.78rem; color:var(--text-dim); cursor:pointer;">
+        <input type="checkbox" id="chk-consult-autoscroll" checked> Auto-scroll
+      </label>
       <span id="consult-status" style="font-size:.78rem; color:var(--text-dim);"></span>
     </div>
     <div id="consult-results"></div>
@@ -2099,11 +2102,20 @@ function updateModelIndicator(info) {
   const dot = document.getElementById('dot-model');
   const lbl = document.getElementById('lbl-model');
   dot.className = 'dot';
+  // Clear any running generation timer
+  if (_genTimer) { clearInterval(_genTimer); _genTimer = null; }
   switch (info.model) {
-    case 'generation':
+    case 'generation': {
       dot.classList.add('blue', 'pulse');
-      lbl.textContent = '✦ Generating: ' + (info.name || '');
+      _genT0 = Date.now();
+      const modelName = info.name || '';
+      lbl.textContent = `✦ Generating: ${modelName} · 0s`;
+      _genTimer = setInterval(() => {
+        const elapsed = Math.round((Date.now() - _genT0) / 1000);
+        lbl.textContent = `✦ Generating: ${modelName} · ${elapsed}s`;
+      }, 1000);
       break;
+    }
     case 'summarization':
       dot.classList.add('yellow', 'pulse');
       lbl.textContent = '⊕ Summarizing: ' + (info.name || '');
@@ -2429,6 +2441,14 @@ function connectSSE() {
         break;
       case 'scene_complete':
         appendSceneToOutput(event.data);
+        // Show generation stats in progress label until next scene starts
+        if (event.data.elapsed_s || event.data.words) {
+          const parts = [];
+          if (event.data.words) parts.push(`${event.data.words} words`);
+          if (event.data.elapsed_s) parts.push(`${event.data.elapsed_s}s`);
+          document.getElementById('lbl-progress').textContent =
+            `Scene ${event.data.scene_num} — ${parts.join(' · ')}`;
+        }
         // Keep Memory tab current if it's open and no unsaved edits
         if (!_memoryDirty && document.querySelector('[data-tab="memory"]')?.classList.contains('active')) {
           loadMemory();
@@ -3563,6 +3583,8 @@ ${V(1,'- "unbeknownst"')}
 let _consultAbort = null;   // AbortController for stopping
 let _consultResults = {};   // pass_name → full analysis text
 let _consultRunning = false;
+let _genTimer = null;
+let _genT0 = null;
 
 function _simpleMarkdown(text) {
   // Minimal markdown → HTML for the analysis display
@@ -3689,7 +3711,9 @@ async function runConsult() {
             if (passEls[ev.pass]) {
               passTexts[ev.pass] += ev.text;
               passEls[ev.pass].body.innerHTML = _simpleMarkdown(passTexts[ev.pass]);
-              passEls[ev.pass].body.scrollTop = passEls[ev.pass].body.scrollHeight;
+              if (document.getElementById('chk-consult-autoscroll').checked) {
+                passEls[ev.pass].body.scrollTop = passEls[ev.pass].body.scrollHeight;
+              }
               if (passTimers[ev.pass]) passTimers[ev.pass].tokenCount++;
             }
             break;
