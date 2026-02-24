@@ -2009,6 +2009,15 @@ function connectSSE() {
         } else if (event.data.status === 'error') {
           toast('Error: ' + (event.data.message || 'Unknown'), 'error');
           { const btn = document.getElementById('btn-mem-rebuild'); if (btn) { btn.disabled = false; btn.textContent = '🔁 Rebuild from Story'; } }
+        } else if (event.data.status === 'idle') {
+          // updateUIForStatus('idle') hides Resume unconditionally.
+          // Re-check the checkpoint so Resume reappears if the run can be continued.
+          fetch('/api/status').then(r => r.json()).then(snap => {
+            if (snap && snap.has_checkpoint) {
+              document.getElementById('btn-resume').style.display = '';
+              document.getElementById('btn-logs-resume').style.display = '';
+            }
+          }).catch(() => {});
         }
         break;
       case 'scene_complete':
