@@ -636,7 +636,7 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
         emit("log", message=f"Summary failed for regen: {e}", level="warn")
 
     # Update checkpoint — clear stale memory for this scene, then re-merge fresh extraction
-    from .state import _merge_story_memory, _sanitize_story_memory, _clear_scene_memory
+    from .state import _merge_story_memory, _sanitize_story_memory, _clear_scene_memory, _MAX_RECENT_SCENES
     state.setdefault("story_memory", {})
     state["story_memory"] = _sanitize_story_memory(state["story_memory"])
     _clear_scene_memory(state, scene_id)
@@ -654,8 +654,7 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
                 break
         if not replaced:
             recent.append({"scene": str(scene_id), "summary": summary})
-            max_recent = 10
-            state["recent_scenes"] = recent[-max_recent:]
+            state["recent_scenes"] = recent[-_MAX_RECENT_SCENES:]
         else:
             state["recent_scenes"] = recent
 
