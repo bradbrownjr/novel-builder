@@ -14,6 +14,7 @@ _(Add directives here when the user says "always" or "never" do something.)_
 - **Never** include all character bios in every scene prompt — only send characters present in the scene.
 - **Always** keep `README.md` as a concise table of contents with a project description. Detailed documentation goes in `docs/`. Keep content scannable and bite-sized for readers.
 - **Never** include scene dividers (dashes, lines, etc.) in output — aim for a book-like appearance.
+- **Never** use emoji in UI labels, status indicators, button text, log messages, or code comments. Keep text clean and professional.
 - **Never** include markdown formatting (`---`, scene headers, etc.) in generated scene text.
 - **Always** preserve chapter headers before each chapter's first scene.
 
