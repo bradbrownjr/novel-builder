@@ -14,7 +14,6 @@ import queue
 import re
 import threading
 import time
-import traceback
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -87,21 +86,6 @@ def _normalize_host(host):
             host = f"http://{host}:11434"
         else:
             host = f"http://{host}"
-    return host
-
-
-def _normalize_tts_host(host):
-    """Normalize a TTS server URL.
-
-    Accepts bare IPs (192.168.1.x), IP:port (192.168.1.x:8001),
-    or full URLs (http://192.168.1.x:8001).  Unlike Ollama, there is
-    no default port — the URL must include the port if non-standard.
-    """
-    if not host:
-        return host
-    host = host.strip().rstrip("/")
-    if not host.startswith("http://") and not host.startswith("https://"):
-        host = f"http://{host}"
     return host
 
 
@@ -236,6 +220,115 @@ state = GenerationState()
 
 
 # ---------------------------------------------------------------------------
+# Consult state (AI analysis results — survives browser refresh)
+# ---------------------------------------------------------------------------
+
+class ConsultState:
+    """Stores consultation analysis results server-side.
+
+    Uses a subscriber queue pattern matching GenerationState so results
+    persist across page refreshes and are accessible from any device.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.status = "idle"   # idle | running | completed | error
+        self.passes = {}       # pass_name → {label, emoji, text, status, stats, error}
+        self.error = None
+        self._thread = None
+        self._event_queues = []
+
+    def emit(self, event_type, data):
+        """Update cached state and push event to all SSE subscribers."""
+        with self._lock:
+            if event_type == "pass_start":
+                name = data["pass"]
+                self.passes[name] = {
+                    "label": data.get("label", name),
+                    "emoji": data.get("emoji", ""),
+                    "text": "",
+                    "status": "running",
+                    "stats": None,
+                    "error": None,
+                }
+            elif event_type == "pass_chunk":
+                name = data["pass"]
+                if name in self.passes:
+                    self.passes[name]["text"] += data.get("chunk", "")
+            elif event_type == "pass_done":
+                name = data["pass"]
+                if name in self.passes:
+                    self.passes[name]["status"] = "done"
+                    self.passes[name]["stats"] = data.get("stats")
+            elif event_type == "pass_error":
+                name = data["pass"]
+                if name in self.passes:
+                    self.passes[name]["status"] = "error"
+                    self.passes[name]["error"] = data.get("message", "")
+            elif event_type == "consult_start":
+                self.status = "running"
+            elif event_type == "consult_done":
+                self.status = "completed"
+            elif event_type == "consult_error":
+                self.status = "error"
+                self.error = data.get("message", "")
+
+            event = {"type": event_type, "data": data, "time": time.time()}
+            dead = []
+            for q in self._event_queues:
+                try:
+                    q.put_nowait(event)
+                except queue.Full:
+                    dead.append(q)
+            for q in dead:
+                self._event_queues.remove(q)
+
+    def subscribe_with_snapshot(self):
+        """Subscribe atomically with a snapshot — prevents duplicate chunks.
+
+        By subscribing inside the lock, any chunk emitted after we return
+        will be in the queue, and the snapshot will contain all chunks
+        emitted before. No overlap.
+
+        Returns:
+            (queue, snapshot_dict) tuple.
+        """
+        with self._lock:
+            q = queue.Queue(maxsize=500)
+            self._event_queues.append(q)
+            snapshot = {
+                "status": self.status,
+                "passes": {k: dict(v) for k, v in self.passes.items()},
+                "error": self.error,
+                "is_alive": self._thread is not None and self._thread.is_alive(),
+            }
+        return q, snapshot
+
+    def unsubscribe(self, q):
+        with self._lock:
+            if q in self._event_queues:
+                self._event_queues.remove(q)
+
+    def snapshot(self):
+        with self._lock:
+            return {
+                "status": self.status,
+                "passes": {k: dict(v) for k, v in self.passes.items()},
+                "error": self.error,
+                "is_alive": self._thread is not None and self._thread.is_alive(),
+            }
+
+    def reset(self):
+        with self._lock:
+            self.status = "idle"
+            self.passes = {}
+            self.error = None
+
+
+consult_state = ConsultState()
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -259,33 +352,21 @@ def _workspace_path(filename):
 
 
 def _load_web_config():
-    """Load saved web configuration from workspace.
-
-    Always returns a complete config dict with all known keys.
-    Saved values override defaults; new keys get their defaults.
-    """
-    defaults = {
-        "host": os.environ.get("OLLAMA_HOST", ""),
-        "model": "gemma3:12b",
-        "summary_model": "gemma3:4b",
-        "consult_model": "",  # empty = use summary_model
-        "retries": 5,
-        "timeout": 900,
-        # TTS (Speaches / Kokoro / Piper)
-        "tts_host": "",
-        "tts_model": "",
-        "tts_narrator_voice": "",
-        "tts_voice_map": {},
-    }
+    """Load saved web configuration from workspace."""
     path = os.path.join(WORKSPACE_DIR, CONFIG_FILE)
     if os.path.exists(path):
         try:
             with open(path, "r") as f:
-                saved = json.load(f)
-            defaults.update(saved)
+                return json.load(f)
         except (json.JSONDecodeError, OSError):
             pass
-    return defaults
+    return {
+        "host": os.environ.get("OLLAMA_HOST", ""),
+        "model": "gemma3:12b",
+        "summary_model": "gemma3:1b",
+        "retries": 3,
+        "timeout": 900,
+    }
 
 
 def _save_web_config(cfg):
@@ -349,8 +430,8 @@ def _start_generation(web_config):
     args = SimpleNamespace(
         host=_normalize_host(web_config.get("host", "")),
         model=web_config.get("model", "gemma3:12b"),
-        summary_model=web_config.get("summary_model", "gemma3:4b"),
-        retries=int(web_config.get("retries", 5)),
+        summary_model=web_config.get("summary_model", "gemma3:1b"),
+        retries=int(web_config.get("retries", 3)),
         timeout=int(web_config.get("timeout", 900)),
         output=os.path.join(WORKSPACE_DIR, "full_story.md"),
         quiet=True,  # Web UI handles display
@@ -363,7 +444,6 @@ def _start_generation(web_config):
         outline=os.path.join(WORKSPACE_DIR, FILE_ROLES["outline"]),
         characters=os.path.join(WORKSPACE_DIR, FILE_ROLES["characters"]),
         locations=os.path.join(WORKSPACE_DIR, FILE_ROLES["locations"]),
-        checkpoint_path=os.path.join(WORKSPACE_DIR, "checkpoint.yaml"),
     )
 
     # Validate required files exist
@@ -409,12 +489,8 @@ def _start_generation(web_config):
         try:
             _story_generator(config, args, event_callback=_event_callback)
         except Exception as e:
-            tb = traceback.format_exc()
             state.emit("log", {
-                "message": (
-                    f"Unexpected error — {type(e).__name__}: {e}\n\n"
-                    f"{tb}"
-                ),
+                "message": f"Unexpected error: {e}",
                 "level": "error",
             })
             state.emit("status_change", {"status": "error", "message": str(e)})
@@ -442,41 +518,6 @@ def api_status():
     snap = state.snapshot()
     snap["config"] = _load_web_config()
     snap["files"] = _list_workspace_files()
-
-    # Check for an existing checkpoint on disk so the UI can offer Resume
-    # even after a server restart (when in-memory state is fresh/idle).
-    # Also check CWD as a fallback — older runs saved checkpoint.yaml there.
-    checkpoint_path = os.path.join(WORKSPACE_DIR, "checkpoint.yaml")
-    cwd_checkpoint_path = os.path.join(os.getcwd(), "checkpoint.yaml")
-
-    # Migrate CWD checkpoint into workspace if workspace one doesn't exist yet
-    if not os.path.exists(checkpoint_path) and os.path.exists(cwd_checkpoint_path):
-        try:
-            _ensure_workspace()
-            import shutil
-            shutil.move(cwd_checkpoint_path, checkpoint_path)
-        except Exception:
-            # Migration failed — fall back to reading from CWD
-            checkpoint_path = cwd_checkpoint_path
-
-    if os.path.exists(checkpoint_path):
-        try:
-            from .yaml_io import load_yaml_optional
-            cp = load_yaml_optional(checkpoint_path)
-            if cp:
-                snap["has_checkpoint"] = True
-                snap["checkpoint_info"] = {
-                    "last_chapter": cp.get("last_completed_chapter", "?"),
-                    "last_scene": cp.get("last_completed_scene", "?"),
-                    "story_title": cp.get("story_title", ""),
-                }
-            else:
-                snap["has_checkpoint"] = False
-        except Exception:
-            snap["has_checkpoint"] = False
-    else:
-        snap["has_checkpoint"] = False
-
     return jsonify(snap)
 
 
@@ -488,18 +529,13 @@ def api_config():
 
     data = request.get_json(force=True)
     # Sanitize — only accept known keys
-    allowed = {
-        "host", "model", "summary_model", "consult_model", "retries", "timeout",
-        "tts_host", "tts_model", "tts_narrator_voice", "tts_voice_map",
-    }
+    allowed = {"host", "model", "summary_model", "retries", "timeout"}
     cfg = _load_web_config()
     for key in allowed:
         if key in data:
             cfg[key] = data[key]
     if "host" in data:
         cfg["host"] = _normalize_host(cfg["host"])
-    if "tts_host" in data:
-        cfg["tts_host"] = _normalize_tts_host(cfg["tts_host"])
     _save_web_config(cfg)
     return jsonify({"ok": True, "config": cfg})
 
@@ -635,15 +671,6 @@ def api_new_story():
 
     state.reset()
 
-    # Clear character voice assignments — they belong to the story, not the server
-    try:
-        cfg = _load_web_config()
-        if cfg.get("tts_voice_map"):
-            cfg["tts_voice_map"] = {}
-            _save_web_config(cfg)
-    except Exception:
-        pass
-
     return jsonify({"ok": True, "removed": removed})
 
 
@@ -695,7 +722,6 @@ def api_parse_yaml():
                     })
             result["outline"] = {
                 "story_title": data.get("story_title", "Untitled"),
-                "pov_character": data.get("pov_character", ""),
                 "world": data.get("world", ""),
                 "total_chapters": len(chapters),
                 "total_scenes": len(scene_list),
@@ -744,7 +770,6 @@ def api_parse_yaml():
                     "has_secret": bool(cdata.get("secret")),
                     "has_relationships": bool(cdata.get("relationships")),
                     "has_evolution": bool(cdata.get("evolution")),
-                    "tts_voice": cdata.get("tts_voice", ""),
                 })
             heritage = data.get("heritage", {})
             heritage_list = []
@@ -779,14 +804,13 @@ def api_parse_yaml():
                 if isinstance(ldata, dict):
                     loc_list.append({
                         "id": lid,
-                        "name": ldata.get("name", ""),
                         "type": ldata.get("type", ""),
                         "description": (ldata.get("description", "")[:80] + "...")
                             if len(ldata.get("description", "")) > 80
                             else ldata.get("description", ""),
                     })
                 elif isinstance(ldata, str):
-                    loc_list.append({"id": lid, "name": "", "type": "", "description": ldata[:80]})
+                    loc_list.append({"id": lid, "type": "", "description": ldata[:80]})
             result["locations"] = {"total": len(loc_list), "locations": loc_list}
         except Exception as e:
             result["locations"] = {"error": str(e)}
@@ -813,37 +837,6 @@ def api_start():
     """Start story generation."""
     data = request.get_json(force=True) if request.is_json else {}
     resume = data.get("resume", False)
-    force = data.get("force", False)
-
-    # Guard: if starting fresh (not resuming) and not force-confirmed,
-    # check whether a checkpoint + output with real content already exists.
-    # If so, require explicit confirmation before overwriting.
-    if not resume and not force:
-        checkpoint_path = os.path.join(WORKSPACE_DIR, "checkpoint.yaml")
-        output_path = os.path.join(WORKSPACE_DIR, "full_story.md")
-        if os.path.exists(checkpoint_path):
-            try:
-                from .yaml_io import load_yaml_optional
-                cp = load_yaml_optional(checkpoint_path)
-                last_ch = cp.get("last_completed_chapter", 0) if cp else 0
-                if cp and last_ch:
-                    output_size = os.path.getsize(output_path) if os.path.exists(output_path) else 0
-                    if output_size > 200:  # More than just the title header
-                        last_sc = cp.get("last_completed_scene", "?")
-                        title = cp.get("story_title", "this story")
-                        return jsonify({
-                            "ok": False,
-                            "needs_confirm": True,
-                            "message": (
-                                f'"{title}" has progress through Chapter {last_ch}, '
-                                f'Scene {last_sc}. Starting fresh will permanently '
-                                f'overwrite the output file and reset the checkpoint.'
-                            ),
-                            "last_chapter": last_ch,
-                            "last_scene": last_sc,
-                        }), 409
-            except Exception:
-                pass  # If checkpoint is unreadable, allow fresh start
 
     cfg = _load_web_config()
     cfg["resume"] = resume
@@ -864,478 +857,6 @@ def api_stop():
     _story_stopper()
     state.emit("log", {"message": "Stop requested by user", "level": "warn"})
     return jsonify({"ok": True, "message": "Stop requested"})
-
-
-@app.route("/api/rebuild-memories", methods=["POST"])
-def api_rebuild_memories():
-    """Rebuild story memory by re-summarising every scene in the output file.
-
-    Resets story_so_far, recent_scenes, facts, actions, commitments, and
-    characters, then replays every marked scene through the summary model.
-    Generation progress (last_completed_*) and character appearances are
-    preserved.  Runs in a background thread and streams progress via SSE.
-    """
-    _lazy_imports()
-
-    if state.status == "running":
-        return jsonify({"ok": False, "error": "Generation is currently running — stop it first."}), 409
-
-    web_config = _load_web_config()
-
-    _loc_path_rb = os.path.join(WORKSPACE_DIR, FILE_ROLES["locations"])
-    args = SimpleNamespace(
-        host=_normalize_host(web_config.get("host", "")),
-        summary_model=web_config.get("summary_model", "gemma3:4b"),
-        output=os.path.join(WORKSPACE_DIR, "full_story.md"),
-        checkpoint_path=os.path.join(WORKSPACE_DIR, "checkpoint.yaml"),
-        outline=os.path.join(WORKSPACE_DIR, FILE_ROLES["outline"]),
-        characters=os.path.join(WORKSPACE_DIR, FILE_ROLES["characters"]),
-        locations=_loc_path_rb if os.path.exists(_loc_path_rb) else None,
-    )
-
-    try:
-        config = _config_loader(args)
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"Config load failed: {e}"}), 500
-
-    from .story_processor import rebuild_memories as _rebuild_memories
-
-    state.status = "running"
-    state.emit("status_change", {"status": "running"})
-    state.emit("log", {"message": "Rebuilding memory from story output…", "level": "info"})
-
-    def worker():
-        try:
-            result = _rebuild_memories(config, args, event_callback=_event_callback)
-            if result.get("ok"):
-                state.emit("log", {"message": f"Memory rebuild complete ({result['scenes_processed']} scenes)", "level": "info"})
-                state.emit("status_change", {"status": "idle"})
-            else:
-                state.emit("log", {"message": f"Rebuild failed: {result.get('error', '')}", "level": "error"})
-                state.emit("status_change", {"status": "error", "message": result.get("error", "")})
-        except Exception as e:
-            state.emit("log", {"message": f"Rebuild error: {e}", "level": "error"})
-            state.emit("status_change", {"status": "error", "message": str(e)})
-        finally:
-            state.status = "idle"
-
-    t = threading.Thread(target=worker, daemon=True)
-    t.start()
-    return jsonify({"ok": True, "message": "Memory rebuild started"})
-
-
-@app.route("/api/regenerate", methods=["POST"])
-def api_regenerate():
-    """Regenerate a scene or chapter.
-
-    JSON body: { "scene_id": "2.3" } or { "chapter": 3 }
-    Runs synchronously in a background thread and streams progress via SSE.
-    """
-    _lazy_imports()
-
-    if state.status == "running":
-        return jsonify({"ok": False, "error": "Generation is currently running — stop it first."}), 409
-
-    body = request.get_json(force=True) or {}
-    scene_id = body.get("scene_id")
-    chapter_num = body.get("chapter")
-
-    if not scene_id and chapter_num is None:
-        return jsonify({"ok": False, "error": "Provide scene_id or chapter"}), 400
-
-    web_config = _load_web_config()
-
-    # Build args the same way _start_generation does
-    _loc_path = os.path.join(WORKSPACE_DIR, FILE_ROLES["locations"])
-    args = SimpleNamespace(
-        host=_normalize_host(web_config.get("host", "")),
-        model=web_config.get("model", "gemma3:12b"),
-        summary_model=web_config.get("summary_model", "gemma3:4b"),
-        retries=int(web_config.get("retries", 5)),
-        timeout=int(web_config.get("timeout", 900)),
-        output=os.path.join(WORKSPACE_DIR, "full_story.md"),
-        checkpoint_path=os.path.join(WORKSPACE_DIR, "checkpoint.yaml"),
-        outline=os.path.join(WORKSPACE_DIR, FILE_ROLES["outline"]),
-        characters=os.path.join(WORKSPACE_DIR, FILE_ROLES["characters"]),
-        locations=_loc_path if os.path.exists(_loc_path) else None,
-    )
-
-    # Load config
-    try:
-        config = _config_loader(args)
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"Config load failed: {e}"}), 500
-
-    # Inject custom style if present
-    style_path = os.path.join(WORKSPACE_DIR, FILE_ROLES.get("style", "style.yaml"))
-    if os.path.exists(style_path):
-        try:
-            with open(style_path, "r", encoding="utf-8") as f:
-                custom_style = f.read().strip()
-            if custom_style:
-                existing = config.get("style_directives", "")
-                config["style_directives"] = f"{existing}\n{custom_style}".strip()
-        except OSError:
-            pass
-
-    from .story_processor import regenerate_scene as _regen_scene
-    from .story_processor import regenerate_chapter as _regen_chapter
-
-    state.status = "running"
-    state.emit("status_change", {"status": "running"})
-
-    def worker():
-        try:
-            if chapter_num is not None:
-                result = _regen_chapter(config, args, chapter_num, event_callback=_event_callback)
-            else:
-                result = _regen_scene(config, args, scene_id, event_callback=_event_callback)
-
-            if result.get("ok"):
-                state.emit("log", {"message": "Regeneration complete", "level": "info"})
-                state.emit("status_change", {"status": "idle"})
-            else:
-                state.emit("log", {"message": f"Regeneration failed: {result.get('error', '')}", "level": "error"})
-                state.emit("status_change", {"status": "error", "message": result.get("error", "")})
-        except Exception as e:
-            state.emit("log", {"message": f"Regeneration error: {e}", "level": "error"})
-            state.emit("status_change", {"status": "error", "message": str(e)})
-        finally:
-            state.status = "idle"
-
-    t = threading.Thread(target=worker, daemon=True)
-    t.start()
-
-    return jsonify({"ok": True, "message": "Regeneration started"})
-
-
-# ---------------------------------------------------------------------------
-# Consult — AI-powered YAML audit
-# ---------------------------------------------------------------------------
-
-@app.route("/api/consult", methods=["POST"])
-def api_consult():
-    """Run AI audit of uploaded YAML files.
-
-    Streams analysis results via SSE as they are generated.
-    Uses consult_model (defaults to summary_model → gemma3:4b) for speed.
-    YAML prompts are small; num_ctx=4096 is plenty and avoids KV-cache timeout.
-
-    JSON body (optional):
-        passes: list of pass names to run (default: all available)
-    """
-    from .consult import get_analysis_passes, build_pass_prompt
-    from .ollama_client import call_ollama, OllamaError
-    import json as _json
-
-    web_config = _load_web_config()
-    host = _normalize_host(web_config.get("host", ""))
-    # Consult defaults to summary_model (smaller/faster) to avoid KV-cache timeout.
-    # Users can override via consult_model in settings.
-    model = (web_config.get("consult_model") or
-             web_config.get("summary_model") or
-             "gemma3:4b")
-    timeout = int(web_config.get("timeout", 900))
-
-    if not host:
-        return jsonify({"ok": False, "error": "Ollama host not configured"}), 400
-
-    # Load YAML files from workspace
-    files = {}
-    for role, key in [("outline", "outline"), ("characters", "characters"),
-                      ("locations", "locations")]:
-        path = os.path.join(WORKSPACE_DIR, FILE_ROLES[role])
-        if os.path.exists(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    files[key] = f.read()
-            except OSError:
-                pass
-
-    if not files.get("outline") and not files.get("characters"):
-        return jsonify({"ok": False,
-                        "error": "Upload at least an outline or characters file first"}), 400
-
-    # Determine passes
-    body = request.get_json(force=True) if request.is_json else {}
-    requested = body.get("passes")
-    all_passes = get_analysis_passes(files)
-
-    if requested:
-        all_passes = [(n, c) for n, c in all_passes if n in requested]
-
-    if not all_passes:
-        return jsonify({"ok": False,
-                        "error": "No analysis passes available for the uploaded files"}), 400
-
-    def stream():
-        # Send pass list
-        pass_info = [{"name": n, "label": c["label"], "emoji": c["emoji"]}
-                     for n, c in all_passes]
-        yield f"data: {json.dumps({'type': 'passes', 'passes': pass_info})}\n\n"
-
-        total_passes = len(all_passes)
-        state.emit("log", {
-            "message": f"🔍 AI Consult started — {total_passes} pass(es) using {model} (num_ctx=4096)",
-            "level": "info",
-        })
-        audit_t0 = time.time()
-
-        results = {}
-        _consult_retries = 2
-        _consult_backoff = [15, 45, 90]  # seconds between retries
-
-        for pass_idx, (pass_name, pass_cfg) in enumerate(all_passes, 1):
-            yield f"data: {json.dumps({'type': 'pass_start', 'pass': pass_name, 'label': pass_cfg['label'], 'emoji': pass_cfg['emoji'], 'index': pass_idx, 'total': total_passes})}\n\n"
-            state.emit("log", {
-                "message": f"Consult pass {pass_idx}/{total_passes}: {pass_cfg['emoji']} {pass_cfg['label']}…",
-                "level": "info",
-            })
-
-            pass_success = False
-            last_error = None
-            for attempt in range(1, _consult_retries + 2):  # +2: 1 original + retries
-                if attempt > 1:
-                    delay = _consult_backoff[min(attempt - 2, len(_consult_backoff) - 1)]
-                    retry_msg = f"Pass error: {last_error}. Retrying in {delay}s… (attempt {attempt}/{_consult_retries + 1})"
-                    yield f"data: {json.dumps({'type': 'pass_retry', 'pass': pass_name, 'attempt': attempt, 'max_attempts': _consult_retries + 1, 'delay': delay, 'error': str(last_error)})}\n\n"
-                    state.emit("log", {"message": f"  ↻ {pass_cfg['label']}: {retry_msg}", "level": "warn"})
-                    time.sleep(delay)
-
-                try:
-                    system_prompt, user_prompt = build_pass_prompt(pass_name, files)
-
-                    # Stream the response chunk by chunk
-                    url = f"{host}/api/generate"
-                    payload = {
-                        "model": model,
-                        "system": system_prompt,
-                        "prompt": user_prompt,
-                        "stream": True,
-                        "options": {
-                            # 4096 is plenty for YAML audit prompts and avoids the
-                            # massive KV-cache allocation that causes CPU timeouts.
-                            "num_ctx": 4096,
-                            "num_predict": 2048,
-                            "temperature": 0.4,
-                        },
-                    }
-
-                    pass_t0 = time.time()
-                    response = _requests.post(url, json=payload,
-                                              timeout=timeout, stream=True)
-                    response.raise_for_status()
-
-                    full_text = []
-                    token_count = 0
-                    ollama_stats = {}
-                    for line in response.iter_lines(chunk_size=None):
-                        if not line:
-                            continue
-                        try:
-                            data = _json.loads(line)
-                        except ValueError:
-                            continue
-                        token = data.get("response", "")
-                        if token:
-                            full_text.append(token)
-                            token_count += 1
-                            yield f"data: {json.dumps({'type': 'chunk', 'pass': pass_name, 'text': token})}\n\n"
-                        if data.get("done"):
-                            # Capture Ollama metadata from the done chunk
-                            ollama_stats = {
-                                k: data.get(k)
-                                for k in ("total_duration", "prompt_eval_count",
-                                          "eval_count", "eval_duration")
-                                if data.get(k) is not None
-                            }
-                            break
-
-                    pass_elapsed = round(time.time() - pass_t0, 1)
-                    result_text = "".join(full_text)
-                    results[pass_name] = result_text
-
-                    # Build stats dict for the client
-                    stats = {"elapsed_s": pass_elapsed, "tokens": token_count}
-                    if ollama_stats.get("eval_count") and ollama_stats.get("eval_duration"):
-                        tps = ollama_stats["eval_count"] / (ollama_stats["eval_duration"] / 1e9)
-                        stats["tokens_per_sec"] = round(tps, 1)
-                        stats["eval_tokens"] = ollama_stats["eval_count"]
-                    if ollama_stats.get("prompt_eval_count"):
-                        stats["prompt_tokens"] = ollama_stats["prompt_eval_count"]
-
-                    word_count = len(result_text.split())
-                    stats["words"] = word_count
-                    if attempt > 1:
-                        stats["recovered_after_attempts"] = attempt
-
-                    yield f"data: {json.dumps({'type': 'pass_complete', 'pass': pass_name, 'text': result_text, 'stats': stats})}\n\n"
-
-                    speed_note = f" ({stats.get('tokens_per_sec', '?')} tok/s)" if stats.get("tokens_per_sec") else ""
-                    retry_note = f" (after {attempt} attempts)" if attempt > 1 else ""
-                    state.emit("log", {
-                        "message": f"  ✓ {pass_cfg['label']} complete — {word_count} words, {pass_elapsed}s{speed_note}{retry_note}",
-                        "level": "info",
-                    })
-                    pass_success = True
-                    break  # success — stop retrying
-
-                except Exception as e:
-                    last_error = e
-                    # If we've exhausted retries, fall through to error reporting
-                    continue
-
-            if not pass_success:
-                yield f"data: {json.dumps({'type': 'pass_error', 'pass': pass_name, 'error': str(last_error)})}\n\n"
-                state.emit("log", {
-                    "message": f"  ✗ {pass_cfg['label']} failed after {_consult_retries + 1} attempts: {last_error}",
-                    "level": "error",
-                })
-
-        audit_elapsed = round(time.time() - audit_t0, 1)
-        yield f"data: {json.dumps({'type': 'done', 'results': results, 'elapsed_s': audit_elapsed})}\n\n"
-        state.emit("log", {
-            "message": f"🔍 AI Consult finished — {len(results)}/{total_passes} passes in {audit_elapsed}s",
-            "level": "info",
-        })
-
-    return Response(
-        stream(),
-        mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@app.route("/api/consult-apply", methods=["POST"])
-def api_consult_apply():
-    """Generate a corrected YAML file based on audit analysis.
-
-    Streams the corrected YAML via SSE.
-
-    JSON body:
-        role: "outline" | "characters" | "locations"
-        analysis: The analysis text for this file
-    """
-    from .consult import build_fix_prompt
-    from .ollama_client import OllamaError
-    import json as _json
-
-    body = request.get_json(force=True) or {}
-    role = body.get("role", "").strip()
-    analysis = body.get("analysis", "").strip()
-
-    if role not in ("outline", "characters", "locations"):
-        return jsonify({"ok": False, "error": f"Invalid role: {role}"}), 400
-    if not analysis:
-        return jsonify({"ok": False, "error": "No analysis provided"}), 400
-
-    # Load original YAML
-    path = os.path.join(WORKSPACE_DIR, FILE_ROLES[role])
-    if not os.path.exists(path):
-        return jsonify({"ok": False, "error": f"No {role} file uploaded"}), 404
-
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            original_yaml = f.read()
-    except OSError as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-    web_config = _load_web_config()
-    host = _normalize_host(web_config.get("host", ""))
-    model = web_config.get("model", "gemma3:12b")
-    timeout = int(web_config.get("timeout", 900))
-
-    system_prompt, user_prompt = build_fix_prompt(role, original_yaml, analysis)
-
-    def stream():
-        try:
-            url = f"{host}/api/generate"
-            payload = {
-                "model": model,
-                "system": system_prompt,
-                "prompt": user_prompt,
-                "stream": True,
-                "options": {
-                    "num_ctx": 16384,
-                    "temperature": 0.3,
-                },
-            }
-
-            response = _requests.post(url, json=payload,
-                                      timeout=timeout, stream=True)
-            response.raise_for_status()
-
-            full_text = []
-            for line in response.iter_lines(chunk_size=None):
-                if not line:
-                    continue
-                try:
-                    data = _json.loads(line)
-                except ValueError:
-                    continue
-                token = data.get("response", "")
-                if token:
-                    full_text.append(token)
-                    yield f"data: {json.dumps({'type': 'chunk', 'text': token})}\n\n"
-                if data.get("done"):
-                    break
-
-            result = "".join(full_text)
-            # Strip markdown fences if the model wrapped it
-            result = re.sub(r'^```(?:yaml)?\s*\n?', '', result)
-            result = re.sub(r'\n?```\s*$', '', result)
-            yield f"data: {json.dumps({'type': 'done', 'yaml': result.strip()})}\n\n"
-
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
-
-    return Response(
-        stream(),
-        mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@app.route("/api/consult-save", methods=["POST"])
-def api_consult_save():
-    """Save a corrected YAML file (possibly edited by user in diff view).
-
-    JSON body:
-        role: "outline" | "characters" | "locations"
-        content: The corrected YAML content
-    """
-    body = request.get_json(force=True) or {}
-    role = body.get("role", "").strip()
-    content = body.get("content", "")
-
-    if role not in ("outline", "characters", "locations"):
-        return jsonify({"ok": False, "error": f"Invalid role: {role}"}), 400
-    if not content.strip():
-        return jsonify({"ok": False, "error": "Content is empty"}), 400
-
-    _ensure_workspace()
-    path = os.path.join(WORKSPACE_DIR, FILE_ROLES[role])
-
-    # Validate YAML before saving
-    try:
-        _yaml.safe_load(content)
-    except _yaml.YAMLError as e:
-        return jsonify({"ok": False, "error": f"Invalid YAML: {e}"}), 400
-
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
-
-    return jsonify({
-        "ok": True,
-        "filename": FILE_ROLES[role],
-        "size": len(content.encode("utf-8")),
-    })
 
 
 @app.route("/api/ollama-health")
@@ -1360,86 +881,6 @@ def api_ollama_health():
         return jsonify({"ok": False, "error": "Timeout"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
-
-
-@app.route("/api/ollama-pull", methods=["POST"])
-def api_ollama_pull():
-    """Pull (download) a model from Ollama, streaming progress as SSE.
-
-    Request JSON: {"model": "gemma3:4b"}
-    Response: text/event-stream with JSON events containing:
-        - status: "pulling ...", "downloading ...", etc.
-        - total, completed: byte counts for download progress
-        - error: if something went wrong
-    Final event has {"status": "success"} or {"error": "..."}.
-    """
-    data = request.get_json(force=True)
-    model_name = data.get("model", "").strip()
-    if not model_name:
-        return jsonify({"ok": False, "error": "No model specified"}), 400
-
-    cfg = _load_web_config()
-    host = _normalize_host(cfg.get("host", ""))
-    if not host:
-        return jsonify({"ok": False, "error": "No Ollama host configured"}), 400
-
-    def stream():
-        try:
-            resp = _requests.post(
-                f"{host}/api/pull",
-                json={"name": model_name, "stream": True},
-                stream=True,
-                timeout=7200,  # 2h — large models can take a while
-            )
-            resp.raise_for_status()
-
-            for line in resp.iter_lines():
-                if not line:
-                    continue
-                try:
-                    chunk = json.loads(line)
-                except (ValueError, TypeError):
-                    continue
-
-                # Forward progress to the client
-                event = {}
-                if "status" in chunk:
-                    event["status"] = chunk["status"]
-                if "total" in chunk:
-                    event["total"] = chunk["total"]
-                if "completed" in chunk:
-                    event["completed"] = chunk["completed"]
-                if "error" in chunk:
-                    event["error"] = chunk["error"]
-
-                yield f"data: {json.dumps(event)}\n\n"
-
-                # Ollama signals completion or error
-                if chunk.get("status") == "success":
-                    yield f"data: {json.dumps({'done': True, 'status': 'success'})}\n\n"
-                    return
-                if "error" in chunk:
-                    yield f"data: {json.dumps({'done': True, 'error': chunk['error']})}\n\n"
-                    return
-
-            # Stream ended without explicit success/error
-            yield f"data: {json.dumps({'done': True, 'status': 'success'})}\n\n"
-
-        except _requests.ConnectionError:
-            yield f"data: {json.dumps({'done': True, 'error': 'Connection to Ollama refused'})}\n\n"
-        except _requests.Timeout:
-            yield f"data: {json.dumps({'done': True, 'error': 'Pull request timed out'})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'done': True, 'error': str(e)})}\n\n"
-
-    return Response(
-        stream(),
-        mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
-    )
 
 
 @app.route("/api/events")
@@ -1490,150 +931,17 @@ def api_output():
 
 @app.route("/api/download")
 def api_download():
-    """Download the output .md file with scene/chapter markers stripped."""
-    import re
-    from io import BytesIO
+    """Download the output .md file."""
     output_path = os.path.join(WORKSPACE_DIR, "full_story.md")
     if not os.path.exists(output_path):
         return jsonify({"ok": False, "error": "No output file yet"}), 404
 
-    with open(output_path, "r", encoding="utf-8") as f:
-        raw = f.read()
-
-    # Strip HTML comment markers (scene/chapter) for clean book output
-    cleaned = re.sub(r'<!--\s*/?(?:scene|chapter):[^\n]*-->\n?', '', raw)
-    # Collapse excessive blank lines left behind
-    cleaned = re.sub(r'\n{4,}', '\n\n\n', cleaned)
-
-    buf = BytesIO(cleaned.encode("utf-8"))
     return send_file(
-        buf,
+        output_path,
         mimetype="text/markdown",
         as_attachment=True,
         download_name="novel_output.md",
     )
-
-
-def _save_memory(path):
-    """Write edited memory fields back to checkpoint.yaml.
-
-    Expects JSON body with optional keys: story_so_far, facts, actions,
-    commitments, characters.  Each list item is {scene, detail}.
-    Characters is [{name, description, notes, ...}].
-    """
-    if path is None:
-        _ensure_workspace()
-        path = os.path.join(WORKSPACE_DIR, "checkpoint.yaml")
-
-    from .yaml_io import load_yaml_optional, save_yaml
-    cp = load_yaml_optional(path) or {}
-
-    body = request.get_json(force=True) or {}
-
-    # Story so far — simple string overwrite
-    if "story_so_far" in body:
-        cp["story_so_far"] = body["story_so_far"]
-
-    memory = cp.setdefault("story_memory", {})
-
-    # Recent scenes — list of {scene, summary}
-    if "recent_scenes" in body:
-        cp["recent_scenes"] = [
-            {"scene": item.get("scene", ""), "summary": item.get("summary", "")}
-            for item in body["recent_scenes"]
-            if isinstance(item, dict) and item.get("summary", "").strip()
-        ]
-
-    # List-based fields
-    for key in ("facts", "actions", "commitments"):
-        if key in body:
-            memory[key] = [
-                {"scene": item.get("scene", ""), "detail": item.get("detail", "")}
-                for item in body[key]
-                if isinstance(item, dict) and item.get("detail", "").strip()
-            ]
-
-    # Characters — keyed by derived ID
-    if "characters" in body:
-        char_dict = {}
-        for c in body["characters"]:
-            if not isinstance(c, dict):
-                continue
-            name = c.get("name", "").strip()
-            if not name:
-                continue
-            char_id = name.lower().replace(" ", "_").replace("'", "")
-            char_dict[char_id] = {
-                "name": name,
-                "description": c.get("description", ""),
-                "notes": c.get("notes", ""),
-                "introduced_scene": c.get("introduced_scene", ""),
-                "last_seen": c.get("last_seen", ""),
-            }
-        memory["characters"] = char_dict
-
-    cp["story_memory"] = memory
-    save_yaml(path, cp)
-    return jsonify({"ok": True})
-
-
-@app.route("/api/memory", methods=["GET", "POST"])
-def api_memory():
-    """GET: return full story memory.  POST: save edits back to checkpoint."""
-    checkpoint_path = os.path.join(WORKSPACE_DIR, "checkpoint.yaml")
-    cwd_path = os.path.join(os.getcwd(), "checkpoint.yaml")
-
-    path = checkpoint_path if os.path.exists(checkpoint_path) else (
-        cwd_path if os.path.exists(cwd_path) else None
-    )
-
-    if request.method == "POST":
-        return _save_memory(path)
-
-    # --- GET ---
-    if path is None:
-        return jsonify({"ok": False, "error": "No checkpoint found — start generation first."})
-
-    try:
-        from .yaml_io import load_yaml_optional
-        from .state import _sanitize_story_memory
-        cp = load_yaml_optional(path)
-        if not cp:
-            return jsonify({"ok": False, "error": "Checkpoint is empty."})
-
-        memory = _sanitize_story_memory(cp.get("story_memory", {}))
-
-        # Build the response — keep it UI-friendly
-        def _items(lst):
-            return [{"scene": e.get("scene", ""), "detail": e.get("detail", "")}
-                    for e in lst if isinstance(e, dict) and e.get("detail")]
-
-        chars = memory.get("characters", {})
-        char_list = [
-            {
-                "name": v.get("name", k),
-                "description": v.get("description", ""),
-                "notes": v.get("notes", ""),
-                "introduced_scene": v.get("introduced_scene", ""),
-                "last_seen": v.get("last_seen", ""),
-            }
-            for k, v in chars.items() if isinstance(v, dict)
-        ]
-
-        return jsonify({
-            "ok": True,
-            "story_title": cp.get("story_title", ""),
-            "last_chapter": cp.get("last_completed_chapter", ""),
-            "last_scene": cp.get("last_completed_scene", ""),
-            "story_so_far": cp.get("story_so_far", ""),
-            "recent_scenes": cp.get("recent_scenes", []),
-            "actions": _items(memory.get("actions", [])),
-            "facts": _items(memory.get("facts", [])),
-            "commitments": _items(memory.get("commitments", [])),
-            "characters": char_list,
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
 
 
 @app.route("/api/delete-file/<role>", methods=["POST"])
@@ -1649,165 +957,334 @@ def api_delete_file(role):
 
 
 # ---------------------------------------------------------------------------
-# TTS (Text-to-Speech) routes — Speaches / Kokoro / Piper
+# Consult routes
 # ---------------------------------------------------------------------------
 
-@app.route("/api/tts/health")
-def api_tts_health():
-    """Check TTS server connectivity and list available models."""
-    host = request.args.get("host", "").strip()
-    if not host:
-        cfg = _load_web_config()
-        host = cfg.get("tts_host", "")
-    host = _normalize_tts_host(host)
-    if not host:
-        return jsonify({"ok": False, "error": "No TTS host configured"})
+@app.route("/api/consult", methods=["POST"])
+def api_consult():
+    """Start an AI consultation analysis and stream results as SSE.
 
-    try:
-        resp = _requests.get(f"{host}/v1/models", timeout=5)
-        resp.raise_for_status()
-        data = resp.json()
-        models = [
-            m.get("id", "") for m in data.get("data", [])
-            if m.get("id")
-        ]
-        return jsonify({"ok": True, "models": models})
-    except _requests.ConnectionError:
-        return jsonify({"ok": False, "error": "Connection refused"})
-    except _requests.Timeout:
-        return jsonify({"ok": False, "error": "Timeout"})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
-
-
-@app.route("/api/tts/voices")
-def api_tts_voices():
-    """Discover available voices for a TTS model.
-
-    Tries several common endpoints (Speaches / OpenAI-compatible),
-    returns whatever voice list the server exposes.  Falls back
-    gracefully so the UI can offer a text input instead.
+    Runs in a background thread so the analysis continues even if the
+    initiating browser disconnects.  Any device can reconnect via
+    /api/consult-results (snapshot) or /api/consult-events (live stream).
     """
-    host = request.args.get("host", "").strip()
-    model = request.args.get("model", "").strip()
-    if not host:
-        cfg = _load_web_config()
-        host = cfg.get("tts_host", "")
-        if not model:
-            model = cfg.get("tts_model", "")
-    host = _normalize_tts_host(host)
-    if not host:
-        return jsonify({"ok": False, "voices": [], "error": "No TTS host"})
+    # If already running, don't start a new one — just attach a subscriber
+    if consult_state._thread is None or not consult_state._thread.is_alive():
+        consult_state.reset()
 
-    endpoints = []
-    if model:
-        endpoints.append(f"/v1/audio/voices?model={model}")
-    endpoints.extend(["/v1/audio/voices", "/v1/voices"])
+        def worker():
+            from .consult import get_analysis_passes, build_pass_prompt
+            cfg = _load_web_config()
+            host = _normalize_host(cfg.get("host", ""))
+            model = cfg.get("model", "gemma3:12b")
+            timeout = int(cfg.get("timeout", 900))
 
-    for ep in endpoints:
-        try:
-            resp = _requests.get(f"{host}{ep}", timeout=5)
-            if not resp.ok:
-                continue
-            data = resp.json()
-            raw = (
-                data if isinstance(data, list)
-                else data.get("voices", data.get("data", []))
-            )
-            if not isinstance(raw, list):
-                continue
-            voices = []
-            for v in raw:
-                if isinstance(v, str):
-                    voices.append(v)
-                elif isinstance(v, dict):
-                    vid = (
-                        v.get("id")
-                        or v.get("name")
-                        or v.get("voice_id")
-                        or str(v)
+            if not host:
+                consult_state.emit("consult_error", {
+                    "message": "No Ollama host configured"
+                })
+                return
+
+            files = {}
+            for role in ("outline", "characters", "locations"):
+                path = os.path.join(WORKSPACE_DIR, FILE_ROLES.get(role, f"{role}.yaml"))
+                if os.path.exists(path):
+                    try:
+                        with open(path, "r", encoding="utf-8") as f:
+                            files[role] = f.read()
+                    except OSError:
+                        pass
+
+            passes = get_analysis_passes(files)
+            if not passes:
+                consult_state.emit("consult_error", {
+                    "message": (
+                        "No YAML files available for analysis. "
+                        "Upload your story files first."
                     )
-                    voices.append(vid)
-            if voices:
-                return jsonify({"ok": True, "voices": sorted(voices)})
-        except Exception:
-            continue
+                })
+                return
 
-    return jsonify({
-        "ok": False,
-        "voices": [],
-        "error": "Voice listing not available \u2014 type voice names manually",
-    })
+            consult_state.emit("consult_start", {"total_passes": len(passes)})
+
+            for idx, (pass_name, pass_cfg) in enumerate(passes, 1):
+                label = pass_cfg["label"]
+                emoji = pass_cfg["emoji"]
+
+                consult_state.emit("pass_start", {
+                    "pass": pass_name,
+                    "label": label,
+                    "emoji": emoji,
+                    "index": idx,
+                    "total": len(passes),
+                })
+
+                system_prompt, user_prompt = build_pass_prompt(pass_name, files)
+
+                url = f"{host}/api/generate"
+                payload = {
+                    "model": model,
+                    "system": system_prompt,
+                    "prompt": user_prompt,
+                    "stream": True,
+                    "options": {
+                        "num_ctx": 16384,
+                        "temperature": 0.4,
+                        "top_p": 0.9,
+                    },
+                }
+
+                t_start = time.time()
+                done_data = None
+
+                try:
+                    resp = _requests.post(
+                        url, json=payload, timeout=timeout, stream=True
+                    )
+                    resp.raise_for_status()
+
+                    for line in resp.iter_lines():
+                        if not line:
+                            continue
+                        try:
+                            chunk = json.loads(line)
+                        except ValueError:
+                            continue
+                        token = chunk.get("response", "")
+                        if token:
+                            consult_state.emit("pass_chunk", {
+                                "pass": pass_name,
+                                "chunk": token,
+                            })
+                        if chunk.get("done"):
+                            done_data = chunk
+                            break
+
+                except Exception as e:
+                    consult_state.emit("pass_error", {
+                        "pass": pass_name,
+                        "message": str(e),
+                    })
+                    continue
+
+                elapsed = time.time() - t_start
+                stats = {"elapsed": round(elapsed, 1)}
+                if done_data:
+                    eval_count = done_data.get("eval_count", 0)
+                    eval_dur = done_data.get("eval_duration", 0)
+                    prompt_eval = done_data.get("prompt_eval_count", 0)
+                    if eval_dur and eval_count:
+                        stats["toks_per_s"] = round(
+                            eval_count / (eval_dur / 1e9), 1
+                        )
+                    if eval_count:
+                        stats["eval_tokens"] = eval_count
+                    if prompt_eval:
+                        stats["prompt_tokens"] = prompt_eval
+
+                consult_state.emit("pass_done", {
+                    "pass": pass_name,
+                    "stats": stats,
+                })
+
+            consult_state.emit("consult_done", {})
+
+        t = threading.Thread(target=worker, daemon=True, name="novel-consult")
+        t.start()
+        consult_state._thread = t
+
+    # Subscribe atomically with snapshot to avoid duplicate chunks
+    q, snap = consult_state.subscribe_with_snapshot()
+
+    def stream():
+        try:
+            yield f"data: {json.dumps({'type': 'connected'})}\n\n"
+
+            # Replay accumulated pass text captured at subscribe time
+            for name in ("characters", "outline", "locations", "crossref"):
+                p = snap["passes"].get(name)
+                if not p:
+                    continue
+                yield (
+                    f"data: {json.dumps({'type': 'pass_restore', 'pass': name, 'label': p['label'], 'emoji': p['emoji'], 'text': p['text'], 'status': p['status'], 'stats': p.get('stats'), 'error': p.get('error')})}\n\n"
+                )
+
+            # If already finished, send terminal event and stop
+            if snap["status"] == "completed":
+                yield f"data: {json.dumps({'type': 'consult_done'})}\n\n"
+                return
+            if snap["status"] == "error":
+                yield f"data: {json.dumps({'type': 'consult_error', 'message': snap.get('error', '')})}\n\n"
+                return
+
+            # Stream live events from background thread
+            while True:
+                try:
+                    event = q.get(timeout=15)
+                    yield f"data: {json.dumps(event, default=str)}\n\n"
+                    if event["type"] in ("consult_done", "consult_error"):
+                        break
+                except queue.Empty:
+                    yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+
+        except GeneratorExit:
+            pass
+        finally:
+            consult_state.unsubscribe(q)
+
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
-@app.route("/api/tts/speak", methods=["POST"])
-def api_tts_speak():
-    """Generate speech audio from text via the TTS server.
+@app.route("/api/consult-results")
+def api_consult_results():
+    """Return the cached consult results snapshot for reconnection.
 
-    Proxies the request to the Speaches-compatible /v1/audio/speech
-    endpoint and streams the MP3 response back to the browser.
+    Safe to call from any device at any time, even while analysis is running.
+    Returns accumulated text for each completed or in-progress pass.
     """
-    cfg = _load_web_config()
+    return jsonify(consult_state.snapshot())
+
+
+@app.route("/api/consult-clear", methods=["POST"])
+def api_consult_clear():
+    """Clear cached consult results."""
+    if consult_state._thread is not None and consult_state._thread.is_alive():
+        return jsonify({"ok": False, "error": "Analysis still running"}), 400
+    consult_state.reset()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/consult-apply", methods=["POST"])
+def api_consult_apply():
+    """Generate a corrected YAML file for a completed analysis pass (SSE).
+
+    Streams the proposed fixed YAML from the LLM.  The client can review
+    the result in an editable textarea before saving.
+    """
     data = request.get_json(force=True)
+    role = data.get("role", "")
 
-    host = _normalize_tts_host(data.get("host") or cfg.get("tts_host", ""))
-    model = data.get("model") or cfg.get("tts_model", "")
-    voice = data.get("voice") or cfg.get("tts_narrator_voice", "")
-    text = data.get("text", "").strip()
+    if role not in ("outline", "characters", "locations"):
+        return jsonify({"ok": False, "error": f"Unknown role: {role}"}), 400
 
-    if not host:
-        return jsonify({"ok": False, "error": "No TTS host configured"}), 400
-    if not model:
-        return jsonify({"ok": False, "error": "No TTS model selected"}), 400
-    if not voice:
-        return jsonify({"ok": False, "error": "No voice selected"}), 400
-    if not text:
-        return jsonify({"ok": False, "error": "No text provided"}), 400
+    snap = consult_state.snapshot()
+    pass_data = snap["passes"].get(role)
+    if not pass_data or pass_data.get("status") != "done":
+        return jsonify({"ok": False, "error": "Pass not completed"}), 400
+
+    analysis_text = pass_data["text"]
+
+    yaml_path = os.path.join(WORKSPACE_DIR, FILE_ROLES[role])
+    if not os.path.exists(yaml_path):
+        return jsonify({"ok": False, "error": "YAML file not found in workspace"}), 404
 
     try:
-        resp = _requests.post(
-            f"{host}/v1/audio/speech",
-            json={
-                "model": model,
-                "input": text,
-                "voice": voice,
-                "response_format": "mp3",
-            },
-            timeout=120,
-            stream=True,
-        )
-        resp.raise_for_status()
-        return Response(
-            resp.iter_content(chunk_size=4096),
-            mimetype="audio/mpeg",
-            headers={"Content-Type": "audio/mpeg"},
-        )
-    except _requests.ConnectionError:
-        return jsonify({"ok": False, "error": "TTS server connection refused"}), 502
-    except _requests.Timeout:
-        return jsonify({"ok": False, "error": "TTS request timed out"}), 504
-    except _requests.HTTPError as e:
-        return jsonify({"ok": False, "error": f"TTS server error: {e}"}), 502
-    except Exception as e:
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            original_yaml = f.read()
+    except OSError as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+    def stream():
+        from .consult import build_fix_prompt
+        cfg = _load_web_config()
+        host = _normalize_host(cfg.get("host", ""))
+        model = cfg.get("model", "gemma3:12b")
+        timeout = int(cfg.get("timeout", 900))
 
-@app.route("/api/tts/segments", methods=["POST"])
-def api_tts_segments():
-    """Segment scene text into narration/dialogue blocks.
+        if not host:
+            yield f"data: {json.dumps({'type': 'fix_error', 'message': 'No Ollama host configured'})}\n\n"
+            return
 
-    Returns a list of paragraph-level segments, each attributed to
-    a character (for dialogue) or left as narration.
+        system_prompt, user_prompt = build_fix_prompt(role, original_yaml, analysis_text)
+
+        url = f"{host}/api/generate"
+        payload = {
+            "model": model,
+            "system": system_prompt,
+            "prompt": user_prompt,
+            "stream": True,
+            "options": {
+                "num_ctx": 16384,
+                "temperature": 0.3,
+            },
+        }
+
+        try:
+            resp = _requests.post(url, json=payload, timeout=timeout, stream=True)
+            resp.raise_for_status()
+
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                try:
+                    chunk = json.loads(line)
+                except ValueError:
+                    continue
+                token = chunk.get("response", "")
+                if token:
+                    yield f"data: {json.dumps({'type': 'fix_chunk', 'chunk': token})}\n\n"
+                if chunk.get("done"):
+                    yield f"data: {json.dumps({'type': 'fix_done'})}\n\n"
+                    break
+
+        except GeneratorExit:
+            pass
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'fix_error', 'message': str(e)})}\n\n"
+
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.route("/api/consult-save", methods=["POST"])
+def api_consult_save():
+    """Save a proposed YAML fix back to workspace.
+
+    Validates the YAML before writing it.  This replaces the existing
+    file in the workspace, which then takes effect on the next generation run.
     """
-    from .tts import segment_text_for_tts
-
+    _ensure_workspace()
     data = request.get_json(force=True)
-    text = data.get("text", "")
-    characters = data.get("characters", [])
-    pov_character = data.get("pov_character") or None
+    role = data.get("role", "")
+    content = data.get("content", "")
 
-    segments = segment_text_for_tts(text, characters, pov_character=pov_character)
-    return jsonify({"ok": True, "segments": segments})
+    if role not in FILE_ROLES:
+        return jsonify({"ok": False, "error": f"Unknown role: {role}"}), 400
+    if not content.strip():
+        return jsonify({"ok": False, "error": "Content is empty"}), 400
+    if len(content) > 5 * 1024 * 1024:
+        return jsonify({"ok": False, "error": "Content too large (>5MB)"}), 400
+
+    # Validate YAML syntax before saving
+    try:
+        _yaml.safe_load(content)
+    except _yaml.YAMLError as e:
+        return jsonify({"ok": False, "error": f"Invalid YAML: {e}"}), 400
+
+    dest = os.path.join(WORKSPACE_DIR, FILE_ROLES[role])
+    with open(dest, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    return jsonify({
+        "ok": True,
+        "filename": FILE_ROLES[role],
+        "size": len(content.encode("utf-8")),
+    })
 
 
 # ---------------------------------------------------------------------------

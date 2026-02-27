@@ -63,21 +63,23 @@ header {
   padding: .6rem 1rem;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: .75rem;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 .logo { font-size: 1.2rem; font-weight: 700; white-space: nowrap; }
 .logo span { color: var(--accent); }
 
-/* Status indicators row — separate from main header */
+/* Status indicators row */
 .status-bar {
-  background: var(--bg-card);
-  border-bottom: 1px solid var(--border);
-  padding: .5rem 1rem;
   display: flex;
   align-items: center;
   gap: .7rem;
+  flex: 1;
   flex-wrap: wrap;
+  min-width: 0;
 }
 .indicator {
   display: inline-flex;
@@ -135,14 +137,6 @@ header {
   transition: width .5s ease;
 }
 
-#top-chrome {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 200;
-}
-
 /* =========================================================
    Tabs
    ========================================================= */
@@ -187,83 +181,6 @@ header {
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: .05em;
-}
-
-/* =========================================================
-   Model selector (combo-box with dropdown + pull support)
-   ========================================================= */
-.model-selector { position: relative; }
-.model-dropdown {
-  display: none;
-  position: absolute;
-  top: 100%;
-  left: 0; right: 0;
-  z-index: 100;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-top: none;
-  border-radius: 0 0 var(--radius) var(--radius);
-  max-height: 320px;
-  overflow-y: auto;
-  box-shadow: 0 4px 12px rgba(0,0,0,.3);
-}
-.model-dropdown.open { display: block; }
-.model-option {
-  padding: .5rem .7rem;
-  cursor: pointer;
-  border-bottom: 1px solid var(--border);
-  transition: background .1s;
-}
-.model-option:last-child { border-bottom: none; }
-.model-option:hover { background: var(--bg-hover); }
-.model-option .mo-name {
-  font-weight: 600;
-  font-size: .85rem;
-  color: var(--text);
-}
-.model-option .mo-desc {
-  font-size: .72rem;
-  color: var(--text-dim);
-  margin-top: 2px;
-  line-height: 1.3;
-}
-.model-option .mo-tag {
-  display: inline-block;
-  font-size: .65rem;
-  padding: 1px 5px;
-  border-radius: 3px;
-  margin-left: .4rem;
-  vertical-align: middle;
-}
-.mo-tag.installed { background: rgba(46,160,67,.2); color: #3fb950; }
-.mo-tag.not-installed { background: rgba(233,69,96,.15); color: var(--red); }
-.model-status {
-  font-size: .72rem;
-  margin-top: .3rem;
-  min-height: 1.1em;
-}
-.model-status .pull-btn {
-  cursor: pointer;
-  color: var(--accent);
-  text-decoration: underline;
-  background: none;
-  border: none;
-  font-size: .72rem;
-  padding: 0;
-}
-.model-status .pull-btn:hover { color: #d13350; }
-.pull-progress-bar {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--border);
-  margin-top: .3rem;
-  overflow: hidden;
-}
-.pull-progress-bar .fill {
-  height: 100%;
-  background: var(--accent);
-  transition: width .3s;
-  width: 0%;
 }
 
 /* =========================================================
@@ -396,135 +313,6 @@ textarea {
   max-height: 70vh;
   overflow-y: auto;
 }
-.scene-header {
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-  padding: .3rem .6rem;
-  margin: .5rem 0 .25rem 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-family: var(--font);
-  font-size: .78rem;
-  white-space: normal;
-}
-.scene-header .scene-label {
-  font-weight: 600;
-  color: var(--accent);
-}
-.scene-header .scene-title {
-  color: var(--text-dim);
-  flex: 1;
-}
-.regen-pending {
-  display: block;
-  padding: 1.2rem 1rem;
-  color: var(--text-muted, #aaa);
-  font-style: italic;
-  font-size: .95em;
-}
-.regen-failed { color: #e07070; }
-
-.scene-header .btn-regen {
-  padding: .15rem .45rem;
-  font-size: .7rem;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-dim);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.scene-header .btn-regen:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-.chapter-header {
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-  padding: .4rem .6rem;
-  margin: 1rem 0 .25rem 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius);
-  font-family: var(--font);
-  font-size: .82rem;
-  white-space: normal;
-}
-.chapter-header .chapter-label {
-  font-weight: 700;
-  color: var(--text);
-  flex: 1;
-}
-.chapter-header .btn-regen {
-  padding: .15rem .45rem;
-  font-size: .7rem;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-dim);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.chapter-header .btn-regen:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-/* =========================================================
-   Output Table of Contents
-   ========================================================= */
-#output-toc-wrap {
-  margin-bottom: .5rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-card);
-  overflow: hidden;
-}
-#output-toc-bar {
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-  padding: .3rem .7rem;
-  font-size: .78rem;
-  font-family: var(--font);
-  cursor: pointer;
-  user-select: none;
-}
-#output-toc-bar:hover { background: var(--bg-input); }
-#output-toc-bar .toc-bar-label { font-weight: 600; flex: 1; color: var(--text); }
-#output-toc-bar .toc-toggle-icon { color: var(--text-dim); font-size: .7rem; }
-#output-toc {
-  display: none;
-  padding: .3rem .6rem .6rem .6rem;
-  max-height: 200px;
-  overflow-y: auto;
-  border-top: 1px solid var(--border);
-}
-.toc-chapter-item {
-  font-weight: 600;
-  font-family: var(--font);
-  font-size: .8rem;
-  color: var(--text);
-  cursor: pointer;
-  padding: .22rem .4rem;
-  border-radius: 3px;
-  margin-top: .3rem;
-}
-.toc-chapter-item:first-child { margin-top: 0; }
-.toc-chapter-item:hover { background: var(--bg-input); color: var(--accent); }
-.toc-scene-item {
-  font-family: var(--font);
-  font-size: .76rem;
-  color: var(--text-dim);
-  cursor: pointer;
-  padding: .15rem .4rem .15rem 1.4rem;
-  border-radius: 3px;
-}
-.toc-scene-item:hover { background: var(--bg-input); color: var(--text); }
 
 /* =========================================================
    Log viewer
@@ -623,85 +411,54 @@ textarea {
 /* =========================================================
    Consult tab
    ========================================================= */
-.consult-intro { color: var(--text-dim); font-size: .85rem; line-height: 1.55; margin-bottom: .75rem; }
-.consult-controls { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
-.consult-pass {
-  background: var(--bg-card);
+.consult-text {
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: .8rem 1rem;
-  margin-bottom: .6rem;
+  padding: .6rem .8rem;
+  font-family: var(--mono);
+  font-size: .78rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 55vh;
+  overflow-y: auto;
+  margin-bottom: .5rem;
 }
-.consult-pass-header {
-  display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem;
-  font-weight: 600; font-size: .9rem;
+.consult-fix-yaml {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--blue);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: .78rem;
+  padding: .5rem;
+  resize: vertical;
+  min-height: 200px;
+  outline: none;
 }
-.consult-pass-header .pass-emoji { font-size: 1.1rem; }
-.consult-pass-header .pass-status {
-  margin-left: auto; font-size: .72rem; font-weight: 400;
-  padding: .1rem .45rem; border-radius: 10px;
+.cbadge {
+  display: inline-block;
+  font-size: .68rem;
+  font-weight: 600;
+  padding: .1rem .45rem;
+  border-radius: 10px;
+  background: var(--bg-input);
+  color: var(--text-dim);
+  vertical-align: middle;
+  margin-left: .35rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
 }
-.pass-status.running { background: rgba(78,168,222,.15); color: var(--blue); }
-.pass-status.done    { background: rgba(78,202,163,.15); color: var(--green); }
-.pass-status.error   { background: rgba(233,69,96,.15);  color: var(--red); }
-.consult-pass-body {
-  font-size: .82rem; line-height: 1.6; color: var(--text);
-  max-height: 500px; overflow-y: auto;
-  padding: .3rem;
-}
-.consult-pass-body h2 { font-size: 1rem; margin: .8rem 0 .3rem; color: var(--accent); }
-.consult-pass-body h3 { font-size: .9rem; margin: .6rem 0 .2rem; }
-.consult-pass-body h4 { font-size: .85rem; margin: .5rem 0 .15rem; }
-.consult-pass-body ul, .consult-pass-body ol { margin: .25rem 0 .25rem 1.5rem; }
-.consult-pass-body li { margin-bottom: .15rem; }
-.consult-pass-body strong { color: var(--text); }
-.consult-pass-body code { font-family: var(--mono); font-size: .78rem; background: var(--bg); padding: .05rem .2rem; border-radius: 3px; }
-.consult-pass-actions { display: flex; gap: .5rem; margin-top: .6rem; }
-.consult-pass-stats {
-  font-size: .72rem; color: var(--text-dim); margin-top: .35rem;
-  display: flex; gap: .75rem; flex-wrap: wrap;
-}
-.consult-pass-stats span { white-space: nowrap; }
-
-/* =========================================================
-   Diff view modal
-   ========================================================= */
-.diff-modal {
-  max-width: 95vw; width: 1100px; max-height: 90vh;
-  display: flex; flex-direction: column; padding: 1rem 1.25rem;
-}
-.diff-header {
-  display: flex; align-items: center; gap: .75rem; margin-bottom: .6rem; flex-shrink: 0;
-}
-.diff-header h3 { flex: 1; margin: 0; font-size: 1rem; }
-.diff-container {
-  display: grid; grid-template-columns: 1fr 1fr; gap: .5rem;
-  flex: 1; min-height: 0; overflow: hidden;
-}
-.diff-pane {
-  display: flex; flex-direction: column; min-height: 0;
-}
-.diff-pane-label {
-  font-size: .76rem; font-weight: 600; color: var(--text-dim);
-  padding: .3rem .5rem; background: var(--bg); border-radius: var(--radius) var(--radius) 0 0;
-  border: 1px solid var(--border); border-bottom: none;
-}
-.diff-pane textarea, .diff-pane .diff-rendered {
-  flex: 1; border: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius);
-  background: var(--bg); color: var(--text); font-family: var(--mono); font-size: .78rem;
-  padding: .5rem; resize: none; overflow-y: auto;
-  line-height: 1.5; tab-size: 2;
-}
-.diff-pane .diff-rendered { white-space: pre-wrap; word-break: break-word; }
-.diff-line-add { background: rgba(78,202,163,.12); }
-.diff-line-del { background: rgba(233,69,96,.12); text-decoration: line-through; opacity: .7; }
-.diff-line-ctx { }
-.diff-actions {
-  display: flex; gap: .5rem; margin-top: .6rem; flex-shrink: 0; justify-content: flex-end;
-}
-@media (max-width: 800px) {
-  .diff-container { grid-template-columns: 1fr; }
-  .diff-modal { width: 98vw; }
+.cbadge.running { background: rgba(78,168,222,0.18); color: var(--blue); animation: pulse 1.5s infinite; }
+.cbadge.done    { background: rgba(78,204,163,0.15); color: var(--green); }
+.cbadge.error   { background: rgba(233,69,96,0.15);  color: var(--red); }
+.pass-stats {
+  font-size: .72rem;
+  color: var(--text-dim);
+  margin: .25rem 0 .4rem;
+  font-family: var(--mono);
 }
 
 /* =========================================================
@@ -715,287 +472,83 @@ textarea {
   .logo { font-size: 1rem; }
   .header-actions button { padding: .25rem .45rem; font-size: .72rem; }
 }
-
-/* =========================================================
-   TTS voice mapping
-   ========================================================= */
-.voice-map-row {
-  display: flex;
-  gap: .5rem;
-  align-items: center;
-  margin-bottom: .35rem;
-  padding: .25rem 0;
-  border-bottom: 1px solid var(--border);
-}
-.voice-map-row:last-child { border-bottom: none; }
-.voice-map-name { min-width: 110px; font-size: .82rem; font-weight: 500; }
-.voice-map-role { min-width: 80px; font-size: .72rem; color: var(--text-dim); }
-.voice-map-input {
-  flex: 1;
-  padding: .3rem .5rem;
-  font-size: .8rem;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text);
-}
-.voice-map-input:focus { border-color: var(--accent); outline: none; }
-
-.tts-toolbar {
-  display: flex;
-  gap: .5rem;
-  margin-bottom: .75rem;
-  flex-wrap: wrap;
-  align-items: center;
-}
-.tts-toolbar .spacer { flex: 1; }
-
-/* =========================================================
-   Memory tab
-   ========================================================= */
-.mem-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-.mem-item {
-  padding: .45rem .5rem;
-  border-bottom: 1px solid var(--border);
-  font-size: .84rem;
-  line-height: 1.55;
-}
-.mem-item:last-child { border-bottom: none; }
-.mem-badge {
-  display: inline-block;
-  font-size: .7rem;
-  color: var(--text-dim);
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: .05rem .35rem;
-  margin-right: .45rem;
-  vertical-align: middle;
-  white-space: nowrap;
-}
-.mem-green { border-left: 3px solid var(--green); padding-left: .6rem; }
-.mem-blue  { border-left: 3px solid var(--blue);  padding-left: .6rem; }
-.mem-yellow{ border-left: 3px solid var(--yellow); padding-left: .6rem; }
-.mem-story-text {
-  font-size: .88rem;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  color: var(--text);
-  max-height: 260px;
-  overflow-y: auto;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  padding: .3rem;
-  transition: border-color .2s;
-}
-.mem-story-text:focus {
-  border-color: var(--accent);
-  outline: none;
-  background: var(--bg-input);
-}
-.mem-detail {
-  flex: 1;
-  min-width: 0;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  padding: .1rem .3rem;
-  transition: border-color .2s;
-}
-.mem-detail:focus {
-  border-color: var(--accent);
-  outline: none;
-  background: var(--bg-input);
-}
-.mem-item {
-  display: flex;
-  align-items: baseline;
-  gap: .4rem;
-  flex-wrap: wrap;
-}
-.mem-action-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: .82rem;
-  padding: .15rem .35rem;
-  color: var(--text-dim);
-  opacity: .7;
-  transition: opacity .15s, color .15s;
-}
-.mem-action-btn:hover {
-  opacity: 1;
-  color: var(--red);
-}
-.mem-action-btn.mem-add-btn:hover {
-  color: var(--green);
-}
-
-/* =========================================================
-   Card header row (title + inline help button)
-   ========================================================= */
-.card-header-row {
-  display: flex;
-  align-items: center;
-  margin-bottom: .7rem;
-}
-.card-header-row .card-title {
-  flex: 1;
-  font-size: .9rem;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: .05em;
-  font-weight: 600;
-}
-.help-btn {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 1.5px solid var(--text-dim);
-  background: transparent;
-  color: var(--text-dim);
-  font-size: .7rem;
-  font-weight: 700;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: border-color .15s, color .15s, background .15s;
-  line-height: 1;
-  padding: 0;
-  font-family: var(--font);
-}
-.help-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: rgba(233,69,96,0.08);
-}
-
-/* =========================================================
-   YAML Schema Help Modal — tree view
-   ========================================================= */
-.yaml-tree {
-  font-family: var(--mono);
-  font-size: .8rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-/* row */
-.yr {
-  display: flex;
-  align-items: baseline;
-  gap: 0;
-  padding: .19rem 0;
-  line-height: 1.35;
-}
-.yr:hover { background: rgba(255,255,255,0.03); border-radius: 3px; }
-/* indent levels */
-.yi0 { padding-left: 0; }
-.yi1 { padding-left: 1.6em; }
-.yi2 { padding-left: 3.2em; }
-.yi3 { padding-left: 4.8em; }
-/* dash prefix for list items */
-.ydash { color: var(--text-dim); flex-shrink: 0; }
-/* key */
-.yk      { color: var(--blue);  flex-shrink: 0; }
-.yk.ypar { color: var(--text);  font-weight: 600; }
-/* comment part: "  # required — desc" */
-.ycom {
-  color: var(--text-dim);
-  font-size: .75rem;
-  margin-left: .6ch;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.ycom .yreq {
-  color: var(--red);
-  font-weight: 700;
-  font-style: normal;
-}
-.ycom .yhint {
-  /* optional hint words e.g. "high impact" */
-  color: var(--yellow);
-  font-style: italic;
-}
-/* inline code inside comments */
-.ycom code {
-  font-family: var(--mono);
-  font-size: .73rem;
-  background: var(--bg);
-  padding: .02rem .22rem;
-  border-radius: 3px;
-  color: var(--blue);
-}
 </style>
 </head>
 <body>
 
-<div id="top-chrome">
 <!-- ==================== HEADER ==================== -->
 <header>
   <div class="logo">Novel<span>Builder</span></div>
+  <div class="status-bar">
+    <div class="indicator" id="ind-status">
+      <span class="dot" id="dot-status"></span>
+      <span id="lbl-status">Idle</span>
+    </div>
+    <div class="indicator" id="ind-ollama">
+      <span class="dot" id="dot-ollama"></span>
+      <span id="lbl-ollama">Ollama: ?</span>
+    </div>
+    <div class="indicator" id="ind-model">
+      <span class="dot" id="dot-model"></span>
+      <span id="lbl-model">No model active</span>
+    </div>
+    <div class="indicator" id="ind-progress" style="display:none;">
+      <span id="lbl-progress">0%</span>
+    </div>
+  </div>
   <div class="header-actions">
     <button onclick="toggleTheme()" title="Toggle light/dark">🌓</button>
     <button onclick="confirmNewStory()" title="New Story" class="btn-danger btn-sm">New Story</button>
   </div>
 </header>
-
-<!-- ==================== STATUS BAR ==================== -->
-<div class="status-bar">
-  <div class="indicator" id="ind-status">
-    <span class="dot" id="dot-status"></span>
-    <span id="lbl-status">Idle</span>
-  </div>
-  <div class="indicator" id="ind-ollama">
-    <span class="dot" id="dot-ollama"></span>
-    <span id="lbl-ollama">Ollama: ?</span>
-  </div>
-  <div class="indicator" id="ind-model">
-    <span class="dot" id="dot-model"></span>
-    <span id="lbl-model">No model active</span>
-  </div>
-  <div class="indicator" id="ind-tts" style="display:none;">
-    <span class="dot" id="dot-tts"></span>
-    <span id="lbl-tts">TTS: ?</span>
-  </div>
-  <div class="indicator" id="ind-tts-playback" style="display:none;">
-    <span class="dot blue pulse" id="dot-tts-play"></span>
-    <span id="lbl-tts-play"></span>
-  </div>
-  <div class="indicator" id="ind-progress" style="display:none;">
-    <span id="lbl-progress">0%</span>
-  </div>
-</div>
 <div class="progress-wrap"><div class="progress-fill" id="progress-fill"></div></div>
 
 <!-- ==================== TABS ==================== -->
 <div class="tabs">
-  <button class="tab-btn active" data-tab="story">Story</button>
-  <button class="tab-btn" data-tab="consult">Consult</button>
-  <button class="tab-btn" data-tab="settings">Settings</button>
-  <button class="tab-btn" data-tab="logs">Logs</button>
-  <button class="tab-btn" data-tab="memory">Memory</button>
+  <button class="tab-btn active" data-tab="setup">Setup</button>
+  <button class="tab-btn" data-tab="consult">🔬 Consult</button>
   <button class="tab-btn" data-tab="output">Output</button>
+  <button class="tab-btn" data-tab="logs">Logs</button>
 </div>
-</div><!-- /#top-chrome -->
-
-<!-- Spacer pushes tab panels below the fixed chrome -->
-<div id="top-spacer"></div>
 
 <!-- ==================== SETUP TAB ==================== -->
-<!-- ==================== STORY TAB ==================== -->
-<div class="tab-panel active" id="panel-story">
+<div class="tab-panel active" id="panel-setup">
 
-  <div class="card" id="card-outline">
-    <div class="card-header-row">
-      <span class="card-title">📘 Story Outline</span>
-      <button class="help-btn" onclick="showYamlHelp('outline')" title="YAML Schema Reference">?</button>
+  <!-- Config card -->
+  <div class="card">
+    <h3>⚙ Connection & Models</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="cfg-host">Ollama Host URL</label>
+        <input type="url" id="cfg-host" placeholder="http://192.168.1.50:11434">
+      </div>
+      <div class="form-group">
+        <label for="cfg-model">Generation Model</label>
+        <input type="text" id="cfg-model" placeholder="gemma3:12b">
+      </div>
     </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="cfg-summary-model">Summary Model</label>
+        <input type="text" id="cfg-summary-model" placeholder="gemma3:1b">
+      </div>
+      <div class="form-group" style="display:grid; grid-template-columns:1fr 1fr; gap:.5rem;">
+        <div>
+          <label for="cfg-retries">Retries</label>
+          <input type="number" id="cfg-retries" min="1" max="10" value="3">
+        </div>
+        <div>
+          <label for="cfg-timeout">Timeout (s)</label>
+          <input type="number" id="cfg-timeout" min="60" max="3600" value="900">
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-sm" onclick="saveConfig()">Save Config</button>
+  </div>
+
+  <!-- File upload cards — one per role -->
+  <div class="card" id="card-outline">
+    <h3>📘 Story Outline</h3>
     <div class="drop-zone" id="drop-outline">
       <input type="file" accept=".yaml,.yml" onchange="handleFile(this,'outline')">
       <div class="icon">📄</div>
@@ -1012,10 +565,7 @@ textarea {
   </div>
 
   <div class="card" id="card-characters">
-    <div class="card-header-row">
-      <span class="card-title">👤 Characters</span>
-      <button class="help-btn" onclick="showYamlHelp('characters')" title="YAML Schema Reference">?</button>
-    </div>
+    <h3>👤 Characters</h3>
     <div class="drop-zone" id="drop-characters">
       <input type="file" accept=".yaml,.yml" onchange="handleFile(this,'characters')">
       <div class="icon">👥</div>
@@ -1032,10 +582,7 @@ textarea {
   </div>
 
   <div class="card" id="card-locations">
-    <div class="card-header-row">
-      <span class="card-title">🗺 Locations <span style="font-size:.65rem;opacity:.7;">(optional)</span></span>
-      <button class="help-btn" onclick="showYamlHelp('locations')" title="YAML Schema Reference">?</button>
-    </div>
+    <h3>🗺 Locations <span style="font-size:.7rem;color:var(--text-dim)">(optional)</span></h3>
     <div class="drop-zone" id="drop-locations">
       <input type="file" accept=".yaml,.yml" onchange="handleFile(this,'locations')">
       <div class="icon">🏔</div>
@@ -1052,10 +599,7 @@ textarea {
   </div>
 
   <div class="card" id="card-style">
-    <div class="card-header-row">
-      <span class="card-title">🎨 Custom Style Prompt <span style="font-size:.65rem;opacity:.7;">(optional)</span></span>
-      <button class="help-btn" onclick="showYamlHelp('style')" title="YAML Schema Reference">?</button>
-    </div>
+    <h3>🎨 Custom Style Prompt <span style="font-size:.7rem;color:var(--text-dim)">(optional)</span></h3>
     <div class="drop-zone" id="drop-style">
       <input type="file" accept=".txt,.yaml,.yml" onchange="handleFile(this,'style')">
       <div class="icon">✍</div>
@@ -1078,7 +622,9 @@ textarea {
 
   <!-- Action buttons -->
   <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
-    <button class="btn btn-primary" onclick="document.querySelector('[data-tab=&quot;consult&quot;]').click()">Next</button>
+    <button class="btn btn-primary" id="btn-start" onclick="startGeneration(false)">▶ Start Generation</button>
+    <button class="btn" id="btn-resume" onclick="startGeneration(true)" style="display:none;">⏩ Resume</button>
+    <button class="btn btn-danger" id="btn-stop" onclick="stopGeneration()" style="display:none;">⏹ Stop</button>
     <button class="btn" onclick="refreshParsed()">🔄 Refresh Preview</button>
   </div>
 </div>
@@ -1086,155 +632,28 @@ textarea {
 <!-- ==================== CONSULT TAB ==================== -->
 <div class="tab-panel" id="panel-consult">
   <div class="card">
-    <h3>🔍 AI Story Consultant</h3>
-    <p class="consult-intro">
-      Run an AI-powered audit of your YAML story files. The generation model will analyze
-      your characters, outline, locations, and cross-references for effectiveness, then
-      recommend specific improvements to produce the best possible story output.
+    <h3>🔬 AI Story Consultant</h3>
+    <p style="font-size:.82rem;color:var(--text-dim);margin-bottom:.75rem;">
+      Multi-pass AI analysis of your YAML files. Results are cached on the server
+      — safe to refresh or open on another device.
     </p>
-    <div class="consult-controls">
-      <button class="btn btn-primary" id="btn-consult-run" onclick="runConsult()">🔍 Run Full Audit</button>
-      <button class="btn btn-danger" id="btn-consult-stop" onclick="stopConsult()" style="display:none;">⏹ Stop</button>
-      <label style="display:flex; align-items:center; gap:.3rem; font-size:.78rem; color:var(--text-dim); cursor:pointer;">
-        <input type="checkbox" id="chk-consult-autoscroll" checked> Auto-scroll
-      </label>
-      <span id="consult-status" style="font-size:.78rem; color:var(--text-dim);"></span>
+    <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+      <button class="btn btn-primary" id="btn-consult-start" onclick="startConsult()">🔬 Start Analysis</button>
+      <button class="btn btn-sm" onclick="clearConsult()">✕ Clear</button>
+      <span id="consult-status-label" style="font-size:.8rem;color:var(--text-dim);"></span>
     </div>
-    <div id="consult-results"></div>
   </div>
-
-  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
-    <button class="btn" onclick="document.querySelector('[data-tab=&quot;story&quot;]').click()">← Back to Story</button>
-    <button class="btn btn-primary" onclick="document.querySelector('[data-tab=&quot;settings&quot;]').click()">Next →</button>
-  </div>
-</div>
-
-<!-- ==================== SETTINGS TAB ==================== -->
-<div class="tab-panel" id="panel-settings">
-
-  <!-- LLM Connection & Models -->
-  <div class="card">
-    <h3>⚙ Connection & Models</h3>
-    <div class="form-row">
-      <div class="form-group">
-        <label for="cfg-host">Ollama Host URL</label>
-        <input type="url" id="cfg-host" placeholder="http://192.168.1.50:11434">
-      </div>
-      <div class="form-group">
-        <label for="cfg-model">Generation Model</label>
-        <div class="model-selector" id="sel-model">
-          <input type="text" id="cfg-model"
-                 placeholder="gemma3:12b"
-                 autocomplete="off"
-                 onfocus="openModelDropdown('model')"
-                 oninput="filterModelDropdown('model')">
-          <div class="model-dropdown" id="dd-model"></div>
-          <div class="model-status" id="ms-model"></div>
-        </div>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label for="cfg-summary-model">Summary Model</label>
-        <div class="model-selector" id="sel-summary-model">
-          <input type="text" id="cfg-summary-model"
-                 placeholder="gemma3:4b"
-                 autocomplete="off"
-                 onfocus="openModelDropdown('summary-model')"
-                 oninput="filterModelDropdown('summary-model')">
-          <div class="model-dropdown" id="dd-summary-model"></div>
-          <div class="model-status" id="ms-summary-model"></div>
-        </div>
-      </div>
-      <div class="form-group">
-        <label for="cfg-consult-model">Consult Model <span style="font-weight:400;color:var(--text-dim);font-size:.78rem;">(leave blank to use Summary Model)</span></label>
-        <input type="text" id="cfg-consult-model"
-               placeholder="defaults to summary model"
-               autocomplete="off">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group" style="display:grid; grid-template-columns:1fr 1fr; gap:.5rem;">
-        <div>
-          <label for="cfg-retries">Retries</label>
-          <input type="number" id="cfg-retries" min="1" max="10" value="3">
-        </div>
-        <div>
-          <label for="cfg-timeout">Timeout (s)</label>
-          <input type="number" id="cfg-timeout" min="60" max="3600" value="900">
-        </div>
-      </div>
-    </div>
-    <button class="btn btn-sm" onclick="saveConfig()">Save Config</button>
-  </div>
-
-  <!-- TTS config card -->
-  <div class="card" id="card-tts">
-    <h3>🔊 Text-to-Speech</h3>
-    <div class="form-row">
-      <div class="form-group">
-        <label for="cfg-tts-host">TTS Server URL (Speaches)</label>
-        <input type="url" id="cfg-tts-host" placeholder="http://192.168.1.x:8001">
-      </div>
-      <div class="form-group">
-        <label for="cfg-tts-model">TTS Model</label>
-        <select id="cfg-tts-model" onchange="onTTSModelChange()">
-          <option value="">-- check connection first --</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-group">
-      <label for="cfg-tts-narrator-voice">Narrator Voice</label>
-      <div style="display:flex; gap:.5rem; align-items:center;">
-        <input type="text" id="cfg-tts-narrator-voice" list="tts-voices-list"
-               placeholder="e.g., af_heart" style="flex:1;">
-        <button class="btn btn-sm" onclick="testVoice('narrator')" title="Preview narrator voice">🔊 Test</button>
-      </div>
-    </div>
-    <div id="tts-voice-map" style="display:none;">
-      <label style="margin-top:.5rem;">Character Voices</label>
-      <div id="tts-voice-map-entries"></div>
-    </div>
-    <div style="display:flex; gap:.5rem; margin-top:.75rem;">
-      <button class="btn btn-sm" onclick="checkTTSHealth()">Check Connection</button>
-      <button class="btn btn-sm" onclick="saveTTSConfig()">💾 Save TTS Config</button>
-    </div>
-    <div id="tts-status" style="font-size:.78rem; margin-top:.5rem; color:var(--text-dim);"></div>
-  </div>
-  <datalist id="tts-voices-list"></datalist>
-
-  <!-- Generation buttons -->
-  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
-    <button class="btn" onclick="document.querySelector('[data-tab=&quot;consult&quot;]').click()">← Previous</button>
-    <button class="btn btn-primary" id="btn-start" onclick="startGeneration(false)">▶ Start Generation</button>
-    <button class="btn" id="btn-resume" onclick="startGeneration(true)" style="display:none;">⏩ Resume</button>
-    <button class="btn btn-danger" id="btn-stop" onclick="stopGeneration()" style="display:none;">⏹ Stop</button>
-  </div>
-
+  <div id="consult-passes-container"></div>
 </div>
 
 <!-- ==================== OUTPUT TAB ==================== -->
 <div class="tab-panel" id="panel-output">
-  <div id="output-toc-wrap" style="display:none;">
-    <div id="output-toc-bar" onclick="toggleToc()">
-      <span class="toc-bar-label">📋 Table of Contents</span>
-      <span class="toc-toggle-icon" id="toc-toggle-icon">▼</span>
-    </div>
-    <div id="output-toc"></div>
-  </div>
-  <div class="tts-toolbar">
+  <div style="display:flex; gap:.5rem; margin-bottom:.75rem; flex-wrap:wrap;">
     <button class="btn btn-sm" onclick="refreshOutput()">🔄 Refresh</button>
     <button class="btn btn-sm" onclick="location.href='/api/download'">⬇ Download .md</button>
     <label style="display:flex; align-items:center; gap:.3rem; font-size:.78rem; color:var(--text-dim);">
       <input type="checkbox" id="chk-autoscroll" checked> Auto-scroll
     </label>
-    <span class="spacer"></span>
-    <button class="btn btn-sm" id="btn-tts-download" onclick="downloadAudiobook()">⬇ Download MP3</button>
-    <button class="btn btn-sm btn-danger" id="btn-tts-download-cancel" onclick="cancelDownload()" style="display:none;">✕ Cancel</button>
-    <span id="tts-download-progress" style="display:none; font-size:.78rem; color:var(--text-dim); white-space:nowrap;"></span>
-    <button class="btn btn-sm" id="btn-tts-play" onclick="playAllScenes()">🔊 Read Aloud</button>
-    <button class="btn btn-sm" id="btn-tts-pause" onclick="pauseTTS()" style="display:none;">⏸ Pause</button>
-    <button class="btn btn-sm btn-danger" id="btn-tts-stop" onclick="stopTTS()" style="display:none;">⏹ Stop</button>
   </div>
   <div class="output-viewer" id="output-viewer">(No output yet — start generation to see scenes here.)</div>
 </div>
@@ -1242,54 +661,9 @@ textarea {
 <!-- ==================== LOGS TAB ==================== -->
 <div class="tab-panel" id="panel-logs">
   <div style="display:flex; gap:.5rem; margin-bottom:.75rem;">
-    <button class="btn btn-sm" id="btn-logs-start" onclick="startGeneration(false)" style="display:none;">▶ Start</button>
-    <button class="btn btn-sm btn-danger" id="btn-logs-stop" onclick="stopGeneration()" style="display:none;">⏹ Stop</button>
-    <button class="btn btn-sm" id="btn-logs-resume" onclick="startGeneration(true)" style="display:none;">⏩ Resume</button>
     <button class="btn btn-sm" onclick="clearLogs()">🗑 Clear</button>
   </div>
   <div class="log-viewer" id="log-viewer"></div>
-</div>
-
-<!-- ==================== MEMORY TAB ==================== -->
-<div class="tab-panel" id="panel-memory">
-  <div style="display:flex; gap:.5rem; margin-bottom:.75rem; align-items:center;">
-    <button class="btn btn-sm" onclick="loadMemory()">🔄 Refresh</button>
-    <button class="btn btn-sm" id="btn-mem-rebuild" onclick="rebuildMemories()">🔁 Rebuild from Story</button>
-    <button class="btn btn-sm btn-primary" id="btn-mem-save" onclick="saveMemory()" disabled style="opacity:.4;">💾 Save</button>
-    <span id="memory-last-updated" style="font-size:.75rem; color:var(--text-dim);"></span>
-  </div>
-
-  <div id="mem-empty" style="display:none; color:var(--text-dim); text-align:center; padding:2rem; font-size:.9rem;"></div>
-
-  <div class="card" id="mem-story-card">
-    <h3>Story So Far</h3>
-    <p class="mem-story-text" id="mem-story-text"></p>
-  </div>
-
-  <div class="card" id="mem-recent-card">
-    <h3>Recent Scenes</h3>
-    <ul class="mem-list" id="mem-recent-list"></ul>
-  </div>
-
-  <div class="card" id="mem-actions-card">
-    <h3>Actions Taken</h3>
-    <ul class="mem-list" id="mem-actions-list"></ul>
-  </div>
-
-  <div class="card" id="mem-facts-card">
-    <h3>Established Facts</h3>
-    <ul class="mem-list" id="mem-facts-list"></ul>
-  </div>
-
-  <div class="card" id="mem-commitments-card">
-    <h3>Active Commitments</h3>
-    <ul class="mem-list" id="mem-commitments-list"></ul>
-  </div>
-
-  <div class="card" id="mem-chars-card">
-    <h3>Extracted Characters</h3>
-    <div id="mem-chars-list"></div>
-  </div>
 </div>
 
 <!-- ==================== EDITOR MODAL ==================== -->
@@ -1316,42 +690,6 @@ textarea {
   </div>
 </div>
 
-<!-- ==================== YAML HELP MODAL ==================== -->
-<div class="modal-overlay" id="modal-yaml-help" onclick="if(event.target===this)this.classList.remove('show')">
-  <div class="modal" style="max-width:580px;max-height:82vh;display:flex;flex-direction:column;padding:1.25rem;">
-    <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem;flex-shrink:0;">
-      <h3 id="yaml-help-title" style="flex:1;margin:0;font-size:1rem;">YAML Schema</h3>
-      <button class="btn btn-sm" onclick="document.getElementById('modal-yaml-help').classList.remove('show')">✕ Close</button>
-    </div>
-    <div id="yaml-help-content" style="overflow-y:auto;flex:1;padding-right:.25rem;"></div>
-  </div>
-</div>
-
-<!-- ==================== DIFF VIEW MODAL ==================== -->
-<div class="modal-overlay" id="modal-diff" onclick="if(event.target===this)closeDiff()">
-  <div class="modal diff-modal">
-    <div class="diff-header">
-      <h3 id="diff-title">Review Changes</h3>
-      <button class="btn btn-sm" onclick="closeDiff()">✕ Close</button>
-    </div>
-    <div class="diff-container">
-      <div class="diff-pane">
-        <div class="diff-pane-label">Original</div>
-        <div class="diff-rendered" id="diff-original"></div>
-      </div>
-      <div class="diff-pane">
-        <div class="diff-pane-label">Proposed (editable)</div>
-        <textarea id="diff-proposed"></textarea>
-      </div>
-    </div>
-    <div class="diff-actions">
-      <button class="btn" onclick="closeDiff()">Cancel</button>
-      <button class="btn" onclick="refreshDiffHighlight()">🔄 Refresh Diff</button>
-      <button class="btn btn-primary" id="btn-diff-apply" onclick="applyDiff()">✓ Apply Changes</button>
-    </div>
-  </div>
-</div>
-
 <!-- ==================== TOAST CONTAINER ==================== -->
 <div class="toast-container" id="toast-container"></div>
 
@@ -1363,42 +701,18 @@ textarea {
 let currentEditorRole = null;
 let eventSource = null;
 let reconnectTimer = null;
-let _lastHealthStatus = null;
-let _healthChangeTimer = null;
 
 /* ==========================================================
    Tabs
    ========================================================== */
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    // If leaving the memory tab with unsaved edits, ask first
-    const leavingMemory = document.querySelector('.tab-btn.active')?.dataset.tab === 'memory'
-      && btn.dataset.tab !== 'memory';
-    if (leavingMemory && _memoryDirty) {
-      if (!confirm('You have unsaved memory edits. Save before switching tabs?')) {
-        // Discard — reload fresh on next visit
-        _memoryDirty = false;
-        _memoryData = null;
-        _updateMemSaveBtn();
-      } else {
-        saveMemory().then(() => {
-          _activateTab(btn);
-        });
-        return;
-      }
-    }
-    _activateTab(btn);
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
   });
 });
-
-function _activateTab(btn) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
-  // Load memory only if not already loaded or explicitly cleared
-  if (btn.dataset.tab === 'memory' && !_memoryDirty) loadMemory();
-}
 
 /* ==========================================================
    Theme toggle
@@ -1470,27 +784,15 @@ function loadConfigIntoForm(cfg) {
   if (!cfg) return;
   document.getElementById('cfg-host').value = cfg.host || '';
   document.getElementById('cfg-model').value = cfg.model || 'gemma3:12b';
-  document.getElementById('cfg-summary-model').value = cfg.summary_model || 'gemma3:4b';
-  document.getElementById('cfg-consult-model').value = cfg.consult_model || '';
+  document.getElementById('cfg-summary-model').value = cfg.summary_model || 'gemma3:1b';
   document.getElementById('cfg-retries').value = cfg.retries || 3;
   document.getElementById('cfg-timeout').value = cfg.timeout || 900;
-  // TTS fields
-  document.getElementById('cfg-tts-host').value = cfg.tts_host || '';
-  document.getElementById('cfg-tts-narrator-voice').value = cfg.tts_narrator_voice || '';
-  tts.host = cfg.tts_host || '';
-  tts.model = cfg.tts_model || '';
-  tts.narratorVoice = cfg.tts_narrator_voice || '';
-  tts.voiceMap = cfg.tts_voice_map || {};
-  // Update model selector status after loading
-  updateModelStatus('model');
-  updateModelStatus('summary-model');
 }
 async function saveConfig() {
   const cfg = {
     host: document.getElementById('cfg-host').value.trim(),
     model: document.getElementById('cfg-model').value.trim(),
     summary_model: document.getElementById('cfg-summary-model').value.trim(),
-    consult_model: document.getElementById('cfg-consult-model').value.trim(),
     retries: parseInt(document.getElementById('cfg-retries').value) || 3,
     timeout: parseInt(document.getElementById('cfg-timeout').value) || 900,
   };
@@ -1498,174 +800,6 @@ async function saveConfig() {
   if (r && r.ok) { toast('Config saved', 'ok'); checkOllamaHealth(); }
   else toast('Failed to save config', 'error');
 }
-
-/* ==========================================================
-   Model selector — combo-box with recommendations + pull
-   ========================================================== */
-const RECOMMENDED_MODELS = {
-  'model': [
-    { name: 'gemma3:4b',  desc: 'Good quality, fast — ~3 GB RAM',        ram: '~3 GB' },
-    { name: 'gemma3:12b', desc: 'High quality, balanced speed — ~8 GB RAM', ram: '~8 GB' },
-    { name: 'gemma3:27b', desc: 'Excellent quality, slower — ~17 GB RAM', ram: '~17 GB' },
-    { name: 'qwen2.5:7b', desc: 'Strong prose, good instruction following — ~5 GB RAM', ram: '~5 GB' },
-    { name: 'qwen2.5:14b', desc: 'Excellent prose quality — ~9 GB RAM',  ram: '~9 GB' },
-    { name: 'llama3.1:8b', desc: 'Solid all-rounder — ~5 GB RAM',        ram: '~5 GB' },
-    { name: 'mistral:7b',  desc: 'Fast, good creative writing — ~5 GB RAM', ram: '~5 GB' },
-    { name: 'deepseek-r1:8b', desc: 'Strong reasoning + prose — ~5 GB RAM', ram: '~5 GB' },
-  ],
-  'summary-model': [
-    { name: 'gemma3:1b',  desc: 'Minimal — very fast but lower extraction quality — ~1 GB RAM', ram: '~1 GB' },
-    { name: 'gemma3:4b',  desc: 'Recommended — good extraction, fast — ~3 GB RAM', ram: '~3 GB' },
-    { name: 'qwen2.5:3b', desc: 'Good structured output — ~2 GB RAM',    ram: '~2 GB' },
-    { name: 'qwen2.5:7b', desc: 'Excellent extraction quality — ~5 GB RAM', ram: '~5 GB' },
-    { name: 'phi4-mini',  desc: 'Strong instruction following — ~2.5 GB RAM', ram: '~2.5 GB' },
-    { name: 'gemma3:12b', desc: 'Best extraction quality, slower — ~8 GB RAM', ram: '~8 GB' },
-  ],
-};
-
-let _installedModels = [];  // populated by health check
-
-function _renderModelDropdown(kind) {
-  const dd = document.getElementById('dd-' + kind);
-  const input = document.getElementById(kind === 'model' ? 'cfg-model' : 'cfg-summary-model');
-  const filter = (input.value || '').toLowerCase();
-  const recs = RECOMMENDED_MODELS[kind] || [];
-
-  let html = '';
-  for (const m of recs) {
-    if (filter && !m.name.toLowerCase().includes(filter) && !m.desc.toLowerCase().includes(filter)) continue;
-    const installed = _installedModels.some(im => im === m.name || im.startsWith(m.name.split(':')[0] + ':') && im === m.name);
-    const isInstalled = _installedModels.includes(m.name);
-    const tag = isInstalled
-      ? '<span class="mo-tag installed">installed</span>'
-      : '<span class="mo-tag not-installed">not installed</span>';
-    html += `<div class="model-option" data-model="${m.name}" onclick="selectModel('${kind}','${m.name}')">
-      <div class="mo-name">${m.name} ${tag}</div>
-      <div class="mo-desc">${m.desc}</div>
-    </div>`;
-  }
-
-  // Show any installed models not in recommendations
-  for (const im of _installedModels) {
-    if (recs.some(r => r.name === im)) continue;
-    if (filter && !im.toLowerCase().includes(filter)) continue;
-    html += `<div class="model-option" data-model="${im}" onclick="selectModel('${kind}','${im}')">
-      <div class="mo-name">${im} <span class="mo-tag installed">installed</span></div>
-      <div class="mo-desc">Installed on server</div>
-    </div>`;
-  }
-
-  if (!html) {
-    html = '<div class="model-option" style="color:var(--text-dim);cursor:default;">No matching models — type a model name and press Enter</div>';
-  }
-  dd.innerHTML = html;
-}
-
-function openModelDropdown(kind) {
-  // Close any other open dropdown first
-  document.querySelectorAll('.model-dropdown.open').forEach(d => d.classList.remove('open'));
-  _renderModelDropdown(kind);
-  document.getElementById('dd-' + kind).classList.add('open');
-}
-
-function filterModelDropdown(kind) {
-  _renderModelDropdown(kind);
-  updateModelStatus(kind);
-}
-
-function selectModel(kind, modelName) {
-  const input = document.getElementById(kind === 'model' ? 'cfg-model' : 'cfg-summary-model');
-  input.value = modelName;
-  document.getElementById('dd-' + kind).classList.remove('open');
-  updateModelStatus(kind);
-}
-
-function updateModelStatus(kind) {
-  const input = document.getElementById(kind === 'model' ? 'cfg-model' : 'cfg-summary-model');
-  const statusEl = document.getElementById('ms-' + kind);
-  const val = (input.value || '').trim();
-  if (!val) { statusEl.innerHTML = ''; return; }
-
-  if (_installedModels.includes(val)) {
-    statusEl.innerHTML = '<span style="color:#3fb950;">✓ Installed</span>';
-  } else {
-    statusEl.innerHTML = `<span style="color:var(--text-dim);">Not installed</span> — `
-      + `<button class="pull-btn" onclick="pullModel('${kind}','${val}')">Pull from Ollama</button>`;
-  }
-}
-
-function pullModel(kind, modelName) {
-  const statusEl = document.getElementById('ms-' + kind);
-  statusEl.innerHTML = `<span style="color:var(--text-dim);">Pulling ${modelName}…</span>`
-    + `<div class="pull-progress-bar"><div class="fill" id="pull-fill-${kind}"></div></div>`;
-
-  const evtSource = new EventSource(
-    '/api/ollama-pull?' + new URLSearchParams({model: modelName})
-  );
-
-  // EventSource doesn't support POST, so we use fetch + ReadableStream instead
-  evtSource.close();  // close the GET attempt
-
-  fetch('/api/ollama-pull', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: modelName }),
-  }).then(async resp => {
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-
-      // Parse SSE lines
-      const lines = buf.split('\n');
-      buf = lines.pop();  // keep partial line
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const data = JSON.parse(line.slice(6));
-          if (data.total && data.completed) {
-            const pct = Math.round(100 * data.completed / data.total);
-            const fill = document.getElementById('pull-fill-' + kind);
-            if (fill) fill.style.width = pct + '%';
-            const mbDone = (data.completed / 1048576).toFixed(0);
-            const mbTotal = (data.total / 1048576).toFixed(0);
-            statusEl.querySelector('span').textContent = `Pulling ${modelName}… ${mbDone}/${mbTotal} MB (${pct}%)`;
-          } else if (data.status && !data.done) {
-            statusEl.querySelector('span').textContent = `${data.status}`;
-          }
-          if (data.done) {
-            if (data.error) {
-              statusEl.innerHTML = `<span style="color:var(--red);">Pull failed: ${data.error}</span>`;
-              toast('Model pull failed: ' + data.error, 'error');
-            } else {
-              statusEl.innerHTML = '<span style="color:#3fb950;">✓ Installed</span>';
-              toast(modelName + ' pulled successfully', 'ok');
-              // Refresh installed models list
-              checkOllamaHealth();
-            }
-            return;
-          }
-        } catch (e) { /* ignore parse errors */ }
-      }
-    }
-    // Stream ended — assume success
-    statusEl.innerHTML = '<span style="color:#3fb950;">✓ Installed</span>';
-    checkOllamaHealth();
-  }).catch(err => {
-    statusEl.innerHTML = `<span style="color:var(--red);">Pull failed: ${err.message}</span>`;
-  });
-}
-
-// Close dropdowns when clicking outside
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('.model-selector')) {
-    document.querySelectorAll('.model-dropdown.open').forEach(d => d.classList.remove('open'));
-  }
-});
 
 /* ==========================================================
    File upload / drag-drop
@@ -1874,7 +1008,7 @@ async function refreshParsed() {
       <ul>
         ${lo.locations.map(l => `
           <li>
-            <strong>${escHtml(l.name || l.id)}</strong>${l.name ? ` <span style="font-size:.75rem;color:var(--text-dim);">(${escHtml(l.id)})</span>` : ''}
+            <strong>${escHtml(l.id)}</strong>
             ${l.type ? `<span class="tag">${escHtml(l.type)}</span>` : ''}
             ${l.description ? `<span style="font-size:.75rem;color:var(--text-dim);">${escHtml(l.description)}</span>` : ''}
           </li>
@@ -1910,11 +1044,6 @@ async function refreshParsed() {
 
   // Validation results
   renderValidation(r.validation || []);
-
-  // Update TTS voice map UI with loaded character names
-  if (r.characters && !r.characters.error && r.characters.characters) {
-    updateVoiceMapUI(r.characters.characters);
-  }
 }
 
 /* ==========================================================
@@ -1960,21 +1089,13 @@ function renderValidation(results) {
 /* ==========================================================
    Generation control
    ========================================================== */
-async function startGeneration(resume, force = false) {
+async function startGeneration(resume) {
   // Save config first
   await saveConfig();
-  const r = await apiPost('/api/start', { resume, force });
+  const r = await apiPost('/api/start', { resume });
   if (r && r.ok) {
     toast('Generation started', 'ok');
     updateUIForStatus('running');
-    // Switch to logs tab
-    document.querySelector('[data-tab="logs"]').click();
-  } else if (r && r.needs_confirm) {
-    showConfirm(
-      'Overwrite existing output?',
-      r.message,
-      () => startGeneration(false, true)
-    );
   } else {
     toast(r?.message || r?.error || 'Start failed', 'error');
   }
@@ -1997,30 +1118,10 @@ function confirmNewStory() {
       const r = await apiPost('/api/new-story');
       if (r && r.ok) {
         toast(`Workspace cleared (${r.removed.length} files removed)`, 'ok');
-        // Explicitly reset all file cards and summaries so old data doesn't linger
-        ['outline', 'characters', 'locations', 'style'].forEach(role => {
-          const fstat = document.getElementById('fstat-' + role);
-          const factions = document.getElementById('factions-' + role);
-          const summary = document.getElementById('summary-' + role);
-          const vresults = document.getElementById('vresults-' + role);
-          if (fstat) { fstat.className = 'file-status empty'; fstat.textContent = 'No file loaded'; }
-          if (factions) factions.style.display = 'none';
-          if (summary) summary.innerHTML = '';
-          if (vresults) vresults.innerHTML = '';
-        });
-        document.getElementById('card-loaded').style.display = 'none';
-        document.getElementById('loaded-overview').innerHTML = '';
-        document.getElementById('vresults-cross').innerHTML = '';
-        document.getElementById('output-viewer').innerHTML = '(No output yet — workspace cleared)';
+        refreshFiles();
+        refreshParsed();
+        document.getElementById('output-viewer').textContent = '(No output yet)';
         document.getElementById('log-viewer').innerHTML = '';
-        // Clear TTS character voice map — voices belong to the story
-        const vme = document.getElementById('tts-voice-map-entries');
-        const vmw = document.getElementById('tts-voice-map');
-        if (vme) vme.innerHTML = '';
-        if (vmw) vmw.style.display = 'none';
-        // Clear in-memory TTS voice map
-        tts.voiceMap = {};
-        tts.yamlVoiceMap = {};
         updateUIForStatus('idle');
       } else {
         toast(r?.error || 'Reset failed', 'error');
@@ -2039,9 +1140,6 @@ function updateUIForStatus(status) {
   const btnStart = document.getElementById('btn-start');
   const btnResume = document.getElementById('btn-resume');
   const btnStop = document.getElementById('btn-stop');
-  const btnLogsStart = document.getElementById('btn-logs-start');
-  const btnLogsResume = document.getElementById('btn-logs-resume');
-  const btnLogsStop = document.getElementById('btn-logs-stop');
 
   dotS.className = 'dot';
   switch (status) {
@@ -2051,9 +1149,6 @@ function updateUIForStatus(status) {
       btnStart.style.display = 'none';
       btnResume.style.display = 'none';
       btnStop.style.display = '';
-      btnLogsStart.style.display = 'none';
-      btnLogsResume.style.display = 'none';
-      btnLogsStop.style.display = '';
       indP.style.display = '';
       break;
     case 'completed':
@@ -2062,9 +1157,6 @@ function updateUIForStatus(status) {
       btnStart.style.display = '';
       btnResume.style.display = 'none';
       btnStop.style.display = 'none';
-      btnLogsStart.style.display = '';
-      btnLogsResume.style.display = 'none';
-      btnLogsStop.style.display = 'none';
       break;
     case 'stopped':
       dotS.classList.add('yellow');
@@ -2072,9 +1164,6 @@ function updateUIForStatus(status) {
       btnStart.style.display = '';
       btnResume.style.display = '';
       btnStop.style.display = 'none';
-      btnLogsStart.style.display = '';
-      btnLogsResume.style.display = '';
-      btnLogsStop.style.display = 'none';
       break;
     case 'error':
       dotS.classList.add('red');
@@ -2082,19 +1171,12 @@ function updateUIForStatus(status) {
       btnStart.style.display = '';
       btnResume.style.display = '';
       btnStop.style.display = 'none';
-      btnLogsStart.style.display = '';
-      btnLogsResume.style.display = '';
-      btnLogsStop.style.display = 'none';
       break;
     default:
-      dotS.classList.add('text-dim');
       lblS.textContent = 'Idle';
       btnStart.style.display = '';
       btnResume.style.display = 'none';
       btnStop.style.display = 'none';
-      btnLogsStart.style.display = '';
-      btnLogsResume.style.display = 'none';
-      btnLogsStop.style.display = 'none';
       indP.style.display = 'none';
   }
 }
@@ -2103,20 +1185,11 @@ function updateModelIndicator(info) {
   const dot = document.getElementById('dot-model');
   const lbl = document.getElementById('lbl-model');
   dot.className = 'dot';
-  // Clear any running generation timer
-  if (_genTimer) { clearInterval(_genTimer); _genTimer = null; }
   switch (info.model) {
-    case 'generation': {
+    case 'generation':
       dot.classList.add('blue', 'pulse');
-      _genT0 = Date.now();
-      const modelName = info.name || '';
-      lbl.textContent = `✦ Generating: ${modelName} · 0s`;
-      _genTimer = setInterval(() => {
-        const elapsed = Math.round((Date.now() - _genT0) / 1000);
-        lbl.textContent = `✦ Generating: ${modelName} · ${elapsed}s`;
-      }, 1000);
+      lbl.textContent = '✦ Generating: ' + (info.name || '');
       break;
-    }
     case 'summarization':
       dot.classList.add('yellow', 'pulse');
       lbl.textContent = '⊕ Summarizing: ' + (info.name || '');
@@ -2132,67 +1205,6 @@ function updateProgress(p) {
   document.getElementById('lbl-progress').textContent =
     `${pct}% — Scene ${p.scene || 0}/${p.total_scenes || 0}`;
   document.getElementById('ind-progress').style.display = '';
-}
-
-/* ==========================================================
-   Regeneration
-   ========================================================== */
-async function regenerateScene(sceneId) {
-  if (!confirm(`Regenerate Scene ${sceneId}? The old text will be saved to Logs.`)) return;
-  toast(`Regenerating Scene ${sceneId}…`, 'warn');
-
-  // Immediately show a placeholder so the author knows the old text is gone
-  const viewer = document.getElementById('output-viewer');
-  const block = viewer.querySelector(`.scene-block[data-scene-id="${sceneId}"]`);
-  if (block) {
-    block.dataset.regenPending = '1';
-    block.innerHTML = '<em class="regen-pending">⏳ Regenerating scene — please wait…</em>';
-    block.style.background = 'rgba(255,200,50,.08)';
-  }
-
-  const r = await api('/api/regenerate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scene_id: sceneId }),
-  });
-  if (!r?.ok) {
-    // Restore note that regen failed so it's obvious
-    if (block) {
-      block.innerHTML = '<em class="regen-pending regen-failed">⚠ Regen failed — reload page to see original text.</em>';
-      block.style.background = 'rgba(220,50,50,.1)';
-    }
-    toast('Regen failed: ' + (r?.error || 'unknown'), 'error');
-  }
-}
-
-async function regenerateChapter(chapterNum) {
-  if (!confirm(`Regenerate ALL scenes in Chapter ${chapterNum}? Old text will be saved to Logs.`)) return;
-  toast(`Regenerating Chapter ${chapterNum}…`, 'warn');
-  const r = await api('/api/regenerate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chapter: chapterNum }),
-  });
-  if (!r?.ok) toast('Regen failed: ' + (r?.error || 'unknown'), 'error');
-}
-
-function _handleSceneRegenerated(data) {
-  const sceneId = data.scene_id || '';
-  const viewer = document.getElementById('output-viewer');
-  const block = viewer.querySelector(`.scene-block[data-scene-id="${sceneId}"]`);
-  if (block) {
-    delete block.dataset.regenPending;
-    block.style.transition = 'background .5s';
-    block.textContent = '\n' + (data.text || '') + '\n\n';
-    block.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    // Flash effect
-    block.style.background = 'rgba(78,202,163,.15)';
-    setTimeout(() => { block.style.background = ''; }, 2000);
-  } else {
-    // Markers missing — full refresh
-    refreshOutput();
-  }
-  toast(`Scene ${sceneId} regenerated`, 'ok');
 }
 
 /* ==========================================================
@@ -2216,28 +1228,9 @@ function clearLogs() {
    ========================================================== */
 function appendSceneToOutput(data) {
   const viewer = document.getElementById('output-viewer');
-  // Clear placeholder text on first real scene
-  if (!viewer.querySelector('.scene-block')) viewer.innerHTML = '';
-
-  const sceneId = data.scene_num || '';
-  const title = data.title || '';
-
-  // Scene header bar with ID and regenerate button
-  const hdr = document.createElement('div');
-  hdr.className = 'scene-header';
-  hdr.innerHTML = `<span class="scene-label">Scene ${escHtml(String(sceneId))}</span>`
-    + (title ? `<span class="scene-title">${escHtml(title)}</span>` : '<span class="scene-title"></span>')
-    + `<button class="btn-regen" onclick="regenerateScene('${escHtml(String(sceneId))}')" title="Regenerate this scene">🔄 Regen</button>`;
-  viewer.appendChild(hdr);
-
-  const idx = viewer.querySelectorAll('.scene-block').length;
-  const block = document.createElement('div');
-  block.className = 'scene-block';
-  block.dataset.sceneIdx = String(idx);
-  block.dataset.sceneId = String(sceneId);
-  block.textContent = '\n' + data.text + '\n\n';
-  viewer.appendChild(block);
-
+  if (viewer.textContent.startsWith('(No output')) viewer.textContent = '';
+  const heading = `\n\n### Scene ${data.scene_num}${data.title ? ': ' + data.title : ''}\n\n`;
+  viewer.textContent += heading + data.text + '\n\n---\n';
   if (document.getElementById('chk-autoscroll').checked) {
     viewer.scrollTop = viewer.scrollHeight;
   }
@@ -2245,163 +1238,9 @@ function appendSceneToOutput(data) {
 
 async function refreshOutput() {
   const r = await api('/api/output');
-  if (r && r.exists) renderScenes(r.text);
-}
-
-function renderScenes(text) {
-  const viewer = document.getElementById('output-viewer');
-  if (!text || !text.trim()) {
-    viewer.innerHTML = '(No output yet — start generation to see scenes here.)';
-    document.getElementById('output-toc-wrap').style.display = 'none';
-    return;
+  if (r && r.exists) {
+    document.getElementById('output-viewer').textContent = r.text;
   }
-  viewer.innerHTML = '';
-
-  const lines = text.split('\n');
-  let currentSceneId = null;
-  let currentSceneTitle = '';
-  let buf = [];
-  let blockIdx = 0;
-  const tocEntries = [];
-
-  function flushScene() {
-    const raw = buf.join('\n').trim();
-    buf = [];
-    if (!raw) return;
-
-    if (currentSceneId || currentSceneTitle) {
-      const anchorId = currentSceneId ? `scene-${currentSceneId}` : `scene-idx-${blockIdx}`;
-      const hdr = document.createElement('div');
-      hdr.className = 'scene-header';
-      hdr.id = anchorId;
-      if (currentSceneId) {
-        hdr.innerHTML = `<span class="scene-label">Scene ${escHtml(String(currentSceneId))}</span>`
-          + `<span class="scene-title">${escHtml(currentSceneTitle)}</span>`
-          + `<button class="btn-regen" onclick="regenerateScene('${escHtml(String(currentSceneId))}')" title="Regenerate this scene">🔄 Regen</button>`;
-      } else {
-        hdr.innerHTML = `<span class="scene-label">Scene</span>`
-          + `<span class="scene-title">${escHtml(currentSceneTitle)}</span>`;
-      }
-      viewer.appendChild(hdr);
-      tocEntries.push({ id: anchorId, label: currentSceneTitle || `Scene ${currentSceneId || blockIdx + 1}`, type: 'scene' });
-    }
-
-    const block = document.createElement('div');
-    block.className = 'scene-block';
-    block.dataset.sceneIdx = String(blockIdx);
-    if (currentSceneId) block.dataset.sceneId = String(currentSceneId);
-    block.textContent = '\n' + raw + '\n\n';
-    viewer.appendChild(block);
-    blockIdx++;
-  }
-
-  for (const line of lines) {
-    // Chapter marker: <!-- chapter:N -->
-    const chM = line.match(/^<!--\s*chapter:(\d+)\s*-->/);
-    if (chM) {
-      flushScene();
-      currentSceneId = null;
-      currentSceneTitle = '';
-      continue;
-    }
-    // Chapter heading: ## Chapter N: Title  OR  ## Chapter N — Title
-    const chH = line.match(/^##\s+Chapter\s+(\d+)[:\s\u2014\u2013-]+(.+)/);
-    if (chH) {
-      flushScene();
-      const chapterTitle = `Chapter ${chH[1]}: ${chH[2].trim()}`;
-      const anchorId = `chapter-${chH[1]}`;
-      const chHdr = document.createElement('div');
-      chHdr.className = 'chapter-header';
-      chHdr.id = anchorId;
-      chHdr.innerHTML = `<span class="chapter-label">${escHtml(chapterTitle)}</span>`
-        + `<button class="btn-regen" onclick="regenerateChapter(${parseInt(chH[1], 10)})" title="Regenerate entire chapter">🔄 Regen Chapter</button>`;
-      viewer.appendChild(chHdr);
-      tocEntries.push({ id: anchorId, label: chapterTitle, type: 'chapter' });
-      currentSceneId = null;
-      currentSceneTitle = '';
-      continue;
-    }
-    // Scene open marker: <!-- scene:X.Y -->
-    const soM = line.match(/^<!--\s*scene:([\w.]+)\s*-->/);
-    if (soM) {
-      flushScene();
-      currentSceneId = soM[1];
-      currentSceneTitle = '';
-      continue;
-    }
-    // Scene close marker: <!-- /scene:X.Y -->
-    if (line.match(/^<!--\s*\/scene:[\w.]+\s*-->/)) {
-      flushScene();
-      currentSceneId = null;
-      currentSceneTitle = '';
-      continue;
-    }
-    // ### heading outside scene markers → pseudo-scene boundary (legacy files)
-    const titleM = line.match(/^###\s+(.+)/);
-    if (titleM && !currentSceneId) {
-      flushScene();
-      currentSceneTitle = titleM[1].trim();
-      continue;
-    }
-    buf.push(line);
-  }
-  flushScene();
-
-  buildToc(tocEntries);
-}
-
-function buildToc(entries) {
-  const wrap = document.getElementById('output-toc-wrap');
-  const tocDiv = document.getElementById('output-toc');
-  tocDiv.innerHTML = '';
-  if (!entries.length) { wrap.style.display = 'none'; return; }
-
-  for (const entry of entries) {
-    const el = document.createElement('div');
-    el.className = entry.type === 'chapter' ? 'toc-chapter-item' : 'toc-scene-item';
-    el.textContent = entry.type === 'scene' ? '↳ ' + entry.label : entry.label;
-    el.onclick = () => {
-      const viewer = document.getElementById('output-viewer');
-      const target = document.getElementById(entry.id);
-      if (target) {
-        // Scroll within the viewer div
-        viewer.scrollTop = target.offsetTop - 8;
-        target.style.transition = 'background .15s';
-        target.style.background = 'rgba(138,180,248,.18)';
-        setTimeout(() => { target.style.background = ''; }, 900);
-      }
-    };
-    tocDiv.appendChild(el);
-  }
-  wrap.style.display = 'block';
-}
-
-function toggleToc() {
-  const toc = document.getElementById('output-toc');
-  const icon = document.getElementById('toc-toggle-icon');
-  const open = toc.style.display !== 'none';
-  toc.style.display = open ? 'none' : 'block';
-  icon.textContent = open ? '▼' : '▲';
-}
-
-function getOutputText() {
-  const viewer = document.getElementById('output-viewer');
-  const blocks = viewer.querySelectorAll('.scene-block');
-  if (!blocks.length) return viewer.textContent;
-  return Array.from(blocks).map(b => b.textContent).join('\n');
-}
-
-function getFirstVisibleSceneIdx() {
-  const viewer = document.getElementById('output-viewer');
-  const viewerTop = viewer.getBoundingClientRect().top;
-  const blocks = viewer.querySelectorAll('.scene-block');
-  for (const block of blocks) {
-    // First block whose bottom edge is below the top of the viewer = first visible
-    if (block.getBoundingClientRect().bottom > viewerTop) {
-      return parseInt(block.dataset.sceneIdx, 10) || 0;
-    }
-  }
-  return 0;
 }
 
 /* ==========================================================
@@ -2428,68 +1267,15 @@ function connectSSE() {
           toast('Generation complete!', 'ok');
         } else if (event.data.status === 'error') {
           toast('Error: ' + (event.data.message || 'Unknown'), 'error');
-          { const btn = document.getElementById('btn-mem-rebuild'); if (btn) { btn.disabled = false; btn.textContent = '🔁 Rebuild from Story'; } }
-        } else if (event.data.status === 'idle') {
-          // updateUIForStatus('idle') hides Resume unconditionally.
-          // Re-check the checkpoint so Resume reappears if the run can be continued.
-          fetch('/api/status').then(r => r.json()).then(snap => {
-            if (snap && snap.has_checkpoint) {
-              document.getElementById('btn-resume').style.display = '';
-              document.getElementById('btn-logs-resume').style.display = '';
-            }
-          }).catch(() => {});
         }
         break;
       case 'scene_complete':
         appendSceneToOutput(event.data);
-        // Show generation stats in progress label until next scene starts
-        if (event.data.elapsed_s || event.data.words) {
-          const parts = [];
-          if (event.data.words) parts.push(`${event.data.words} words`);
-          if (event.data.elapsed_s) parts.push(`${event.data.elapsed_s}s`);
-          document.getElementById('lbl-progress').textContent =
-            `Scene ${event.data.scene_num} — ${parts.join(' · ')}`;
-        }
-        // Keep Memory tab current if it's open and no unsaved edits
-        if (!_memoryDirty && document.querySelector('[data-tab="memory"]')?.classList.contains('active')) {
-          loadMemory();
-        }
-        break;
-      case 'scene_regenerated':
-        _handleSceneRegenerated(event.data);
-        if (!_memoryDirty && document.querySelector('[data-tab="memory"]')?.classList.contains('active')) {
-          loadMemory();
-        }
-        break;
-      case 'memories_rebuilt':
-        toast(`Memory rebuilt from ${event.data.scenes_processed} scenes`, 'ok');
-        _memoryDirty = false;
-        _memoryData = null;
-        loadMemory();
-        { const btn = document.getElementById('btn-mem-rebuild'); if (btn) { btn.disabled = false; btn.textContent = '🔁 Rebuild from Story'; } }
         break;
       case 'log':
         addLogEntry(event.data);
         break;
       case 'connected':
-        // SSE handshake complete — re-sync full state from server.
-        // This covers: new tab opens while generation is running, tab was
-        // pre-loaded before generation started, or reconnect after a drop.
-        fetch('/api/status').then(r => r.json()).then(snap => {
-          if (!snap) return;
-          updateUIForStatus(snap.status);
-          if (snap.progress) updateProgress(snap.progress);
-          if (snap.active_model) updateModelIndicator(snap.active_model);
-          if (snap.has_checkpoint && snap.status === 'idle') {
-            const info = snap.checkpoint_info || {};
-            const where = info.last_scene
-              ? `Chapter ${info.last_chapter}, Scene ${info.last_scene}`
-              : `Chapter ${info.last_chapter}`;
-            document.getElementById('btn-resume').style.display = '';
-            document.getElementById('btn-logs-resume').style.display = '';
-          }
-        }).catch(() => {});
-        break;
       case 'heartbeat':
         break;
     }
@@ -2498,550 +1284,16 @@ function connectSSE() {
   eventSource.onerror = () => {
     eventSource.close();
     eventSource = null;
-    // Show reconnecting indicator
-    const dot = document.getElementById('dot-status');
-    const lbl = document.getElementById('lbl-status');
-    if (!['running', 'completed', 'stopped', 'error'].includes(dot.className)) {
-      // Only update label, not dot color — don't scare the user
-    }
-    lbl.textContent = lbl.textContent + ' (reconnecting…)';
-    // Reconnect after a short delay
+    // Reconnect after a delay
     clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(() => {
-      connectSSE();
-      // Re-sync status from server after reconnect in case we missed events
-      api('/api/status').then(snap => {
-        if (!snap) return;
-        updateUIForStatus(snap.status);
-        if (snap.progress) updateProgress(snap.progress);
-        if (snap.active_model) updateModelIndicator(snap.active_model);
-      });
-    }, 3000);
+    reconnectTimer = setTimeout(connectSSE, 3000);
   };
-}
-
-/* ==========================================================
-   Page visibility — re-check health when tab becomes active
-   ========================================================== */
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') {
-    // Cancel any pending offline timers — we just came back
-    clearTimeout(_healthChangeTimer);
-    // Re-run health check after brief settle time (don't hammer immediately)
-    setTimeout(checkOllamaHealth, 1500);
-  }
-});
-
-/* ==========================================================
-   Text-to-Speech (TTS) — Speaches / Kokoro / Piper
-   ========================================================== */
-const tts = {
-  playing: false,
-  paused: false,
-  stopped: false,
-  currentAudio: null,
-  currentSceneIdx: 0,
-  scenes: [],
-  host: '',
-  voiceMap: {},       // manually saved via web UI
-  yamlVoiceMap: {},   // sourced from characters.yaml tts_voice field (takes precedence)
-  narratorVoice: '',
-  model: '',
-  availableModels: [],
-  availableVoices: [],
-  downloading: false,
-  downloadCancelled: false,
-};
-
-/* --- TTS health & model/voice discovery --- */
-async function checkTTSHealth() {
-  const host = document.getElementById('cfg-tts-host').value.trim();
-  const statusEl = document.getElementById('tts-status');
-  const dotTTS = document.getElementById('dot-tts');
-  const lblTTS = document.getElementById('lbl-tts');
-
-  if (!host) {
-    statusEl.textContent = 'Enter a TTS server URL first.';
-    statusEl.style.color = 'var(--text-dim)';
-    document.getElementById('ind-tts').style.display = 'none';
-    return;
-  }
-
-  statusEl.textContent = 'Checking connection…';
-  statusEl.style.color = 'var(--text-dim)';
-
-  const r = await api('/api/tts/health?host=' + encodeURIComponent(host));
-  if (r && r.ok) {
-    tts.host = host;
-    tts.availableModels = r.models || [];
-    statusEl.innerHTML = '✓ Connected — ' + tts.availableModels.length + ' model(s) available';
-    statusEl.style.color = 'var(--green)';
-
-    // Populate model dropdown, restore saved selection
-    const sel = document.getElementById('cfg-tts-model');
-    const saved = tts.model;
-    sel.innerHTML = '<option value="">-- select model --</option>';
-    for (const m of tts.availableModels) {
-      const o = document.createElement('option');
-      o.value = m; o.textContent = m;
-      if (m === saved) o.selected = true;
-      sel.appendChild(o);
-    }
-
-    document.getElementById('ind-tts').style.display = '';
-    dotTTS.className = 'dot green';
-    lblTTS.textContent = 'TTS: connected (' + tts.availableModels.length + ' models)';
-
-    if (sel.value) await discoverVoices(sel.value);
-  } else {
-    statusEl.textContent = '✖ ' + (r?.error || 'Connection failed');
-    statusEl.style.color = 'var(--red)';
-    document.getElementById('ind-tts').style.display = '';
-    dotTTS.className = 'dot red';
-    lblTTS.textContent = 'TTS: unreachable';
-  }
-}
-
-async function discoverVoices(model) {
-  if (!model) return;
-  const host = document.getElementById('cfg-tts-host').value.trim();
-  const r = await api('/api/tts/voices?model=' + encodeURIComponent(model)
-    + '&host=' + encodeURIComponent(host));
-
-  const dl = document.getElementById('tts-voices-list');
-  dl.innerHTML = '';
-  tts.availableVoices = [];
-
-  if (r && r.ok && r.voices?.length) {
-    tts.availableVoices = r.voices;
-    for (const v of r.voices) {
-      const o = document.createElement('option');
-      o.value = typeof v === 'string' ? v : (v.id || v.name || String(v));
-      dl.appendChild(o);
-    }
-  }
-}
-
-function onTTSModelChange() {
-  const m = document.getElementById('cfg-tts-model').value;
-  if (m) discoverVoices(m);
-}
-
-/* --- Character voice map UI --- */
-function updateVoiceMapUI(characters) {
-  const container = document.getElementById('tts-voice-map-entries');
-  const wrapper = document.getElementById('tts-voice-map');
-  if (!characters?.length) { wrapper.style.display = 'none'; return; }
-  wrapper.style.display = '';
-
-  // Rebuild yamlVoiceMap from current character list
-  tts.yamlVoiceMap = {};
-  for (const ch of characters) {
-    if (ch.tts_voice) tts.yamlVoiceMap[ch.name] = ch.tts_voice;
-  }
-
-  let html = '';
-  for (const ch of characters) {
-    const yamlVoice = ch.tts_voice || '';
-    const saved = tts.voiceMap[ch.name] || '';
-    const displayVoice = yamlVoice || saved;
-    const fromYaml = !!yamlVoice;
-    html += '<div class="voice-map-row">'
-      + '<span class="voice-map-name">' + escHtml(ch.name) + '</span>'
-      + '<span class="voice-map-role">' + escHtml(ch.role || '') + '</span>';
-    if (fromYaml) {
-      // YAML-sourced: show locked field with badge
-      html += '<span style="display:flex;align-items:center;gap:.35rem;flex:1;">'
-        + '<input type="text" list="tts-voices-list" class="voice-map-input tts-char-voice"'
-        + ' data-character="' + escHtml(ch.name) + '"'
-        + ' value="' + escHtml(displayVoice) + '"'
-        + ' readonly title="Defined in characters.yaml — edit tts_voice to change"'
-        + ' style="flex:1;opacity:.75;cursor:default;">'
-        + '<span title="Voice defined in characters.yaml" style="font-size:.7rem;color:var(--text-dim);white-space:nowrap;">📄 yaml</span>'
-        + '</span>';
-    } else {
-      html += '<input type="text" list="tts-voices-list" class="voice-map-input tts-char-voice"'
-        + ' data-character="' + escHtml(ch.name) + '"'
-        + ' value="' + escHtml(displayVoice) + '"'
-        + ' placeholder="voice name">';
-    }
-    html += '<button class="btn btn-sm" onclick="testVoice(\'' + escHtml(ch.name).replace(/'/g, "\\'") + '\')" title="Test">🔊</button>'
-      + '</div>';
-  }
-  container.innerHTML = html;
-}
-
-/* --- Save / test --- */
-async function saveTTSConfig() {
-  const vm = {};
-  document.querySelectorAll('.tts-char-voice').forEach(el => {
-    const name = el.dataset.character;
-    const voice = el.value.trim();
-    if (name && voice) vm[name] = voice;
-  });
-  const cfg = {
-    tts_host: document.getElementById('cfg-tts-host').value.trim(),
-    tts_model: document.getElementById('cfg-tts-model').value.trim(),
-    tts_narrator_voice: document.getElementById('cfg-tts-narrator-voice').value.trim(),
-    tts_voice_map: vm,
-  };
-  const r = await apiPost('/api/config', cfg);
-  if (r && r.ok) {
-    toast('TTS config saved', 'ok');
-    tts.host = cfg.tts_host;
-    tts.voiceMap = vm;
-    tts.narratorVoice = cfg.tts_narrator_voice;
-    tts.model = cfg.tts_model;
-  } else {
-    toast('Failed to save TTS config', 'error');
-  }
-}
-
-async function testVoice(nameOrNarrator) {
-  let voice, label;
-  if (nameOrNarrator === 'narrator') {
-    voice = document.getElementById('cfg-tts-narrator-voice').value.trim();
-    label = 'Narrator';
-  } else {
-    const el = document.querySelector('.tts-char-voice[data-character="' + nameOrNarrator + '"]');
-    voice = el?.value.trim() || '';
-    label = nameOrNarrator;
-  }
-  const host = document.getElementById('cfg-tts-host').value.trim();
-  const model = document.getElementById('cfg-tts-model').value.trim();
-  if (!voice || !model || !host) { toast('Set host, model and voice first', 'warn'); return; }
-
-  toast('Testing voice for ' + label + '…', 'info');
-  try {
-    const resp = await fetch('/api/tts/speak', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        text: 'Hello, my name is ' + label + '. This is a voice test for the novel builder.',
-        host, model, voice,
-      }),
-    });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      toast('Test failed: ' + (err.error || resp.statusText), 'error');
-      return;
-    }
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = new Audio(url);
-    a.onended = () => URL.revokeObjectURL(url);
-    a.play();
-  } catch (e) { toast('Test error: ' + e.message, 'error'); }
-}
-
-/* --- Playback engine --- */
-function parseOutputIntoScenes(text) {
-  // Must use same split as renderScenes so scene indices align with DOM blocks
-  const SCENE_SPLIT = /(?=\n#{2,3} (?:Chapter|Scene) |^#{2,3} (?:Chapter|Scene) )/m;
-  return text.split(SCENE_SPLIT).map(p => p.trim()).filter(p => p.length > 0);
-}
-
-function getVoiceForSegment(seg) {
-  if (seg.character) {
-    // YAML-defined voice takes precedence over manually saved map
-    if (tts.yamlVoiceMap[seg.character]) return tts.yamlVoiceMap[seg.character];
-    if (tts.voiceMap[seg.character]) return tts.voiceMap[seg.character];
-  }
-  return tts.narratorVoice;
-}
-
-async function fetchTTSAudio(text, voice) {
-  const resp = await fetch('/api/tts/speak', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ text, host: tts.host, model: tts.model, voice }),
-  });
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({error: 'Unknown error'}));
-    throw new Error(err.error || 'HTTP ' + resp.status);
-  }
-  return await resp.blob();
-}
-
-function playAudioBlob(blob) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    tts.currentAudio = audio;
-    audio.onended = () => { URL.revokeObjectURL(url); tts.currentAudio = null; resolve(); };
-    audio.onerror = () => { URL.revokeObjectURL(url); tts.currentAudio = null; reject(new Error('Playback error')); };
-    audio.play().catch(reject);
-  });
-}
-
-function waitWhilePaused() {
-  return new Promise(resolve => {
-    const tick = () => (!tts.paused || tts.stopped) ? resolve() : setTimeout(tick, 200);
-    tick();
-  });
-}
-
-async function playAllScenes() {
-  // Capture scroll position before any async operations
-  const startAtIdx = getFirstVisibleSceneIdx();
-
-  const text = getOutputText();
-  if (!text || text.startsWith('(No output')) {
-    toast('No output to read aloud', 'warn'); return;
-  }
-
-  // Refresh config from server
-  const snap = await api('/api/status');
-  const cfg = snap?.config || {};
-  tts.host = tts.host || cfg.tts_host || '';
-  tts.model = cfg.tts_model || '';
-  tts.narratorVoice = cfg.tts_narrator_voice || '';
-  tts.voiceMap = cfg.tts_voice_map || {};
-
-  if (!tts.model || !tts.narratorVoice) {
-    toast('Configure TTS model and narrator voice in the Settings tab first', 'warn');
-    document.querySelector('[data-tab="settings"]').click();
-    return;
-  }
-
-  tts.scenes = parseOutputIntoScenes(text);
-  if (!tts.scenes.length) { toast('No scenes found in output', 'warn'); return; }
-
-  tts.currentSceneIdx = Math.min(startAtIdx, tts.scenes.length - 1);
-  tts.playing = true; tts.paused = false; tts.stopped = false;
-  if (startAtIdx > 0) toast(`Starting from scene ${startAtIdx + 1}`, 'info');
-  updateTTSControls(); updateTTSProgress();
-
-  // Get character names for dialogue attribution; also rebuild yamlVoiceMap
-  const parsed = await api('/api/parse-yaml');
-  const _playChars = parsed?.characters?.characters || [];
-  const charNames = _playChars.map(c => c.name);
-  const povCharacter = parsed?.outline?.pov_character || '';
-  // YAML voices take precedence — rebuild from fresh parse before playback
-  tts.yamlVoiceMap = {};
-  for (const ch of _playChars) {
-    if (ch.tts_voice) tts.yamlVoiceMap[ch.name] = ch.tts_voice;
-  }
-
-  for (let i = tts.currentSceneIdx; i < tts.scenes.length; i++) {
-    if (tts.stopped) break;
-    tts.currentSceneIdx = i;
-    updateTTSProgress();
-    scrollToScene(i);
-
-    const segResp = await apiPost('/api/tts/segments', {
-      text: tts.scenes[i], characters: charNames, pov_character: povCharacter,
-    });
-    const segments = segResp?.ok
-      ? segResp.segments
-      : [{ type: 'narration', text: tts.scenes[i], character: null }];
-
-    for (const seg of segments) {
-      if (tts.stopped) break;
-      if (tts.paused) await waitWhilePaused();
-      if (tts.stopped) break;
-
-      const voice = getVoiceForSegment(seg);
-      try {
-        const blob = await fetchTTSAudio(seg.text, voice);
-        await playAudioBlob(blob);
-      } catch (e) {
-        console.error('TTS segment error:', e);
-      }
-    }
-  }
-
-  const wasStopped = tts.stopped;
-  tts.playing = false; tts.stopped = false; tts.currentSceneIdx = 0;
-  updateTTSControls(); updateTTSProgress();
-  if (!wasStopped) toast('Read aloud complete', 'ok');
-}
-
-/* --- Audiobook download --- */
-async function downloadAudiobook() {
-  const text = getOutputText();
-  if (!text || text.startsWith('(No output')) {
-    toast('No output to compile', 'warn'); return;
-  }
-
-  // Refresh config from server (same as playAllScenes)
-  const snap = await api('/api/status');
-  const cfg = snap?.config || {};
-  tts.host = tts.host || cfg.tts_host || '';
-  tts.model = cfg.tts_model || '';
-  tts.narratorVoice = cfg.tts_narrator_voice || '';
-  tts.voiceMap = cfg.tts_voice_map || {};
-
-  if (!tts.host || !tts.model || !tts.narratorVoice) {
-    toast('Configure TTS host, model and narrator voice in the Settings tab first', 'warn');
-    document.querySelector('[data-tab="settings"]').click();
-    return;
-  }
-
-  const scenes = parseOutputIntoScenes(text);
-  if (!scenes.length) { toast('No scenes found in output', 'warn'); return; }
-
-  // Get character names for attribution; also rebuild yamlVoiceMap
-  const parsed = await api('/api/parse-yaml');
-  const characters = parsed?.characters?.characters || [];
-  const charNames = characters.map(c => c.name);
-  const povCharacter = parsed?.outline?.pov_character || '';
-  // YAML voices take precedence — rebuild map from fresh parse
-  tts.yamlVoiceMap = {};
-  for (const ch of characters) {
-    if (ch.tts_voice) tts.yamlVoiceMap[ch.name] = ch.tts_voice;
-  }
-
-  // Collect all segments across all scenes
-  toast('Building segment list…', 'info');
-  const allSegments = [];
-  for (const scene of scenes) {
-    const segResp = await apiPost('/api/tts/segments', { text: scene, characters: charNames, pov_character: povCharacter });
-    const segs = segResp?.ok
-      ? segResp.segments
-      : [{ type: 'narration', text: scene, character: null }];
-    allSegments.push(...segs);
-  }
-
-  const total = allSegments.length;
-  tts.downloading = true;
-  tts.downloadCancelled = false;
-  updateDownloadControls(0, total);
-
-  // Fetch each segment and collect ArrayBuffers
-  const buffers = [];
-  for (let i = 0; i < allSegments.length; i++) {
-    if (tts.downloadCancelled) break;
-    updateDownloadControls(i, total);
-    const seg = allSegments[i];
-    const voice = getVoiceForSegment(seg);
-    try {
-      const blob = await fetchTTSAudio(seg.text, voice);
-      buffers.push(await blob.arrayBuffer());
-    } catch (e) {
-      console.warn('Segment', i, 'failed:', e.message);
-      // Skip failed segments — don't abort the whole book
-    }
-  }
-
-  tts.downloading = false;
-  updateDownloadControls(total, total, true);
-
-  if (tts.downloadCancelled) {
-    toast('Audiobook download cancelled', 'warn');
-    return;
-  }
-
-  // Concatenate all MP3 ArrayBuffers into one
-  const totalBytes = buffers.reduce((s, b) => s + b.byteLength, 0);
-  const combined = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const buf of buffers) {
-    combined.set(new Uint8Array(buf), offset);
-    offset += buf.byteLength;
-  }
-
-  // Trigger download
-  const blob = new Blob([combined], { type: 'audio/mpeg' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const title = (snap?.config?.story_title || 'audiobook').replace(/[^a-zA-Z0-9_-]/g, '_');
-  a.href = url;
-  a.download = title + '.mp3';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
-  toast('Audiobook download started — ' + (totalBytes / 1024 / 1024).toFixed(1) + ' MB', 'ok');
-}
-
-function cancelDownload() {
-  tts.downloadCancelled = true;
-}
-
-function updateDownloadControls(done, total, finished = false) {
-  const btnDl = document.getElementById('btn-tts-download');
-  const btnCancel = document.getElementById('btn-tts-download-cancel');
-  const prog = document.getElementById('tts-download-progress');
-  if (!btnDl) return;
-  if (finished || !tts.downloading) {
-    btnDl.style.display = '';
-    btnCancel.style.display = 'none';
-    prog.style.display = 'none';
-    prog.textContent = '';
-  } else {
-    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-    btnDl.style.display = 'none';
-    btnCancel.style.display = '';
-    prog.style.display = '';
-    prog.textContent = `Compiling… ${done}/${total} (${pct}%)`;
-  }
-}
-
-function pauseTTS() {
-  if (!tts.playing) return;
-  tts.paused = !tts.paused;
-  if (tts.currentAudio) {
-    if (tts.paused) tts.currentAudio.pause();
-    else tts.currentAudio.play();
-  }
-  updateTTSControls();
-}
-
-function stopTTS() {
-  tts.stopped = true; tts.paused = false;
-  if (tts.currentAudio) { tts.currentAudio.pause(); tts.currentAudio = null; }
-  tts.playing = false; tts.currentSceneIdx = 0;
-  updateTTSControls(); updateTTSProgress();
-}
-
-function updateTTSControls() {
-  const play = document.getElementById('btn-tts-play');
-  const pause = document.getElementById('btn-tts-pause');
-  const stop = document.getElementById('btn-tts-stop');
-  const dl = document.getElementById('btn-tts-download');
-  if (play) play.style.display = tts.playing ? 'none' : '';
-  if (pause) {
-    pause.style.display = tts.playing ? '' : 'none';
-    pause.textContent = tts.paused ? '▶ Resume' : '⏸ Pause';
-  }
-  if (stop) stop.style.display = tts.playing ? '' : 'none';
-  // Disable download button while playing (and play while downloading)
-  if (dl) dl.disabled = tts.playing;
-  if (play) play.disabled = tts.downloading;
-}
-
-function updateTTSProgress() {
-  const ind = document.getElementById('ind-tts-playback');
-  const lbl = document.getElementById('lbl-tts-play');
-  if (!ind || !lbl) return;
-  if (tts.playing) {
-    ind.style.display = '';
-    lbl.textContent = '🔊 Scene ' + (tts.currentSceneIdx + 1) + '/' + tts.scenes.length;
-  } else {
-    ind.style.display = 'none';
-  }
-}
-
-function scrollToScene(idx) {
-  const viewer = document.getElementById('output-viewer');
-  const block = viewer.querySelector(`.scene-block[data-scene-idx="${idx}"]`);
-  if (block) block.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /* ==========================================================
    Initial load — reconnection-safe
    ========================================================== */
-/* Keep top-spacer height in sync with the fixed chrome so content starts below it */
-function syncTopSpacer() {
-  const chrome = document.getElementById('top-chrome');
-  const spacer = document.getElementById('top-spacer');
-  if (chrome && spacer) spacer.style.height = chrome.offsetHeight + 'px';
-}
-window.addEventListener('resize', syncTopSpacer);
-
 async function init() {
-  syncTopSpacer();
   const snap = await api('/api/status');
   if (!snap) return;
 
@@ -3056,38 +1308,27 @@ async function init() {
   if (snap.active_model) updateModelIndicator(snap.active_model);
   if (snap.progress) updateProgress(snap.progress);
 
-  // If the server restarted (idle) but a checkpoint exists on disk, show Resume
-  if (snap.has_checkpoint && snap.status === 'idle') {
-    const info = snap.checkpoint_info || {};
-    const where = info.last_scene
-      ? `Chapter ${info.last_chapter}, Scene ${info.last_scene}`
-      : `Chapter ${info.last_chapter}`;
-    const title = info.story_title ? `"${info.story_title}" — ` : '';
-    document.getElementById('btn-resume').style.display = '';
-    document.getElementById('btn-logs-resume').style.display = '';
-    const msg = `Checkpoint found: ${title}left off at ${where}. Click Resume to continue.`;
-    toast(msg, 'warn');
-    addLogEntry({ time: new Date().toLocaleTimeString(), message: msg, level: 'warn' });
-  } else if (!snap.has_checkpoint && snap.status === 'idle') {
-    addLogEntry({ time: new Date().toLocaleTimeString(), message: 'No checkpoint found — ready to start a new run.', level: 'info' });
-  }
-
   // Logs (replay)
   if (snap.logs) {
     snap.logs.forEach(addLogEntry);
   }
 
-  // Always load output from disk — covers server restarts where in-memory
-  // output_scenes is empty but full_story.md already has content.
-  refreshOutput();
+  // Output scenes (rebuild viewer)
+  if (snap.output_scenes && snap.output_scenes.length) {
+    const viewer = document.getElementById('output-viewer');
+    viewer.textContent = '';
+    snap.output_scenes.forEach(s => {
+      viewer.textContent += `\n\n### Scene ${s.scene_num}${s.title ? ': ' + s.title : ''}\n(${s.chars} chars)\n---\n`;
+    });
+    // Load the full output text for complete view
+    refreshOutput();
+  }
 
   // Parse loaded data
   refreshParsed();
 
-  // TTS — if a TTS host is configured, check connectivity & populate dropdowns
-  if (snap.config?.tts_host) {
-    checkTTSHealth();
-  }
+  // Restore consult results from server cache
+  restoreConsult();
 
   // Start SSE
   connectSSE();
@@ -3111,48 +1352,25 @@ function truncate(s, max) {
 }
 
 /* ==========================================================
-   Ollama health check with status change debouncing
+   Ollama health check
    ========================================================== */
 let _healthInterval = null;
 async function checkOllamaHealth() {
   const dot = document.getElementById('dot-ollama');
   const lbl = document.getElementById('lbl-ollama');
-  let newStatus;
-  let newText;
-  
   try {
-    // Use a silent fetch (not api()) to avoid toast popups on transient failures
-    const resp = await fetch('/api/ollama-health');
-    const r = await resp.json();
+    const r = await api('/api/ollama-health');
+    dot.className = 'dot';
     if (r && r.ok) {
-      newStatus = 'connected';
-      newText = 'Ollama: connected (' + r.models.length + ' models)';
-      // Update global installed models list for the model selectors
-      _installedModels = r.models || [];
-      updateModelStatus('model');
-      updateModelStatus('summary-model');
+      dot.classList.add('green');
+      lbl.textContent = 'Ollama: connected (' + r.models.length + ' models)';
     } else {
-      newStatus = 'unreachable';
-      newText = 'Ollama: ' + (r?.error || 'unreachable');
+      dot.classList.add('red');
+      lbl.textContent = 'Ollama: ' + (r?.error || 'unreachable');
     }
   } catch {
-    newStatus = 'offline';
-    newText = 'Ollama: offline';
-  }
-  
-  // Only update if status actually changed, with grace period to avoid flicker
-  if (newStatus !== _lastHealthStatus) {
-    clearTimeout(_healthChangeTimer);
-    _healthChangeTimer = setTimeout(() => {
-      _lastHealthStatus = newStatus;
-      dot.className = 'dot';
-      if (newStatus === 'connected') {
-        dot.classList.add('green');
-      } else {
-        dot.classList.add('red');
-      }
-      lbl.textContent = newText;
-    }, 4000);  // 4 second grace period for transient disconnects (tab switching, Docker restart)
+    dot.className = 'dot red';
+    lbl.textContent = 'Ollama: offline';
   }
 }
 function startHealthPolling() {
@@ -3190,849 +1408,306 @@ function setupDropZones() {
 }
 
 /* ==========================================================
-   Memory tab — editable + add items
+   Consult
    ========================================================== */
-let _memoryData = null;  // cached from last load
-let _memoryDirty = false;
+const _PASS_ORDER = ['characters', 'outline', 'locations', 'crossref'];
+let _consultSource = null;
 
-function loadMemory() {
-  const CARDS = ['mem-story-card','mem-recent-card','mem-actions-card',
-                 'mem-facts-card','mem-commitments-card','mem-chars-card'];
-
-  fetch('/api/memory')
-    .then(r => r.json())
-    .then(data => {
-      const emptyEl = document.getElementById('mem-empty');
-      if (!data.ok) {
-        CARDS.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
-        emptyEl.textContent = data.error || 'No memory available yet — start generation first.';
-        emptyEl.style.display = '';
-        _memoryData = null;
-        _updateMemSaveBtn();
-        return;
-      }
-      emptyEl.style.display = 'none';
-      _memoryData = data;
-      _memoryDirty = false;
-      _renderMemoryUI(data);
-      _updateMemSaveBtn();
-    })
-    .catch(e => console.warn('Memory load failed:', e));
+function _consultPassHtml(name, label, emoji, text, status, stats, err) {
+  const badgeCls = status === 'running' ? 'cbadge running'
+                 : status === 'done'    ? 'cbadge done'
+                 : status === 'error'   ? 'cbadge error'
+                 : 'cbadge';
+  const badgeTxt = status === 'running' ? 'analyzing…'
+                 : status === 'done'    ? 'done'
+                 : status === 'error'   ? 'error'
+                 : 'pending';
+  const statsHtml = stats ? `<div class="pass-stats">${[
+    stats.eval_tokens ? stats.eval_tokens + ' tokens' : '',
+    stats.toks_per_s  ? stats.toks_per_s  + ' tok/s'  : '',
+    stats.elapsed     ? stats.elapsed     + 's'        : '',
+  ].filter(Boolean).join(' \u00b7 ')}</div>` : '';
+  const fixable = ['characters', 'outline', 'locations'].includes(name);
+  const actionsDisplay = status === 'done' ? 'flex' : 'none';
+  const fixBtn = (status === 'done' && fixable)
+    ? `<button class="btn btn-sm" onclick="startFix('${name}')">\u26a1 Generate Fix</button>` : '';
+  return `
+    <div class="card" id="cpass-${name}">
+      <h3>${emoji} ${escHtml(label)} <span class="${badgeCls}" id="cbadge-${name}">${badgeTxt}</span></h3>
+      <pre class="consult-text" id="ctext-${name}">${escHtml(text || '')}</pre>
+      ${statsHtml ? `<div id="cstats-${name}">${statsHtml}</div>` : `<div id="cstats-${name}"></div>`}
+      <div id="cactions-${name}" style="display:${actionsDisplay};gap:.4rem;flex-wrap:wrap;">${fixBtn}</div>
+      <div id="cfix-${name}" style="display:none;">
+        <h4 style="font-size:.82rem;color:var(--text-dim);margin:.75rem 0 .3rem;">
+          Proposed Fix <span id="cfix-badge-${name}"></span>
+        </h4>
+        <textarea class="consult-fix-yaml" id="cfix-yaml-${name}" rows="22" spellcheck="false"></textarea>
+        <div id="cfix-btns-${name}" style="display:none;gap:.4rem;margin-top:.4rem;">
+          <button class="btn btn-primary btn-sm" onclick="saveConsultFix('${name}')">💾 Save to Workspace</button>
+        </div>
+      </div>
+    </div>`;
 }
 
-function _renderMemoryUI(data) {
-  // Story So Far (click to edit textarea)
-  const storyCard = document.getElementById('mem-story-card');
-  const storyEl = document.getElementById('mem-story-text');
-  if (data.story_so_far) {
-    storyEl.textContent = data.story_so_far;
-    storyEl.contentEditable = 'true';
-    storyEl.style.cursor = 'text';
-    storyEl.oninput = () => { _memoryData.story_so_far = storyEl.textContent; _markMemDirty(); };
-    storyCard.style.display = '';
-  } else {
-    storyCard.style.display = 'none';
+function _getOrCreatePassCard(container, name, label, emoji) {
+  let card = document.getElementById('cpass-' + name);
+  if (!card) {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = _consultPassHtml(name, label, emoji, '', 'running', null, null);
+    card = wrapper.firstElementChild;
+    container.appendChild(card);
   }
-
-  // Recent Scenes (editable summaries)
-  _renderEditableList('mem-recent-card', 'mem-recent-list', data.recent_scenes || [], 'recent_scenes', 'dim');
-
-  // Editable list sections
-  _renderEditableList('mem-actions-card', 'mem-actions-list', data.actions || [], 'actions', 'green');
-  _renderEditableList('mem-facts-card', 'mem-facts-list', data.facts || [], 'facts', 'blue');
-  _renderEditableList('mem-commitments-card', 'mem-commitments-list', data.commitments || [], 'commitments', 'yellow');
-
-  // Editable characters
-  _renderEditableChars(data.characters || []);
-
-  // Progress label
-  const ts = document.getElementById('memory-last-updated');
-  ts.textContent = data.last_scene
-    ? `Through Scene ${data.last_scene}` + (data.story_title ? ` — ${data.story_title}` : '')
-    : (data.story_title || '');
+  return card;
 }
 
-function _renderEditableList(cardId, listId, items, key, colorClass) {
-  const card = document.getElementById(cardId);
-  const container = document.getElementById(listId);
-  if (!items || items.length === 0) { card.style.display = 'none'; }
-  else { card.style.display = ''; }
+async function startConsult() {
+  if (_consultSource) { _consultSource.close(); _consultSource = null; }
+  document.getElementById('btn-consult-start').disabled = true;
+  document.getElementById('consult-status-label').textContent = 'Starting\u2026';
+  document.getElementById('consult-passes-container').innerHTML = '';
 
-  // Determine which field holds the text — recent_scenes use 'summary', others use 'detail'
-  const textField = key === 'recent_scenes' ? 'summary' : 'detail';
-
-  let html = items.map((item, i) => {
-    const badge = item.scene ? `<span class="mem-badge">Scene ${escHtml(String(item.scene))}</span>` : '';
-    return `<li class="mem-item mem-${colorClass}" data-key="${key}" data-idx="${i}">`
-      + badge
-      + `<span class="mem-detail" contenteditable="true" data-field="${textField}">${escHtml(item[textField] || '')}</span>`
-      + `<button class="mem-action-btn mem-del-btn" data-key="${key}" data-idx="${i}" title="Delete">✕</button>`
-      + `</li>`;
-  }).join('');
-
-  // Add-new row
-  const label = key === 'recent_scenes' ? 'scene summary' : key.slice(0, -1);
-  html += `<li class="mem-item" style="opacity:.7;">`
-    + `<button class="mem-action-btn mem-add-btn" data-key="${key}" title="Add new" style="margin-right:.3rem;">＋</button>`
-    + `<span style="font-size:.78rem; color:var(--text-dim);">Add new ${label}…</span></li>`;
-
-  container.innerHTML = html;
-}
-
-function _renderEditableChars(chars) {
-  const card = document.getElementById('mem-chars-card');
-  const container = document.getElementById('mem-chars-list');
-  card.style.display = '';
-
-  if (chars.length === 0) {
-    container.innerHTML = '<div style="font-size:.82rem;color:var(--text-dim);padding:.3rem;">No extracted characters yet.</div>';
-  } else {
-    container.innerHTML = chars.map((c, i) => {
-      const badge = c.introduced_scene
-        ? `<span class="mem-badge">First seen ${escHtml(String(c.introduced_scene))}</span>` : '';
-      return `<div class="mem-item" data-char-idx="${i}">`
-        + `<strong class="mem-char-name" contenteditable="true">${escHtml(c.name)}</strong> ${badge}`
-        + `<span class="mem-detail mem-char-notes" contenteditable="true" style="font-size:.8rem;color:var(--text-dim);">`
-        + `${escHtml([c.description, c.notes].filter(Boolean).join(' — ') || 'click to add notes')}</span>`
-        + `<button class="mem-action-btn mem-del-btn" data-key="characters" data-idx="${i}" title="Delete">✕</button>`
-        + `</div>`;
-    }).join('');
-  }
-
-  // Add character
-  container.innerHTML += `<div class="mem-item" style="opacity:.7;">`
-    + `<button class="mem-action-btn mem-add-btn" data-key="characters" title="Add character" style="margin-right:.3rem;">＋</button>`
-    + `<span style="font-size:.78rem; color:var(--text-dim);">Add new character…</span></div>`;
-}
-
-/* --- Event delegation for memory editing --- */
-(function setupMemoryDelegation() {
-  const panel = document.getElementById('panel-memory');
-  if (!panel) return;
-
-  // Input events on contenteditable spans (bubbles)
-  panel.addEventListener('input', (e) => {
-    if (!_memoryData) return;
-    const el = e.target;
-
-    // Character name
-    if (el.classList.contains('mem-char-name')) {
-      const item = el.closest('[data-char-idx]');
-      if (item) { _memoryData.characters[+item.dataset.charIdx].name = el.textContent; _markMemDirty(); }
-      return;
-    }
-    // Character notes
-    if (el.classList.contains('mem-char-notes')) {
-      const item = el.closest('[data-char-idx]');
-      if (item) { _memoryData.characters[+item.dataset.charIdx].notes = el.textContent; _markMemDirty(); }
-      return;
-    }
-    // List item detail
-    if (el.classList.contains('mem-detail')) {
-      const li = el.closest('[data-key][data-idx]');
-      if (li) {
-        const key = li.dataset.key;
-        const idx = +li.dataset.idx;
-        const field = el.dataset.field || 'detail';
-        _memoryData[key][idx][field] = el.textContent;
-        _markMemDirty();
-      }
-      return;
-    }
+  // POST to start the analysis; response is an SSE stream
+  const resp = await fetch('/api/consult', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
   });
 
-  // Click events for delete / add buttons
-  panel.addEventListener('click', (e) => {
-    if (!_memoryData) return;
-    const btn = e.target.closest('.mem-action-btn');
-    if (!btn) return;
-    const key = btn.dataset.key;
-
-    // Delete
-    if (btn.classList.contains('mem-del-btn') && key && btn.dataset.idx !== undefined) {
-      const idx = +btn.dataset.idx;
-      if (key === 'characters') {
-        _memoryData.characters.splice(idx, 1);
-      } else {
-        _memoryData[key].splice(idx, 1);
-      }
-      _markMemDirty();
-      _renderMemoryUI(_memoryData);
-      return;
-    }
-
-    // Add
-    if (btn.classList.contains('mem-add-btn') && key) {
-      if (key === 'characters') {
-        if (!_memoryData.characters) _memoryData.characters = [];
-        _memoryData.characters.push({ name: 'New Character', description: '', notes: '', introduced_scene: '', last_seen: '' });
-        _markMemDirty();
-        _renderMemoryUI(_memoryData);
-        return;
-      }
-      if (!_memoryData[key]) _memoryData[key] = [];
-      const textField = key === 'recent_scenes' ? 'summary' : 'detail';
-      const newItem = { scene: '' };
-      newItem[textField] = '';
-      _memoryData[key].push(newItem);
-      _markMemDirty();
-      _renderMemoryUI(_memoryData);
-      // Focus new item
-      const listId = key === 'recent_scenes' ? 'mem-recent-list' : `mem-${key}-list`;
-      const list = document.getElementById(listId);
-      const spans = list.querySelectorAll('.mem-detail[contenteditable]');
-      if (spans.length) spans[spans.length - 1].focus();
-      return;
-    }
-  });
-})();
-
-/* --- Save / dirty tracking --- */
-function _markMemDirty() {
-  _memoryDirty = true;
-  _updateMemSaveBtn();
-}
-
-function _updateMemSaveBtn() {
-  const btn = document.getElementById('btn-mem-save');
-  if (btn) {
-    btn.disabled = !_memoryDirty;
-    btn.style.opacity = _memoryDirty ? '1' : '.4';
+  if (!resp.ok) {
+    const d = await resp.json().catch(() => ({}));
+    toast(d.message || 'Failed to start consult', 'error');
+    document.getElementById('btn-consult-start').disabled = false;
+    return;
   }
+
+  _streamConsultResponse(resp);
 }
 
-async function rebuildMemories() {
-  if (!confirm('Re-summarise every scene in the story and rebuild all memory from scratch?\n\nThis will overwrite current facts, actions, commitments, recent scenes and story summary.\nYour edits will be lost. Continue?')) return;
-  const btn = document.getElementById('btn-mem-rebuild');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Rebuilding…'; }
-  const r = await apiPost('/api/rebuild-memories');
-  if (!r || !r.ok) {
-    toast('Rebuild failed: ' + (r?.error || 'unknown error'), 'error');
-    if (btn) { btn.disabled = false; btn.textContent = '🔁 Rebuild from Story'; }
+async function restoreConsult() {
+  const r = await api('/api/consult-results');
+  if (!r || (r.status === 'idle' && !Object.keys(r.passes || {}).length)) return;
+
+  const container = document.getElementById('consult-passes-container');
+  const label = document.getElementById('consult-status-label');
+  container.innerHTML = '';
+
+  for (const name of _PASS_ORDER) {
+    const p = r.passes[name];
+    if (!p) continue;
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = _consultPassHtml(name, p.label, p.emoji, p.text, p.status, p.stats, p.error);
+    container.appendChild(wrapper.firstElementChild);
   }
-  // On success, the SSE memories_rebuilt event reloads the tab automatically
-  // Button is re-enabled when status returns to idle (handled via status_change)
-}
 
-async function saveMemory() {
-  if (!_memoryData) return;
-  const body = {
-    story_so_far: _memoryData.story_so_far,
-    recent_scenes: _memoryData.recent_scenes,
-    facts: _memoryData.facts,
-    actions: _memoryData.actions,
-    commitments: _memoryData.commitments,
-    characters: _memoryData.characters,
-  };
-  const r = await api('/api/memory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (r && r.ok) {
-    toast('Memory saved', 'ok');
-    _memoryDirty = false;
-    _updateMemSaveBtn();
-  } else {
-    toast('Save failed: ' + (r?.error || 'unknown error'), 'error');
-  }
-}
-
-/* ==========================================================
-   YAML Schema Help Modal
-   ========================================================== */
-function showYamlHelp(role) {
-  // Legend shown at top of every schema
-  const LEGEND = `<div style="font-family:var(--font);font-size:.75rem;line-height:1.7;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:.55rem .7rem;margin-bottom:.75rem;">
-    <strong style="color:var(--text);display:block;margin-bottom:.2rem;">How to read this:</strong>
-    <span style="color:var(--text-dim);">
-      <span style="color:var(--blue);font-family:var(--mono);">key:</span> indented under another key = it belongs inside that parent<br>
-      <span style="font-family:var(--mono);color:var(--text-dim);">- value</span> = an item in a list (you can add as many as you like)<br>
-      <span style="font-family:var(--mono);color:var(--text);">(repeats)</span> = that whole block can be repeated for each chapter / scene / character<br>
-      <em class="yreq" style="font-style:normal;">required</em> = must be present &nbsp;&nbsp; <span style="color:var(--text-dim);">optional</span> = leave it out if you don&rsquo;t need it
-    </span>
-  </div>`;
-
-  // P = container/parent key header (dim, no annotation — just shows structure)
-  // suffix e.g. "(repeats)" shown after key in dim text
-  const P = (i, key, suffix='') =>
-    `<div class="yr yi${i}"><span class="yk ypar">${key}:</span>${suffix ? `<span class="ycom" style="color:var(--text-dim);font-style:italic;">  ${suffix}</span>` : ''}</div>`;
-
-  // F = field row with required/optional badge and description  
-  const F = (i, key, req, desc, hint='') => {
-    const badge = req ? '<em class="yreq">required</em>' : '<em style="color:var(--text-dim);font-style:normal;">optional</em>';
-    const hintHtml = hint ? ` <span class="yhint">${hint}</span> —` : ' —';
-    return `<div class="yr yi${i}"><span class="yk">${key}:</span><span class="ycom">  # ${badge}${hintHtml} ${desc}</span></div>`;
-  };
-
-  // V = dim example/placeholder line (anonymous list values, map examples)
-  const V = (i, text) =>
-    `<div class="yr yi${i}"><span style="color:var(--text-dim);font-family:var(--mono);font-size:.76rem;">${text}</span></div>`;
-
-  const schemas = {
-    outline: {
-      title: '📘 Story Outline',
-      html: LEGEND + `<div class="yaml-tree">
-${F(0,'story_title',true,'Title of the story')}
-${F(0,'world',false,'Global setting context — era, genre rules, tech level. Included in every scene prompt.')}
-${F(0,'style_directives',false,'Global prose style instructions for the AI (tone, POV, voice)')}
-${F(0,'pov_character',false,'First-person narrator name — used for TTS &ldquo;I said&rdquo; attribution')}
-${P(0,'overall_arc')}
-${F(1,'genre',false,'Genre e.g. &ldquo;literary fiction&rdquo;, &ldquo;dark fantasy&rdquo;')}
-${F(1,'tone',false,'Narrative tone and mood')}
-${F(1,'themes',false,'Central theme(s) — string or list of strings')}
-${F(1,'pov',false,'Point of view e.g. &ldquo;Third-person limited&rdquo; — applied to every scene unless overridden per-scene')}
-${P(0,'anti_patterns','list of strings')}
-${V(1,'- "phrase to avoid"')}
-${V(1,'- "another phrase"')}
-${P(0,'narrative_hooks','repeats — one entry per plot beat')}
-${F(1,'hook',true,'Description of the plot beat')}
-${F(1,'chapters',false,'<code>[start, end]</code> active chapter range. Omit = always available.')}
-${P(0,'chapters','repeats — one entry per chapter')}
-${F(1,'chapter_number',true,'Chapter number (integer)')}
-${F(1,'title',true,'Chapter heading displayed in the output')}
-${F(1,'summary',true,'Brief description of the chapter arc')}
-${F(1,'style_override',false,'Per-chapter prose style tweaks')}
-${P(1,'scenes','repeats — one entry per scene')}
-${F(2,'scene_number',true,'Scene identifier e.g. <code>1.1</code>, <code>1.2</code>')}
-${F(2,'setting',true,'Location ID from locations file, or an inline description string')}
-${F(2,'setting_detail',false,'Zooms into a specific area within the setting (e.g. &ldquo;the back stockroom&rdquo;, &ldquo;the parking lot&rdquo;). Appended after the base location.')}
-${F(2,'events',true,'What happens — the AI writes the scene prose from this')}
-${F(2,'characters_present',false,'Auto-detected if omitted. List the character IDs to be explicit.')}
-${V(3,'- character_id')}
-${F(2,'emotional_arc',false,'Emotional trajectory e.g. <code>Calm -&gt; dread</code>')}
-${F(2,'pacing',false,'<code>slow-burn</code> | <code>action</code> | <code>dialogue-heavy</code> | <code>introspective</code>')}
-${F(2,'pov',false,'Per-scene POV override — overrides <code>overall_arc.pov</code> for this scene only')}
-${F(2,'mood',false,'Mood description appended to the scene prompt e.g. &ldquo;heavy dread, like before a storm&rdquo;')}
-${F(2,'mood_shift_key',false,'Activates a keyed variant from the location&rsquo;s <code>mood_shift</code> map e.g. <code>night</code> or <code>storm</code>')}
-${F(2,'notes',false,'Authorial guidance — direct instructions to the AI for this scene')}
-</div>`
-    },
-    characters: {
-      title: '👤 Characters',
-      html: LEGEND + `<div class="yaml-tree">
-${P(0,'characters')}
-${P(1,'your_character_id','repeats — one block per character; the key is the character\'s ID')}
-${F(2,'Name',true,'Display name used in prose and the UI')}
-${F(2,'role',false,'e.g. protagonist, antagonist, supporting')}
-${F(2,'summary',false,'Background/bio — sent to AI on first appearance only, then dropped')}
-${F(2,'vibe',false,'How this character feels to the reader — always sent to the AI','⚡ high impact')}
-${F(2,'species',false,'Species or race — always sent when present; never allowed to drift in prose')}
-${F(2,'appearance',false,'Physical description — always sent when present; anchors the AI to consistent visuals')}
-${F(2,'voice',false,'Speech patterns and dialogue style — always sent; strongly improves dialogue quality')}
-${F(2,'personality',false,'Trait list — sent on first appearance only')}
-${V(3,'- stoic')}
-${V(3,'- dry-witted')}
-${F(2,'habit',false,'Recurring behavioral quirk — always sent when present')}
-${F(2,'catchphrase',false,'Signature phrase — probability-gated, not sent every scene')}
-${F(2,'catchphrase_frequency',false,'<code>rare</code>&thinsp;(1/8) | <code>occasional</code>&thinsp;(1/4) | <code>frequent</code>&thinsp;(1/2). Default: <code>occasional</code>')}
-${F(2,'tts_voice',false,'TTS voice ID for this character e.g. <code>af_heart</code>. Used by the Read Aloud feature in Settings → Character Voices.')}
-${F(2,'secret',false,'Hidden info — only sent when scene notes reference tension or subtext')}
-${P(2,'relationships','map of character_id → description')}
-${V(3,'other_char_id: "how this character sees them"')}
-${P(2,'evolution','repeats — character growth notes over time')}
-${F(3,'after_chapter',false,'Chapter number after which this note takes effect')}
-${F(3,'note',false,'Growth note included in scene prompts from this chapter onward')}
-${F(2,'heritage',false,'Heritage ID or list of IDs — shared group traits merged into bio on first appearance')}
-</div>
-<div style="font-size:.74rem;color:var(--text-dim);margin:.8rem 0 .35rem;font-family:var(--font);">Optional — define shared group traits once and reuse across characters:</div>
-<div class="yaml-tree">
-${P(0,'heritage')}
-${P(1,'group_id','repeats — one block per group (species, profession, faction, etc.)')}
-${F(2,'label',false,'Display name for the group')}
-${F(2,'traits',false,'Physical/behavioral traits common to this group')}
-${F(2,'speech_patterns',false,'How members of this group typically speak')}
-${F(2,'cultural_notes',false,'Customs, rituals, social norms')}
-</div>`
-    },
-    locations: {
-      title: '🗺 Locations',
-      html: LEGEND + `<div style="font-size:.75rem;color:var(--text-dim);margin-bottom:.55rem;font-family:var(--font);">Top-level key is <code style="font-family:var(--mono);color:var(--blue);">setting:</code> or <code style="font-family:var(--mono);color:var(--blue);">locations:</code>. The ID you give each location is what you put in a scene&rsquo;s <code style="font-family:var(--mono);color:var(--blue);">setting:</code> field.</div>
-<div class="yaml-tree">
-${P(0,'setting')}
-${P(1,'location_id','repeats — one block per location; the key is the location\'s ID')}
-${F(2,'name',false,'Proper name — the AI will use this when referring to the place in prose')}
-${F(2,'type',false,'Brief classification e.g. "19th-century lighthouse"')}
-${F(2,'atmosphere',false,'Default sensory/mood description')}
-${P(2,'mood_shift','optional — keyed variants of the scene atmosphere')}
-${V(3,'night: "description when the scene is at night"')}
-${V(3,'storm: "description during a storm"')}
-${V(2,'any_other_key: "sub-areas or extra details — all included in the prompt"')}
-</div>`
-    },
-    style: {
-      title: '🎨 Custom Style Prompt',
-      html: LEGEND + `<div style="font-size:.75rem;color:var(--text-dim);margin-bottom:.55rem;font-family:var(--font);">Appended to every scene&rsquo;s system prompt. Supplements — does not replace — style set in the story outline.</div>
-<div class="yaml-tree">
-${F(0,'style_directives',false,'Prose style instructions — tone, rhythm, POV, what to avoid')}
-${P(0,'anti_patterns','list of strings — phrases the AI should suppress')}
-${V(1,'- "a wave of emotion"')}
-${V(1,'- "unbeknownst"')}
-</div>
-<div style="margin-top:.8rem;font-size:.76rem;color:var(--text-dim);line-height:1.65;font-family:var(--font);">
-<strong style="color:var(--text);">Tip:</strong> Write <code style="font-family:var(--mono);font-size:.73rem;color:var(--blue);">style_directives</code> like you&rsquo;d brief a human editor — &ldquo;Favour sensory detail over exposition&rdquo;, &ldquo;Short punchy paragraphs for tense scenes&rdquo;. Plain prose works fine.
-</div>`
-    }
-  };
-
-  const schema = schemas[role];
-  if (!schema) return;
-  document.getElementById('yaml-help-title').textContent = schema.title + ' — YAML Fields';
-  document.getElementById('yaml-help-content').innerHTML = schema.html;
-  document.getElementById('modal-yaml-help').classList.add('show');
-}
-
-/* ==========================================================
-   AI Consult — YAML audit + diff view
-   ========================================================== */
-let _consultAbort = null;   // AbortController for stopping
-let _consultResults = {};   // pass_name → full analysis text
-let _consultRunning = false;
-let _genTimer = null;
-let _genT0 = null;
-
-function _simpleMarkdown(text) {
-  // Minimal markdown → HTML for the analysis display
-  if (!text) return '';
-  let html = escHtml(text);
-  // Headers
-  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
-  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-  // Bold
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  // Italic
-  html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
-  // Inline code
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  // List items
-  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-  html = html.replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
-  // Wrap consecutive <li> in <ul>
-  html = html.replace(/((?:<li>.*?<\/li>\n?)+)/g, '<ul>$1</ul>');
-  // Paragraphs (double newline)
-  html = html.replace(/\n\n/g, '<br><br>');
-  return html;
-}
-
-async function runConsult() {
-  if (_consultRunning) return;
-  _consultRunning = true;
-  _consultResults = {};
-  _consultAbort = new AbortController();
-
-  const statusEl = document.getElementById('consult-status');
-  const resultsEl = document.getElementById('consult-results');
-  const btnRun = document.getElementById('btn-consult-run');
-  const btnStop = document.getElementById('btn-consult-stop');
-
-  btnRun.style.display = 'none';
-  btnStop.style.display = '';
-  statusEl.textContent = 'Starting audit…';
-  resultsEl.innerHTML = '';
-
-  const _now = () => new Date().toLocaleTimeString();
-  const passTimers = {}; // pass_name → {interval, t0, tokenCount}
-  addLogEntry({ time: _now(), message: '🔍 AI Consult audit starting…', level: 'info' });
-
-  try {
+  if (r.status === 'completed') {
+    label.textContent = 'Analysis complete';
+  } else if (r.status === 'running' || r.is_alive) {
+    label.textContent = 'Analysis in progress \u2014 connecting\u2026';
+    // Connect to live stream to continue receiving events
     const resp = await fetch('/api/consult', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
-      signal: _consultAbort.signal,
     });
-
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(err.error || `HTTP ${resp.status}`);
+    if (resp.ok) {
+      document.getElementById('btn-consult-start').disabled = true;
+      _streamConsultResponse(resp);
     }
+  } else if (r.status === 'error') {
+    label.textContent = 'Previous analysis had an error: ' + (r.error || '');
+  }
+}
 
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-    const passEls = {};   // pass_name → {body, status, text, statsEl}
-    const passTexts = {}; // pass_name → accumulated raw text
-    let totalPasses = 0;
+function _streamConsultResponse(resp) {
+  const container = document.getElementById('consult-passes-container');
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+  function read() {
+    reader.read().then(({ done, value }) => {
+      if (done) {
+        document.getElementById('btn-consult-start').disabled = false;
+        return;
+      }
       buf += decoder.decode(value, { stream: true });
-
       const lines = buf.split('\n');
       buf = lines.pop();
-
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
         let ev;
         try { ev = JSON.parse(line.slice(6)); } catch { continue; }
-
-        switch (ev.type) {
-          case 'passes':
-            totalPasses = ev.passes.length;
-            statusEl.textContent = `Running ${totalPasses} analysis pass(es)…`;
-            break;
-
-          case 'pass_start': {
-            const passDiv = document.createElement('div');
-            passDiv.className = 'consult-pass';
-            passDiv.id = 'consult-pass-' + ev.pass;
-            const passProgress = totalPasses ? ` (${ev.index}/${ev.total})` : '';
-            passDiv.innerHTML = `
-              <div class="consult-pass-header">
-                <span class="pass-emoji">${escHtml(ev.emoji)}</span>
-                <span>${escHtml(ev.label)} Analysis${passProgress}</span>
-                <span class="pass-status running" id="pstatus-${ev.pass}">analyzing… 0s</span>
-              </div>
-              <div class="consult-pass-body" id="pbody-${ev.pass}"></div>
-              <div class="consult-pass-stats" id="pstats-${ev.pass}"></div>
-            `;
-            resultsEl.appendChild(passDiv);
-            passEls[ev.pass] = {
-              body: document.getElementById('pbody-' + ev.pass),
-              status: document.getElementById('pstatus-' + ev.pass),
-              statsEl: document.getElementById('pstats-' + ev.pass),
-            };
-            passTexts[ev.pass] = '';
-            // Start live timer
-            const t0 = Date.now();
-            const statusBadge = passEls[ev.pass].status;
-            const interval = setInterval(() => {
-              const elapsed = Math.round((Date.now() - t0) / 1000);
-              const tc = passTimers[ev.pass] ? passTimers[ev.pass].tokenCount : 0;
-              statusBadge.textContent = `analyzing… ${elapsed}s · ${tc} tokens`;
-            }, 1000);
-            passTimers[ev.pass] = { interval, t0, tokenCount: 0 };
-
-            statusEl.textContent = totalPasses
-              ? `Pass ${ev.index}/${ev.total} — analyzing ${ev.label.toLowerCase()}…`
-              : `Analyzing ${ev.label.toLowerCase()}…`;
-            addLogEntry({ time: _now(), message: `Consult: ${ev.emoji} ${ev.label} analysis started`, level: 'info' });
-            break;
-          }
-
-          case 'chunk':
-            if (passEls[ev.pass]) {
-              passTexts[ev.pass] += ev.text;
-              passEls[ev.pass].body.innerHTML = _simpleMarkdown(passTexts[ev.pass]);
-              if (document.getElementById('chk-consult-autoscroll').checked) {
-                passEls[ev.pass].body.scrollTop = passEls[ev.pass].body.scrollHeight;
-              }
-              if (passTimers[ev.pass]) passTimers[ev.pass].tokenCount++;
-            }
-            break;
-
-          case 'pass_complete': {
-            if (passEls[ev.pass]) {
-              // Stop timer
-              if (passTimers[ev.pass]) {
-                clearInterval(passTimers[ev.pass].interval);
-              }
-              passEls[ev.pass].status.className = 'pass-status done';
-              const st = ev.stats || {};
-              passEls[ev.pass].status.textContent = st.elapsed_s != null
-                ? `complete · ${st.elapsed_s}s`
-                : 'complete';
-              passEls[ev.pass].body.innerHTML = _simpleMarkdown(ev.text);
-              _consultResults[ev.pass] = ev.text;
-
-              // Show stats
-              if (st) {
-                const parts = [];
-                if (st.words) parts.push(`<span>${st.words} words</span>`);
-                if (st.tokens) parts.push(`<span>${st.tokens} tokens generated</span>`);
-                if (st.prompt_tokens) parts.push(`<span>${st.prompt_tokens} prompt tokens</span>`);
-                if (st.tokens_per_sec) parts.push(`<span>${st.tokens_per_sec} tok/s</span>`);
-                if (st.elapsed_s != null) parts.push(`<span>${st.elapsed_s}s</span>`);
-                passEls[ev.pass].statsEl.innerHTML = parts.join('');
-              }
-
-              // Add action buttons for file-specific passes
-              if (['characters', 'outline', 'locations'].includes(ev.pass)) {
-                const actionsDiv = document.createElement('div');
-                actionsDiv.className = 'consult-pass-actions';
-                actionsDiv.innerHTML = `<button class="btn btn-sm btn-primary" onclick="generateFix('${ev.pass}')">✨ Generate Fixed ${escHtml(PASS_LABELS[ev.pass] || ev.pass)}</button>`;
-                passEls[ev.pass].body.parentElement.appendChild(actionsDiv);
-              }
-
-              const speedNote = st.tokens_per_sec ? ` (${st.tokens_per_sec} tok/s)` : '';
-              addLogEntry({ time: _now(), message: `Consult: ✓ ${PASS_LABELS[ev.pass] || ev.pass} complete — ${st.words || '?'} words, ${st.elapsed_s || '?'}s${speedNote}`, level: 'info' });
-            }
-            break;
-          }
-
-          case 'pass_retry': {
-            if (passEls[ev.pass]) {
-              // Stop old timer; a new one will start on the next chunk/completion
-              if (passTimers[ev.pass]) {
-                clearInterval(passTimers[ev.pass].interval);
-                passTimers[ev.pass] = null;
-              }
-              // Reset accumulated text — fresh attempt
-              passTexts[ev.pass] = '';
-              passEls[ev.pass].body.innerHTML = '';
-              passEls[ev.pass].status.className = 'pass-status running';
-
-              // Show live countdown in the badge
-              let countdown = ev.delay;
-              passEls[ev.pass].status.textContent = `retrying (${ev.attempt}/${ev.max_attempts}) in ${countdown}s`;
-              const cdInterval = setInterval(() => {
-                countdown--;
-                if (countdown <= 0) {
-                  clearInterval(cdInterval);
-                  passEls[ev.pass].status.textContent = `retrying… 0s · 0 tokens`;
-                  // Restart elapsed timer for the new attempt
-                  const t0 = Date.now();
-                  const statusBadge = passEls[ev.pass].status;
-                  const interval = setInterval(() => {
-                    const elapsed = Math.round((Date.now() - t0) / 1000);
-                    const tc = passTimers[ev.pass] ? passTimers[ev.pass].tokenCount : 0;
-                    statusBadge.textContent = `analyzing… ${elapsed}s · ${tc} tokens`;
-                  }, 1000);
-                  passTimers[ev.pass] = { interval, t0, tokenCount: 0 };
-                } else {
-                  passEls[ev.pass].status.textContent = `retrying (${ev.attempt}/${ev.max_attempts}) in ${countdown}s`;
-                }
-              }, 1000);
-              addLogEntry({ time: _now(), message: `Consult: ↻ ${PASS_LABELS[ev.pass] || ev.pass} retrying (${ev.attempt}/${ev.max_attempts}) after ${ev.delay}s — ${ev.error}`, level: 'warn' });
-            }
-            break;
-          }
-
-          case 'pass_error':
-            if (passEls[ev.pass]) {
-              if (passTimers[ev.pass]) clearInterval(passTimers[ev.pass].interval);
-              passEls[ev.pass].status.className = 'pass-status error';
-              passEls[ev.pass].status.textContent = 'error';
-              passEls[ev.pass].body.innerHTML = `<p style="color:var(--red);">${escHtml(ev.error)}</p>`;
-              addLogEntry({ time: _now(), message: `Consult: ✗ ${PASS_LABELS[ev.pass] || ev.pass} failed — ${ev.error}`, level: 'error' });
-            }
-            break;
-
-          case 'done': {
-            const totalTime = ev.elapsed_s != null ? ` in ${ev.elapsed_s}s` : '';
-            statusEl.textContent = `Audit complete${totalTime}`;
-            addLogEntry({ time: _now(), message: `🔍 AI Consult finished${totalTime}`, level: 'info' });
-            // Show Generate All Fixes button if any file-specific passes ran
-            const fixableRoles = Object.keys(_consultResults)
-              .filter(r => ['characters', 'outline', 'locations'].includes(r));
-            if (fixableRoles.length > 0) {
-              const allFixBtn = document.createElement('div');
-              allFixBtn.id = 'btn-gen-all-fixes-wrap';
-              allFixBtn.style.cssText = 'margin-top:.75rem; padding:.6rem .75rem; background:rgba(78,168,222,.08); border:1px solid rgba(78,168,222,.25); border-radius:var(--radius); display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;';
-              allFixBtn.innerHTML = `
-                <span style="font-size:.82rem; color:var(--text-dim); flex:1;">
-                  ✨ Audit complete — click to generate proposed YAML files and review changes:
-                </span>
-                <button class="btn btn-primary" id="btn-gen-all-fixes" onclick="generateAllFixes(${JSON.stringify(fixableRoles)})">Generate All Fixes</button>
-              `;
-              resultsEl.appendChild(allFixBtn);
-            }
-            break;
-          }
-        }
+        _handleConsultEvent(ev, container);
       }
-    }
-  } catch (e) {
-    // Clean up any running timers
-    Object.values(passTimers).forEach(pt => pt && clearInterval(pt.interval));
-    if (e.name === 'AbortError') {
-      statusEl.textContent = 'Audit stopped';
-      toast('Audit stopped', 'warn');
-      addLogEntry({ time: _now(), message: 'Consult: Audit stopped by user', level: 'warn' });
-    } else {
-      statusEl.textContent = 'Audit failed';
-      toast('Consult error: ' + e.message, 'error');
-      addLogEntry({ time: _now(), message: 'Consult error: ' + e.message, level: 'error' });
-    }
-  } finally {
-    _consultRunning = false;
-    _consultAbort = null;
-    btnRun.style.display = '';
-    btnStop.style.display = 'none';
-  }
-}
-
-const PASS_LABELS = { characters: 'Characters', outline: 'Outline', locations: 'Locations' };
-
-function stopConsult() {
-  if (_consultAbort) _consultAbort.abort();
-}
-
-async function generateAllFixes(roles) {
-  const wrapBtn = document.getElementById('btn-gen-all-fixes');
-  if (wrapBtn) { wrapBtn.disabled = true; wrapBtn.textContent = 'Generating…'; }
-  for (const role of roles) {
-    if (wrapBtn) wrapBtn.textContent = `Generating ${PASS_LABELS[role] || role}…`;
-    // Also show spinner on the per-pass button
-    let passBtn = null;
-    for (const b of document.querySelectorAll(`#consult-pass-${role} .consult-pass-actions button`)) {
-      if (b.textContent.includes('Generate Fixed')) { passBtn = b; break; }
-    }
-    await _doGenerateFix(role, passBtn);
-  }
-  if (wrapBtn) { wrapBtn.disabled = false; wrapBtn.textContent = 'Generate All Fixes'; }
-}
-
-async function generateFix(role) {
-  await _doGenerateFix(role, event?.target || null);
-}
-
-async function _doGenerateFix(role, btn) {
-  const analysis = _consultResults[role];
-  if (!analysis) { toast('No analysis found for ' + role, 'error'); return; }
-
-  const origText = btn ? btn.textContent : '';
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating…'; }
-
-  try {
-    const resp = await fetch('/api/consult-apply', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role, analysis }),
+      read();
+    }).catch(() => {
+      document.getElementById('btn-consult-start').disabled = false;
     });
+  }
+  read();
+}
 
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(err.error || `HTTP ${resp.status}`);
+function _handleConsultEvent(ev, container) {
+  const statusLbl = document.getElementById('consult-status-label');
+
+  switch (ev.type) {
+    case 'consult_start':
+      statusLbl.textContent = `Running ${ev.data.total_passes} passes\u2026`;
+      break;
+
+    case 'pass_restore': {
+      // Replay full accumulated text captured at subscribe time
+      const d = ev.data;
+      const existing = document.getElementById('cpass-' + d.pass);
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = _consultPassHtml(d.pass, d.label, d.emoji, d.text, d.status, d.stats, d.error);
+      const newCard = wrapper.firstElementChild;
+      if (existing) existing.replaceWith(newCard);
+      else container.appendChild(newCard);
+      break;
     }
 
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-    let correctedYaml = '';
+    case 'pass_start': {
+      const d = ev.data;
+      _getOrCreatePassCard(container, d.pass, d.label, d.emoji);
+      const badge = document.getElementById('cbadge-' + d.pass);
+      if (badge) { badge.className = 'cbadge running'; badge.textContent = 'analyzing\u2026'; }
+      statusLbl.textContent = `Pass ${d.index}/${d.total}: ${d.label}\u2026`;
+      break;
+    }
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
+    case 'pass_chunk': {
+      const el = document.getElementById('ctext-' + ev.data.pass);
+      if (el) {
+        el.textContent += ev.data.chunk;
+        el.scrollTop = el.scrollHeight;
+      }
+      break;
+    }
 
-      const lines = buf.split('\n');
-      buf = lines.pop();
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        let ev;
-        try { ev = JSON.parse(line.slice(6)); } catch { continue; }
-
-        if (ev.type === 'chunk') {
-          correctedYaml += ev.text;
-        } else if (ev.type === 'done') {
-          correctedYaml = ev.yaml || correctedYaml;
-        } else if (ev.type === 'error') {
-          throw new Error(ev.error);
+    case 'pass_done': {
+      const name = ev.data.pass;
+      const badge = document.getElementById('cbadge-' + name);
+      if (badge) { badge.className = 'cbadge done'; badge.textContent = 'done'; }
+      const statsEl = document.getElementById('cstats-' + name);
+      if (statsEl && ev.data.stats) {
+        const s = ev.data.stats;
+        statsEl.innerHTML = `<div class="pass-stats">${[
+          s.eval_tokens ? s.eval_tokens + ' tokens' : '',
+          s.toks_per_s  ? s.toks_per_s  + ' tok/s'  : '',
+          s.elapsed     ? s.elapsed     + 's'        : '',
+        ].filter(Boolean).join(' \u00b7 ')}</div>`;
+      }
+      const actions = document.getElementById('cactions-' + name);
+      if (actions) {
+        actions.style.display = 'flex';
+        if (['characters', 'outline', 'locations'].includes(name)) {
+          actions.innerHTML = `<button class="btn btn-sm" onclick="startFix('${name}')">⚡ Generate Fix</button>`;
         }
       }
+      break;
     }
 
-    if (!correctedYaml.trim()) {
-      throw new Error('No corrected YAML generated');
+    case 'pass_error': {
+      const name = ev.data.pass;
+      const badge = document.getElementById('cbadge-' + name);
+      if (badge) { badge.className = 'cbadge error'; badge.textContent = 'error'; }
+      const el = document.getElementById('ctext-' + name);
+      if (el) el.textContent += `\n\n[Error: ${ev.data.message}]`;
+      break;
     }
 
-    // Fetch original for diff
-    const origResp = await api('/api/file-content/' + role);
-    const original = (origResp && origResp.ok) ? origResp.content : '';
+    case 'consult_done':
+      statusLbl.textContent = 'Analysis complete';
+      document.getElementById('btn-consult-start').disabled = false;
+      break;
 
-    showDiff(role, original, correctedYaml.trim());
-
-  } catch (e) {
-    toast('Fix generation failed: ' + e.message, 'error');
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = origText; }
+    case 'consult_error':
+      statusLbl.textContent = 'Error: ' + (ev.data.message || ev.message || '');
+      toast(ev.data.message || ev.message || 'Consult error', 'error');
+      document.getElementById('btn-consult-start').disabled = false;
+      break;
   }
 }
 
-/* ---------- Diff view ---------- */
-let _diffRole = null;
-
-function showDiff(role, original, proposed) {
-  _diffRole = role;
-  const labels = { outline: 'Story Outline', characters: 'Characters', locations: 'Locations' };
-  document.getElementById('diff-title').textContent = `Review Changes — ${labels[role] || role}`;
-
-  // Render original with line-level diff highlighting
-  const origEl = document.getElementById('diff-original');
-  const propEl = document.getElementById('diff-proposed');
-  propEl.value = proposed;
-
-  _renderDiffHighlight(original, proposed, origEl);
-  document.getElementById('modal-diff').classList.add('show');
+async function clearConsult() {
+  const r = await apiPost('/api/consult-clear');
+  if (r && r.ok) {
+    document.getElementById('consult-passes-container').innerHTML = '';
+    document.getElementById('consult-status-label').textContent = '';
+    document.getElementById('btn-consult-start').disabled = false;
+  } else {
+    toast(r?.error || 'Cannot clear while analysis is running', 'warn');
+  }
 }
 
-function _renderDiffHighlight(original, proposed, origEl) {
-  // Simple line-level diff
-  const origLines = original.split('\n');
-  const propLines = proposed.split('\n');
-  const propSet = new Set(propLines);
-  const origSet = new Set(origLines);
+function startFix(role) {
+  const fixSection = document.getElementById('cfix-' + role);
+  const fixYaml    = document.getElementById('cfix-yaml-' + role);
+  const fixBadge   = document.getElementById('cfix-badge-' + role);
+  const fixBtns    = document.getElementById('cfix-btns-' + role);
 
-  let html = '';
-  for (const line of origLines) {
-    if (!propSet.has(line)) {
-      html += `<div class="diff-line-del">${escHtml(line)}</div>`;
-    } else {
-      html += `<div class="diff-line-ctx">${escHtml(line)}</div>`;
-    }
-  }
-  // Show new lines that aren't in original
-  const addedLines = propLines.filter(l => !origSet.has(l));
-  if (addedLines.length > 0) {
-    html += `<div style="margin-top:.5rem;color:var(--green);font-weight:600;">+ ${addedLines.length} new/changed lines in proposed version</div>`;
-  }
-  origEl.innerHTML = html;
-}
+  fixSection.style.display = 'block';
+  fixYaml.value = '';
+  fixBadge.textContent = 'generating\u2026';
+  fixBadge.style.cssText = 'color:var(--blue);';
+  fixBtns.style.display = 'none';
 
-function refreshDiffHighlight() {
-  if (!_diffRole) return;
-  api('/api/file-content/' + _diffRole).then(r => {
-    if (r && r.ok) {
-      const proposed = document.getElementById('diff-proposed').value;
-      _renderDiffHighlight(r.content, proposed, document.getElementById('diff-original'));
+  fetch('/api/consult-apply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role }),
+  }).then(resp => {
+    if (!resp.ok) return resp.json().then(d => { throw new Error(d.error || 'Fix failed'); });
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    function read() {
+      reader.read().then(({ done, value }) => {
+        if (done) return;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let ev;
+          try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+          if (ev.type === 'fix_chunk') {
+            fixYaml.value += ev.chunk;
+            fixYaml.scrollTop = fixYaml.scrollHeight;
+          } else if (ev.type === 'fix_done') {
+            fixBadge.textContent = 'done';
+            fixBadge.style.cssText = 'color:var(--green);';
+            fixBtns.style.display = 'flex';
+          } else if (ev.type === 'fix_error') {
+            fixBadge.textContent = 'error';
+            fixBadge.style.cssText = 'color:var(--red);';
+            toast('Fix error: ' + ev.message, 'error');
+          }
+        }
+        read();
+      });
     }
+    read();
+  }).catch(e => {
+    fixBadge.textContent = 'error';
+    fixBadge.style.cssText = 'color:var(--red);';
+    toast('Fix error: ' + e.message, 'error');
   });
 }
 
-function closeDiff() {
-  document.getElementById('modal-diff').classList.remove('show');
-  _diffRole = null;
-}
-
-async function applyDiff() {
-  if (!_diffRole) return;
-  const content = document.getElementById('diff-proposed').value;
-  if (!content.trim()) { toast('Proposed content is empty', 'error'); return; }
-
-  const r = await apiPost('/api/consult-save', { role: _diffRole, content });
+async function saveConsultFix(role) {
+  const content = document.getElementById('cfix-yaml-' + role).value;
+  if (!content.trim()) { toast('No content to save', 'warn'); return; }
+  const r = await apiPost('/api/consult-save', { role, content });
   if (r && r.ok) {
-    toast(`${PASS_LABELS[_diffRole] || _diffRole} file updated (${formatBytes(r.size)})`, 'ok');
-    closeDiff();
+    toast(`${role} saved to workspace (${formatBytes(r.size)})`, 'ok');
     refreshFiles();
     refreshParsed();
   } else {
-    toast('Save failed: ' + (r?.error || 'unknown error'), 'error');
+    toast(r?.error || 'Save failed', 'error');
   }
 }
-
-/* ==========================================================
-   Mobile: swipe left/right between tabs
-   ========================================================== */
-(function () {
-  const TAB_ORDER = ['story', 'consult', 'settings', 'logs', 'memory', 'output'];
-  let _sx = 0, _sy = 0;
-  document.addEventListener('touchstart', e => {
-    _sx = e.touches[0].clientX;
-    _sy = e.touches[0].clientY;
-  }, { passive: true });
-  document.addEventListener('touchend', e => {
-    const dx = e.changedTouches[0].clientX - _sx;
-    const dy = e.changedTouches[0].clientY - _sy;
-    // Require a clear horizontal swipe (min 55px, more horizontal than vertical)
-    if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    const active = document.querySelector('.tab-btn.active');
-    const idx = TAB_ORDER.indexOf(active?.dataset.tab);
-    if (idx === -1) return;
-    const next = dx < 0 ? idx + 1 : idx - 1;
-    if (next < 0 || next >= TAB_ORDER.length) return;
-    document.querySelector(`[data-tab="${TAB_ORDER[next]}"]`).click();
-  }, { passive: true });
-})();
 
 /* ==========================================================
    Boot
