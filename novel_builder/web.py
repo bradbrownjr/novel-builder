@@ -1312,6 +1312,7 @@ def api_memory_get():
                 "facts": [],
                 "actions": [],
                 "commitments": [],
+                "used_imagery": [],
             },
         })
 
@@ -1339,6 +1340,7 @@ def api_memory_get():
             "facts": memory.get("facts") or [],
             "actions": memory.get("actions") or [],
             "commitments": memory.get("commitments") or [],
+            "used_imagery": memory.get("used_imagery") or [],
         },
     })
 
@@ -1370,7 +1372,7 @@ def api_memory_post():
     existing = cp.get("story_memory") or {}
     if not isinstance(existing, dict):
         existing = {}
-    for key in ("facts", "actions", "commitments", "characters"):
+    for key in ("facts", "actions", "commitments", "characters", "used_imagery"):
         if key in new_memory:
             existing[key] = new_memory[key]
     cp["story_memory"] = existing

@@ -264,8 +264,9 @@ def _run_generation(config, args, event_callback=None):
 
             # Summarize scene
             summary = ""
-            extraction = {"characters": [], "facts": [], "actions": [], "commitments": []}
+            extraction = {"characters": [], "facts": [], "actions": [], "commitments": [], "used_imagery": []}
             emit("model_active", model="summarization", name=getattr(args, 'summary_model', 'gemma3:1b'))
+            setting_id = scene.get("setting", "") or ""
             try:
                 summary_model = args.summary_model
                 char_names = [
@@ -280,6 +281,7 @@ def _run_generation(config, args, event_callback=None):
                     "scene_id": str(scene_num),
                     "title": scene_title,
                     "characters": char_names,
+                    "setting": setting_id,
                 }
                 summary, extraction = call_summary_model(
                     args.host, summary_model, text,
@@ -290,7 +292,8 @@ def _run_generation(config, args, event_callback=None):
                     f"Extracted: {len(extraction.get('facts', []))} fact(s), "
                     f"{len(extraction.get('actions', []))} action(s), "
                     f"{len(extraction.get('commitments', []))} commitment(s), "
-                    f"{len(extraction.get('characters', []))} new char(s)"
+                    f"{len(extraction.get('characters', []))} new char(s), "
+                    f"{len(extraction.get('used_imagery', []))} imagery"
                 )
                 print(f"    {_exlog}")
                 emit("log", message=_exlog, level="info")
@@ -307,6 +310,7 @@ def _run_generation(config, args, event_callback=None):
                     state, ch_num, scene_num, summary,
                     extraction, present_ids,
                     known_names=all_known_names,
+                    setting_id=setting_id if setting_id else None,
                 )
             except Exception as e:
                 tb = traceback.format_exc()
@@ -639,7 +643,8 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
 
     # Re-summarise
     summary = ""
-    extraction = {"characters": [], "facts": [], "actions": [], "commitments": []}
+    extraction = {"characters": [], "facts": [], "actions": [], "commitments": [], "used_imagery": []}
+    setting_id_regen = scene.get("setting", "") or "" if scene else ""
     all_known_names_regen = [
         (cdata.get("Name") or cid)
         for cid, cdata in config.get("characters", {}).items()
@@ -656,6 +661,7 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
             "scene_id": scene_id,
             "title": scene.get("title", "") if scene else "",
             "characters": char_names,
+            "setting": setting_id_regen,
         }
         summary, extraction = call_summary_model(
             args.host, args.summary_model, text,
@@ -672,7 +678,10 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
     state.setdefault("story_memory", {})
     state["story_memory"] = _sanitize_story_memory(state["story_memory"])
     _clear_scene_memory(state, scene_id)
-    _merge_story_memory(state, extraction, scene_id, known_names=all_known_names_regen)
+    _merge_story_memory(state, extraction, scene_id,
+                        known_names=all_known_names_regen,
+                        setting_id=setting_id_regen if setting_id_regen else None,
+                        present_char_ids=present_ids)
 
     # Replace the summary for this scene in recent_scenes so the context
     # fed to future scenes reflects the regenerated version, not the old one.
@@ -811,6 +820,7 @@ def rebuild_memories(config, args, event_callback=None):
         "facts": [],
         "actions": [],
         "commitments": [],
+        "used_imagery": [],
     }
     state["_scenes_since_compress"] = 0
 
@@ -819,9 +829,12 @@ def rebuild_memories(config, args, event_callback=None):
         _, scene_dict, ch_num = _find_scene_in_config(config, scene_id)
 
         # Build scene_meta for grounding
-        scene_meta = {"scene_id": scene_id, "title": "", "characters": []}
+        scene_meta = {"scene_id": scene_id, "title": "", "characters": [], "setting": ""}
+        setting_id = ""
         if scene_dict:
             scene_meta["title"] = scene_dict.get("title", "")
+            setting_id = scene_dict.get("setting", "") or ""
+            scene_meta["setting"] = setting_id
             for cid in (scene_dict.get("characters") or []):
                 cdata = all_characters.get(cid, {})
                 scene_meta["characters"].append(cdata.get("Name") or cid)
@@ -844,13 +857,14 @@ def rebuild_memories(config, args, event_callback=None):
         except OllamaError as e:
             emit("log", message=f"  Scene {scene_id} summary failed: {e}", level="warn")
             summary = scene_text[:200].rsplit(" ", 1)[0] + "..."
-            extraction = {"characters": [], "facts": [], "actions": [], "commitments": []}
+            extraction = {"characters": [], "facts": [], "actions": [], "commitments": [], "used_imagery": []}
         finally:
             emit("model_active", model="idle", name="")
 
         from .state import update_after_scene
         update_after_scene(state, chapter_num, scene_id, summary, extraction, present_char_ids,
-                           known_names=all_known_names_rebuild)
+                           known_names=all_known_names_rebuild,
+                           setting_id=setting_id if setting_id else None)
         processed += 1
 
     # Compress story_so_far if it's long

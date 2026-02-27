@@ -171,8 +171,17 @@ def call_summary_model(host, model, text, timeout=300, scene_meta=None):
         "- ACTIONS: Only consequential actions — decisions made, promises given, "
         "  confrontations, discoveries, betrayals. NOT 'walked across room' or "
         "  'poured coffee'.\n"
-        "- COMMITMENTS: Promises, threats, obligations, or plans that must be "
+        "- COMMITMENTS: Promises, threats, obligations, or plans that must be \n"
         "  followed up in future scenes.\n"
+        "- USED_IMAGERY: Distinctive descriptive phrases, vivid sensory details, \n"
+        "  specific metaphors, or recurring images from this scene that would \n"
+        "  feel repetitive if reused in a future scene at the same location or \n"
+        "  describing the same character. Extract the EXACT memorable phrase, \n"
+        "  prefixed with its subject (a character name or 'setting'). \n"
+        "  Examples: 'setting: dust motes danced in shafts of light', \n"
+        "  'Elias: weathered hands like old leather'. \n"
+        "  Do NOT extract generic action ('walked across room') — only vivid \n"
+        "  sensory/descriptive language that a reader would notice if repeated.\n"
         "- If nothing fits a category, write NONE for that category.\n"
         "- Do NOT infer or speculate. Only extract what the text explicitly states.\n\n"
         "FORMAT (follow exactly — no extra text before or after):\n\n"
@@ -180,7 +189,8 @@ def call_summary_model(host, model, text, timeout=300, scene_meta=None):
         "NEW_CHARACTERS: <Full Name: brief role> or NONE\n"
         "NEW_FACTS: <one fact that future scenes need> or NONE\n"
         "ACTIONS: <Character Name did what (consequential only)> or NONE\n"
-        "COMMITMENTS: <Character Name will/must do what> or NONE\n\n"
+        "COMMITMENTS: <Character Name will/must do what> or NONE\n"
+        "USED_IMAGERY: <subject: vivid phrase> or NONE\n\n"
         "Start your response with SUMMARY: — nothing else."
     )
 
@@ -193,6 +203,8 @@ def call_summary_model(host, model, text, timeout=300, scene_meta=None):
             meta_lines.append(f"Title: {scene_meta['title']}")
         if scene_meta.get("characters"):
             meta_lines.append(f"Characters in scene: {', '.join(scene_meta['characters'])}")
+        if scene_meta.get("setting"):
+            meta_lines.append(f"Setting/location: {scene_meta['setting']}")
     meta_block = "\n".join(meta_lines)
     if meta_block:
         base_user_prompt = f"Scene metadata:\n{meta_block}\n\nScene text:\n\n{text}"
@@ -216,7 +228,7 @@ def call_summary_model(host, model, text, timeout=300, scene_meta=None):
             "IMPORTANT: Your previous response did not follow the required "
             "format. You MUST begin your response with 'SUMMARY:' followed "
             "by the summary text, then NEW_CHARACTERS:, NEW_FACTS:, "
-            "ACTIONS:, and COMMITMENTS: on separate lines."
+            "ACTIONS:, COMMITMENTS:, and USED_IMAGERY: on separate lines."
         )
 
     # Both attempts produced no summary — return what we have
@@ -238,6 +250,7 @@ def _parse_summary_response(text):
         "facts": [],
         "actions": [],
         "commitments": [],
+        "used_imagery": [],
     }
 
     lines = text.strip().split("\n")
@@ -272,6 +285,14 @@ def _parse_summary_response(text):
             if content.upper() != "NONE" and content:
                 extraction["commitments"].append(content)
             current_section = "commitments"
+        elif upper.startswith("USED_IMAGERY:") or upper.startswith("USED IMAGERY:"):
+            content = line.split(":", 1)[1].strip() if ":" in line[13:] else line[13:].strip()
+            # Re-parse: the header is "USED_IMAGERY:" and the content may
+            # itself contain "subject: phrase" so split carefully.
+            content = line[len("USED_IMAGERY:"):].strip() if upper.startswith("USED_IMAGERY:") else line[len("USED IMAGERY:"):].strip()
+            if content.upper() != "NONE" and content:
+                extraction["used_imagery"].append(content)
+            current_section = "used_imagery"
         elif current_section == "summary":
             summary += " " + line
         elif current_section in extraction:

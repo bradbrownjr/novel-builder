@@ -728,6 +728,13 @@ textarea {
       <div id="mem-list-characters"></div>
       <button class="btn btn-sm" style="margin-top:.5rem;" onclick="memAddCharacter()">+ Add character</button>
     </div>
+    <!-- Used Imagery -->
+    <div class="card">
+      <h3>Used Imagery <span style="font-size:.72rem;color:var(--text-dim);font-weight:normal;">(suppressed from reuse)</span></h3>
+      <p style="font-size:.75rem;color:var(--text-dim);margin:0 0 .4rem;">Distinctive descriptive phrases already used — the model will avoid repeating these.</p>
+      <div id="mem-list-imagery"></div>
+      <button class="btn btn-sm" style="margin-top:.5rem;" onclick="memAddImagery()">+ Add imagery</button>
+    </div>
 
     <div style="display:flex;gap:.5rem;margin-top:.25rem;flex-wrap:wrap;">
       <button class="btn btn-primary" onclick="saveMemory()">Save Memory</button>
@@ -1811,7 +1818,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 /* ==========================================================
    Memory tab
    ========================================================== */
-let _memoryData = { facts: [], actions: [], commitments: [], characters: {} };
+let _memoryData = { facts: [], actions: [], commitments: [], characters: {}, used_imagery: [] };
 
 async function refreshMemory() {
   const r = await api('/api/memory');
@@ -1833,6 +1840,7 @@ async function refreshMemory() {
   _renderMemorySection('actions',     _memoryData.actions);
   _renderMemorySection('commitments', _memoryData.commitments);
   _renderMemoryCharacters(_memoryData.characters);
+  _renderMemoryImagery(_memoryData.used_imagery || []);
 }
 
 function _renderMemorySection(type, items) {
@@ -1898,6 +1906,46 @@ function memAddCharacter() {
   if (!_memoryData.characters) _memoryData.characters = {};
   _memoryData.characters[id.trim()] = { description: '' };
   _renderMemoryCharacters(_memoryData.characters);
+}
+
+/* -- Used Imagery -- */
+function _renderMemoryImagery(items) {
+  const container = document.getElementById('mem-list-imagery');
+  if (!container) return;
+  if (!items || !items.length) {
+    container.innerHTML = '<p style="font-size:.78rem;color:var(--text-dim);padding:.3rem 0;">(none — imagery is captured as scenes are generated)</p>';
+    return;
+  }
+  container.innerHTML = items.map((item, idx) => {
+    return `
+    <div style="display:flex;align-items:flex-start;gap:.4rem;margin:.25rem 0;" id="memrow-imagery-${idx}">
+      <select style="width:5.5rem;flex-shrink:0;font-size:.72rem;padding:.25rem;"
+        onchange="_memoryData.used_imagery[${idx}].scope_type=this.value">
+        <option value="setting" ${item.scope_type==='setting'?'selected':''}>🏠 Setting</option>
+        <option value="character" ${item.scope_type==='character'?'selected':''}>👤 Character</option>
+        <option value="_global" ${item.scope_type==='_global'||!item.scope_type?'selected':''}>🌐 Global</option>
+      </select>
+      <input type="text" style="width:6rem;flex-shrink:0;font-size:.72rem;" placeholder="scope id"
+        value="${escHtml(item.scope_id||'')}" oninput="_memoryData.used_imagery[${idx}].scope_id=this.value">
+      <textarea rows="1" style="flex:1;min-height:1.8rem;font-size:.78rem;resize:vertical;"
+        oninput="_memoryData.used_imagery[${idx}].detail=this.value">${escHtml(item.detail||'')}</textarea>
+      <span style="font-size:.68rem;color:var(--text-dim);white-space:nowrap;padding-top:.35rem;">${escHtml(String(item.scene||''))}</span>
+      <button class="btn btn-sm btn-danger" style="padding:.2rem .4rem;" onclick="memDeleteImagery(${idx})">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function memDeleteImagery(idx) {
+  _memoryData.used_imagery.splice(idx, 1);
+  _renderMemoryImagery(_memoryData.used_imagery);
+}
+
+function memAddImagery() {
+  if (!_memoryData.used_imagery) _memoryData.used_imagery = [];
+  _memoryData.used_imagery.push({ scope_type: '_global', scope_id: '', detail: '', scene: '' });
+  _renderMemoryImagery(_memoryData.used_imagery);
+  const rows = document.querySelectorAll('#mem-list-imagery textarea');
+  if (rows.length) rows[rows.length - 1].focus();
 }
 
 async function saveMemory() {
