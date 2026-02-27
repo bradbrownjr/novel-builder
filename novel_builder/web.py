@@ -80,9 +80,9 @@ def _normalize_host(host):
         return host
     host = host.strip().rstrip("/")
     if not host.startswith("http://") and not host.startswith("https://"):
-        # Bare IP or IP:port — add scheme
+        # Bare IP or IP:port  --  add scheme
         if ":" not in host:
-            # No port either — add default Ollama port
+            # No port either  --  add default Ollama port
             host = f"http://{host}:11434"
         else:
             host = f"http://{host}"
@@ -220,7 +220,7 @@ state = GenerationState()
 
 
 # ---------------------------------------------------------------------------
-# Consult state (AI analysis results — survives browser refresh)
+# Consult state (AI analysis results  --  survives browser refresh)
 # ---------------------------------------------------------------------------
 
 class ConsultState:
@@ -284,7 +284,7 @@ class ConsultState:
                 self._event_queues.remove(q)
 
     def subscribe_with_snapshot(self):
-        """Subscribe atomically with a snapshot — prevents duplicate chunks.
+        """Subscribe atomically with a snapshot  --  prevents duplicate chunks.
 
         By subscribing inside the lock, any chunk emitted after we return
         will be in the queue, and the snapshot will contain all chunks
@@ -338,7 +338,7 @@ def _ensure_workspace():
 
 
 def _safe_filename(filename):
-    """Sanitize a filename — no path traversal, no shell special chars."""
+    """Sanitize a filename  --  no path traversal, no shell special chars."""
     # Strip path components
     name = os.path.basename(filename)
     # Allow only safe characters
@@ -440,7 +440,7 @@ def _start_generation(web_config):
         dry_run=False,
         chapter=None,
         scene=None,
-        # File paths — point to workspace
+        # File paths  --  point to workspace
         outline=os.path.join(WORKSPACE_DIR, FILE_ROLES["outline"]),
         characters=os.path.join(WORKSPACE_DIR, FILE_ROLES["characters"]),
         locations=os.path.join(WORKSPACE_DIR, FILE_ROLES["locations"]),
@@ -452,7 +452,7 @@ def _start_generation(web_config):
     if not os.path.exists(args.characters):
         return False, "Characters file not uploaded"
 
-    # Locations are optional — set to None if missing
+    # Locations are optional  --  set to None if missing
     if not os.path.exists(args.locations):
         args.locations = None
 
@@ -528,7 +528,7 @@ def api_config():
         return jsonify(_load_web_config())
 
     data = request.get_json(force=True)
-    # Sanitize — only accept known keys
+    # Sanitize  --  only accept known keys
     allowed = {"host", "model", "summary_model", "retries", "timeout"}
     cfg = _load_web_config()
     for key in allowed:
@@ -968,7 +968,7 @@ def api_consult():
     initiating browser disconnects.  Any device can reconnect via
     /api/consult-results (snapshot) or /api/consult-events (live stream).
     """
-    # If already running, don't start a new one — just attach a subscriber
+    # If already running, don't start a new one  --  just attach a subscriber
     if consult_state._thread is None or not consult_state._thread.is_alive():
         consult_state.reset()
 
@@ -977,7 +977,7 @@ def api_consult():
             cfg = _load_web_config()
             host = _normalize_host(cfg.get("host", ""))
             model = cfg.get("model", "gemma3:12b")
-            # Consult passes use num_ctx=16384 on large YAML — needs a generous
+            # Consult passes use num_ctx=16384 on large YAML  --  needs a generous
             # floor regardless of the standard generation timeout setting.
             timeout = max(int(cfg.get("timeout", 900)), 1800)
             retries = int(cfg.get("retries", 3))
@@ -1066,7 +1066,7 @@ def api_consult():
                                 done_data = chunk
                                 break
 
-                        # Success — break out of retry loop
+                        # Success -- break out of retry loop
                         break
 
                     except Exception as e:
@@ -1093,14 +1093,12 @@ def api_consult():
                                 "pass": pass_name,
                                 "message": str(e),
                             })
+                            done_data = None
                             break
-                else:
-                    # All retries exhausted without break — should not reach
-                    # here normally, but guard against it.
-                    continue
 
-                if done_data is None and attempt == retries:
-                    # Final attempt also failed — already emitted pass_error
+                if done_data is None:
+                    # Pass failed after all retries -- already emitted pass_error
+                    state.emit("model_active", {"model": "idle", "name": ""})
                     continue
 
                 elapsed = time.time() - t_start
@@ -1205,6 +1203,37 @@ def api_consult_apply():
 
     Streams the proposed fixed YAML from the LLM.  The client can review
     the result in an editable textarea before saving.
+    """
+    data = request.get_json(force=True)
+    role = data.get("role", "")
+
+    if role not in ("outline", "characters", "locations"):
+        return jsonify({"ok": False, "error": f"Unknown role: {role}"}), 400
+
+    snap = consult_state.snapshot()
+    pass_data = snap["passes"].get(role)
+    if not pass_data or pass_data.get("status") != "done":
+        return jsonify({"ok": False, "error": "Pass not completed"}), 400
+
+    analysis_text = pass_data["text"]
+
+    yaml_path = os.path.join(WORKSPACE_DIR, FILE_ROLES[role])
+    if not os.path.exists(yaml_path):
+        return jsonify({"ok": False, "error": "YAML file not found in workspace"}), 404
+
+    try:
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            original_yaml = f.read()
+    except OSError as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    def stream():
+        from .consult import build_fix_prompt
+        cfg = _load_web_config()
+        host = _normalize_host(cfg.get("host", ""))
+        model = cfg.get("model", "gemma3:12b")
+        # Same floor as analysis passes -- fix generation also uses num_ctx=16384.
+        timeout = max(int(cfg.get("timeout", 900)), 1800)
         retries = int(cfg.get("retries", 3))
 
         if not host:
@@ -1245,7 +1274,7 @@ def api_consult_apply():
                         yield f"data: {json.dumps({'type': 'fix_done'})}\n\n"
                         return
 
-                # Stream ended without done — treat as success
+                # Stream ended without done -- treat as success
                 yield f"data: {json.dumps({'type': 'fix_done'})}\n\n"
                 return
 
@@ -1254,41 +1283,10 @@ def api_consult_apply():
             except Exception as e:
                 if attempt < retries:
                     delay = backoff[min(attempt - 1, len(backoff) - 1)]
-                    yield f"data: {json.dumps({'type': 'fix_chunk', 'chunk': f'[Retry {attempt}/{retries}] {e} -- retrying in {delay}s...\\n'})}\n\n"
+                    yield f"data: {json.dumps({'type': 'fix_chunk', 'chunk': f'[Retry {attempt}/{retries}] {e} -- retrying in {delay}s...'})}\n\n"
                     time.sleep(delay)
                 else:
-                    "model": model,
-            "system": system_prompt,
-            "prompt": user_prompt,
-            "stream": True,
-            "options": {
-                "num_ctx": 16384,
-                "temperature": 0.3,
-            },
-        }
-
-        try:
-            resp = _requests.post(url, json=payload, timeout=timeout, stream=True)
-            resp.raise_for_status()
-
-            for line in resp.iter_lines():
-                if not line:
-                    continue
-                try:
-                    chunk = json.loads(line)
-                except ValueError:
-                    continue
-                token = chunk.get("response", "")
-                if token:
-                    yield f"data: {json.dumps({'type': 'fix_chunk', 'chunk': token})}\n\n"
-                if chunk.get("done"):
-                    yield f"data: {json.dumps({'type': 'fix_done'})}\n\n"
-                    break
-
-        except GeneratorExit:
-            pass
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'fix_error', 'message': str(e)})}\n\n"
+                    yield f"data: {json.dumps({'type': 'fix_error', 'message': str(e)})}\n\n"
 
     return Response(
         stream(),
@@ -1401,11 +1399,11 @@ def api_memory_post():
 
     Accepts a partial story_memory dict (facts, actions, commitments,
     characters) and merges it into the existing checkpoint.  The checkpoint
-    must already exist — this endpoint is for editing, not initialisation.
+    must already exist  --  this endpoint is for editing, not initialisation.
     """
     checkpoint_path = os.path.join(WORKSPACE_DIR, "checkpoint.yaml")
     if not os.path.exists(checkpoint_path):
-        return jsonify({"ok": False, "error": "No checkpoint found — start generation first"}), 404
+        return jsonify({"ok": False, "error": "No checkpoint found  --  start generation first"}), 404
 
     try:
         with open(checkpoint_path, "r", encoding="utf-8") as f:
@@ -1418,7 +1416,7 @@ def api_memory_post():
     if not isinstance(new_memory, dict):
         return jsonify({"ok": False, "error": "story_memory must be a dict"}), 400
 
-    # Merge — replace only the sections provided
+    # Merge  --  replace only the sections provided
     existing = cp.get("story_memory") or {}
     if not isinstance(existing, dict):
         existing = {}
@@ -1450,7 +1448,7 @@ def run_server(host="0.0.0.0", port=8080):
     _ensure_workspace()
 
     print(f"\n{'=' * 60}")
-    print(f"  Novel Builder — Web UI")
+    print(f"  Novel Builder  --  Web UI")
     print(f"  http://{host}:{port}")
     if host == "0.0.0.0":
         import socket
