@@ -408,18 +408,7 @@ textarea {
 .vitem-line  { font-family: var(--mono); color: var(--text-dim); font-size: .7rem; }
 .vitem-suggestion { color: var(--text-dim); font-size: .74rem; margin-top: .1rem; }
 
-/* =========================================================
-   Wizard tab navigation
-   ========================================================= */
-.tab-nav {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: .25rem 0 .75rem;
-  margin-bottom: .75rem;
-  border-bottom: 1px solid var(--border);
-}
-.tab-nav-right { margin-left: auto; }
+
 
 /* =========================================================
    Consult tab
@@ -527,12 +516,6 @@ textarea {
 
 <!-- ==================== SETUP TAB ==================== -->
 <div class="tab-panel active" id="panel-setup">
-
-  <!-- Wizard nav -->
-  <div class="tab-nav">
-    <span></span>
-    <button class="btn tab-nav-right" onclick="switchTab('consult')">Next: Consult ›</button>
-  </div>
 
   <!-- Config card -->
   <div class="card">
@@ -646,17 +629,13 @@ textarea {
     <button class="btn" id="btn-resume" onclick="startGeneration(true)" style="display:none;">⏩ Resume</button>
     <button class="btn btn-danger" id="btn-stop" onclick="stopGeneration()" style="display:none;">⏹ Stop</button>
     <button class="btn" onclick="refreshParsed()">🔄 Refresh Preview</button>
+    <button class="btn" style="margin-left:auto;" onclick="switchTab('consult')">Next: Consult ›</button>
   </div>
 
 </div>
 
 <!-- ==================== CONSULT TAB ==================== -->
 <div class="tab-panel" id="panel-consult">
-  <!-- Wizard nav -->
-  <div class="tab-nav">
-    <button class="btn" onclick="switchTab('setup')">‹ Back: Setup</button>
-    <button class="btn tab-nav-right" onclick="switchTab('logs')">Next: Logs ›</button>
-  </div>
   <div class="card">
     <h3>🔬 AI Story Consultant</h3>
     <p style="font-size:.82rem;color:var(--text-dim);margin-bottom:.75rem;">
@@ -664,9 +643,11 @@ textarea {
       — safe to refresh or open on another device.
     </p>
     <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+      <button class="btn" onclick="switchTab('setup')">‹ Back: Setup</button>
       <button class="btn btn-primary" id="btn-consult-start" onclick="startConsult()">&#9654; Start Analysis</button>
       <button class="btn btn-sm" onclick="clearConsult()">✕ Clear</button>
       <span id="consult-status-label" style="font-size:.8rem;color:var(--text-dim);"></span>
+      <button class="btn" style="margin-left:auto;" onclick="switchTab('logs')">Next: Logs ›</button>
     </div>
   </div>
   <div id="consult-passes-container"></div>
@@ -676,13 +657,10 @@ textarea {
 <!-- ==================== OUTPUT TAB ==================== -->
 <!-- ==================== LOGS TAB ==================== -->
 <div class="tab-panel" id="panel-logs">
-  <!-- Wizard nav -->
-  <div class="tab-nav">
-    <button class="btn" onclick="switchTab('consult')">‹ Back: Consult</button>
-    <button class="btn tab-nav-right" onclick="switchTab('memory')">Next: Memory ›</button>
-  </div>
   <div style="display:flex; gap:.5rem; margin-bottom:.75rem;">
+    <button class="btn" onclick="switchTab('consult')">‹ Back: Consult</button>
     <button class="btn btn-sm" onclick="clearLogs()">🗑 Clear</button>
+    <button class="btn" style="margin-left:auto;" onclick="switchTab('memory')">Next: Memory ›</button>
   </div>
   <div class="log-viewer" id="log-viewer"></div>
 
@@ -690,11 +668,6 @@ textarea {
 
 <!-- ==================== MEMORY TAB ==================== -->
 <div class="tab-panel" id="panel-memory">
-  <!-- Wizard nav -->
-  <div class="tab-nav">
-    <button class="btn" onclick="switchTab('logs')">‹ Back: Logs</button>
-    <button class="btn tab-nav-right" onclick="switchTab('output')">Next: Output ›</button>
-  </div>
   <div class="card" id="memory-progress-card" style="display:none;">
     <h3>Progress</h3>
     <div id="memory-progress-info" style="font-size:.82rem;color:var(--text-dim);"></div>
@@ -743,8 +716,10 @@ textarea {
     </div>
 
     <div style="display:flex;gap:.5rem;margin-top:.25rem;flex-wrap:wrap;">
+      <button class="btn" onclick="switchTab('logs')">‹ Back: Logs</button>
       <button class="btn btn-primary" onclick="saveMemory()">Save Memory</button>
       <button class="btn btn-sm" onclick="refreshMemory()">Reload from Checkpoint</button>
+      <button class="btn" style="margin-left:auto;" onclick="switchTab('output')">Next: Output ›</button>
     </div>
   </div>
 
