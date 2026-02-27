@@ -645,7 +645,7 @@ textarea {
     <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
       <button class="btn" onclick="switchTab('setup')">‹ Back: Setup</button>
       <button class="btn btn-primary" id="btn-consult-start" onclick="startConsult()">&#9654; Start Analysis</button>
-      <button class="btn btn-sm" onclick="clearConsult()">✕ Clear</button>
+      <button class="btn" onclick="clearConsult()">✕ Clear</button>
       <span id="consult-status-label" style="font-size:.8rem;color:var(--text-dim);"></span>
       <button class="btn" onclick="switchTab('logs')">Next: Logs ›</button>
     </div>
@@ -659,7 +659,7 @@ textarea {
 <div class="tab-panel" id="panel-logs">
   <div style="display:flex; gap:.5rem; margin-bottom:.75rem;">
     <button class="btn" onclick="switchTab('consult')">‹ Back: Consult</button>
-    <button class="btn btn-sm" onclick="clearLogs()">🗑 Clear</button>
+    <button class="btn" onclick="clearLogs()">🗑 Clear</button>
     <button class="btn" onclick="switchTab('memory')">Next: Memory ›</button>
   </div>
   <div class="log-viewer" id="log-viewer"></div>
@@ -718,7 +718,7 @@ textarea {
     <div style="display:flex;gap:.5rem;margin-top:.25rem;flex-wrap:wrap;">
       <button class="btn" onclick="switchTab('logs')">‹ Back: Logs</button>
       <button class="btn btn-primary" onclick="saveMemory()">Save Memory</button>
-      <button class="btn btn-sm" onclick="refreshMemory()">Reload from Checkpoint</button>
+      <button class="btn" onclick="refreshMemory()">Reload from Checkpoint</button>
       <button class="btn" onclick="switchTab('output')">Next: Output ›</button>
     </div>
   </div>
@@ -728,8 +728,8 @@ textarea {
 <!-- ==================== OUTPUT TAB ==================== -->
 <div class="tab-panel" id="panel-output">
   <div style="display:flex; gap:.5rem; margin-bottom:.75rem; flex-wrap:wrap;">
-    <button class="btn btn-sm" onclick="refreshOutput()">🔄 Refresh</button>
-    <button class="btn btn-sm" onclick="location.href='/api/download'">⬇ Download .md</button>
+    <button class="btn" onclick="refreshOutput()">🔄 Refresh</button>
+    <button class="btn" onclick="location.href='/api/download'">⬇ Download .md</button>
     <label style="display:flex; align-items:center; gap:.3rem; font-size:.78rem; color:var(--text-dim);">
       <input type="checkbox" id="chk-autoscroll" checked> Auto-scroll
     </label>
