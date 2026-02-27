@@ -1020,6 +1020,7 @@ def api_consult():
                     "index": idx,
                     "total": len(passes),
                 })
+                state.emit("model_active", {"model": "consult", "name": model})
 
                 system_prompt, user_prompt = build_pass_prompt(pass_name, files)
 
@@ -1063,6 +1064,7 @@ def api_consult():
                             break
 
                 except Exception as e:
+                    state.emit("model_active", {"model": "idle", "name": ""})
                     consult_state.emit("pass_error", {
                         "pass": pass_name,
                         "message": str(e),
@@ -1088,6 +1090,7 @@ def api_consult():
                     "pass": pass_name,
                     "stats": stats,
                 })
+                state.emit("model_active", {"model": "idle", "name": ""})
 
             consult_state.emit("consult_done", {})
 

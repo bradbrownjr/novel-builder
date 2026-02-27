@@ -1257,6 +1257,10 @@ function updateModelIndicator(info) {
       dot.classList.add('yellow', 'pulse');
       lbl.textContent = '⊕ Summarizing: ' + (info.name || '');
       break;
+    case 'consult':
+      dot.classList.add('blue', 'pulse');
+      lbl.textContent = '🔬 Consulting: ' + (info.name || '');
+      break;
     default:
       lbl.textContent = 'No model active';
   }
