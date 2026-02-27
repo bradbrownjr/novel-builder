@@ -977,7 +977,9 @@ def api_consult():
             cfg = _load_web_config()
             host = _normalize_host(cfg.get("host", ""))
             model = cfg.get("model", "gemma3:12b")
-            timeout = int(cfg.get("timeout", 900))
+            # Consult passes use num_ctx=16384 on large YAML — needs a generous
+            # floor regardless of the standard generation timeout setting.
+            timeout = max(int(cfg.get("timeout", 900)), 1800)
 
             if not host:
                 consult_state.emit("consult_error", {
@@ -1197,7 +1199,8 @@ def api_consult_apply():
         cfg = _load_web_config()
         host = _normalize_host(cfg.get("host", ""))
         model = cfg.get("model", "gemma3:12b")
-        timeout = int(cfg.get("timeout", 900))
+        # Same floor as analysis passes — fix generation also uses num_ctx=16384.
+        timeout = max(int(cfg.get("timeout", 900)), 1800)
 
         if not host:
             yield f"data: {json.dumps({'type': 'fix_error', 'message': 'No Ollama host configured'})}\n\n"
