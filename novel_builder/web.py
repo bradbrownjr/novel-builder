@@ -980,6 +980,7 @@ def api_consult():
             # Consult passes use num_ctx=16384 on large YAML — needs a generous
             # floor regardless of the standard generation timeout setting.
             timeout = max(int(cfg.get("timeout", 900)), 1800)
+            retries = int(cfg.get("retries", 3))
 
             if not host:
                 consult_state.emit("consult_error", {
@@ -1039,36 +1040,67 @@ def api_consult():
 
                 t_start = time.time()
                 done_data = None
+                backoff = [60, 180, 300, 600, 900]
 
-                try:
-                    resp = _requests.post(
-                        url, json=payload, timeout=timeout, stream=True
-                    )
-                    resp.raise_for_status()
+                for attempt in range(1, retries + 1):
+                    try:
+                        resp = _requests.post(
+                            url, json=payload, timeout=timeout, stream=True
+                        )
+                        resp.raise_for_status()
 
-                    for line in resp.iter_lines():
-                        if not line:
-                            continue
-                        try:
-                            chunk = json.loads(line)
-                        except ValueError:
-                            continue
-                        token = chunk.get("response", "")
-                        if token:
+                        for line in resp.iter_lines():
+                            if not line:
+                                continue
+                            try:
+                                chunk = json.loads(line)
+                            except ValueError:
+                                continue
+                            token = chunk.get("response", "")
+                            if token:
+                                consult_state.emit("pass_chunk", {
+                                    "pass": pass_name,
+                                    "chunk": token,
+                                })
+                            if chunk.get("done"):
+                                done_data = chunk
+                                break
+
+                        # Success — break out of retry loop
+                        break
+
+                    except Exception as e:
+                        if attempt < retries:
+                            delay = backoff[min(attempt - 1, len(backoff) - 1)]
                             consult_state.emit("pass_chunk", {
                                 "pass": pass_name,
-                                "chunk": token,
+                                "chunk": (
+                                    f"\n\n[Retry {attempt}/{retries}] "
+                                    f"{e} -- retrying in {delay}s...\n\n"
+                                ),
                             })
-                        if chunk.get("done"):
-                            done_data = chunk
+                            state.emit("log", {
+                                "message": (
+                                    f"[Consult {label}] Retry {attempt}/{retries}: "
+                                    f"{e}. Waiting {delay}s..."
+                                ),
+                                "level": "warn",
+                            })
+                            time.sleep(delay)
+                        else:
+                            state.emit("model_active", {"model": "idle", "name": ""})
+                            consult_state.emit("pass_error", {
+                                "pass": pass_name,
+                                "message": str(e),
+                            })
                             break
+                else:
+                    # All retries exhausted without break — should not reach
+                    # here normally, but guard against it.
+                    continue
 
-                except Exception as e:
-                    state.emit("model_active", {"model": "idle", "name": ""})
-                    consult_state.emit("pass_error", {
-                        "pass": pass_name,
-                        "message": str(e),
-                    })
+                if done_data is None and attempt == retries:
+                    # Final attempt also failed — already emitted pass_error
                     continue
 
                 elapsed = time.time() - t_start
@@ -1173,37 +1205,7 @@ def api_consult_apply():
 
     Streams the proposed fixed YAML from the LLM.  The client can review
     the result in an editable textarea before saving.
-    """
-    data = request.get_json(force=True)
-    role = data.get("role", "")
-
-    if role not in ("outline", "characters", "locations"):
-        return jsonify({"ok": False, "error": f"Unknown role: {role}"}), 400
-
-    snap = consult_state.snapshot()
-    pass_data = snap["passes"].get(role)
-    if not pass_data or pass_data.get("status") != "done":
-        return jsonify({"ok": False, "error": "Pass not completed"}), 400
-
-    analysis_text = pass_data["text"]
-
-    yaml_path = os.path.join(WORKSPACE_DIR, FILE_ROLES[role])
-    if not os.path.exists(yaml_path):
-        return jsonify({"ok": False, "error": "YAML file not found in workspace"}), 404
-
-    try:
-        with open(yaml_path, "r", encoding="utf-8") as f:
-            original_yaml = f.read()
-    except OSError as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-    def stream():
-        from .consult import build_fix_prompt
-        cfg = _load_web_config()
-        host = _normalize_host(cfg.get("host", ""))
-        model = cfg.get("model", "gemma3:12b")
-        # Same floor as analysis passes — fix generation also uses num_ctx=16384.
-        timeout = max(int(cfg.get("timeout", 900)), 1800)
+        retries = int(cfg.get("retries", 3))
 
         if not host:
             yield f"data: {json.dumps({'type': 'fix_error', 'message': 'No Ollama host configured'})}\n\n"
@@ -1214,6 +1216,48 @@ def api_consult_apply():
         url = f"{host}/api/generate"
         payload = {
             "model": model,
+            "system": system_prompt,
+            "prompt": user_prompt,
+            "stream": True,
+            "options": {
+                "num_ctx": 16384,
+                "temperature": 0.3,
+            },
+        }
+
+        backoff = [60, 180, 300, 600, 900]
+        for attempt in range(1, retries + 1):
+            try:
+                resp = _requests.post(url, json=payload, timeout=timeout, stream=True)
+                resp.raise_for_status()
+
+                for line in resp.iter_lines():
+                    if not line:
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                    except ValueError:
+                        continue
+                    token = chunk.get("response", "")
+                    if token:
+                        yield f"data: {json.dumps({'type': 'fix_chunk', 'chunk': token})}\n\n"
+                    if chunk.get("done"):
+                        yield f"data: {json.dumps({'type': 'fix_done'})}\n\n"
+                        return
+
+                # Stream ended without done — treat as success
+                yield f"data: {json.dumps({'type': 'fix_done'})}\n\n"
+                return
+
+            except GeneratorExit:
+                return
+            except Exception as e:
+                if attempt < retries:
+                    delay = backoff[min(attempt - 1, len(backoff) - 1)]
+                    yield f"data: {json.dumps({'type': 'fix_chunk', 'chunk': f'[Retry {attempt}/{retries}] {e} -- retrying in {delay}s...\\n'})}\n\n"
+                    time.sleep(delay)
+                else:
+                    "model": model,
             "system": system_prompt,
             "prompt": user_prompt,
             "stream": True,
