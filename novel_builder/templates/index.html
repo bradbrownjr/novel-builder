@@ -520,9 +520,9 @@ textarea {
 <div class="tabs">
   <button class="tab-btn active" data-tab="setup">Setup</button>
   <button class="tab-btn" data-tab="consult">Consult</button>
-  <button class="tab-btn" data-tab="output">Output</button>
   <button class="tab-btn" data-tab="logs">Logs</button>
-  <button class="tab-btn" data-tab="memory">🧠 Memory</button>
+  <button class="tab-btn" data-tab="memory">Memory</button>
+  <button class="tab-btn" data-tab="output">Output</button>
 </div>
 
 <!-- ==================== SETUP TAB ==================== -->
@@ -668,6 +668,76 @@ textarea {
   <!-- Wizard nav -->
   <div class="tab-nav">
     <button class="btn" onclick="switchTab('setup')">‹ Back: Setup</button>
+    <button class="btn tab-nav-right" onclick="switchTab('logs')">Next: Logs ›</button>
+  </div>
+</div>
+
+<!-- ==================== OUTPUT TAB ==================== -->
+<!-- ==================== LOGS TAB ==================== -->
+<div class="tab-panel" id="panel-logs">
+  <div style="display:flex; gap:.5rem; margin-bottom:.75rem;">
+    <button class="btn btn-sm" onclick="clearLogs()">🗑 Clear</button>
+  </div>
+  <div class="log-viewer" id="log-viewer"></div>
+
+  <!-- Wizard nav -->
+  <div class="tab-nav">
+    <button class="btn" onclick="switchTab('consult')">‹ Back: Consult</button>
+    <button class="btn tab-nav-right" onclick="switchTab('memory')">Next: Memory ›</button>
+  </div>
+</div>
+
+<!-- ==================== MEMORY TAB ==================== -->
+<div class="tab-panel" id="panel-memory">
+  <div class="card" id="memory-progress-card" style="display:none;">
+    <h3>Progress</h3>
+    <div id="memory-progress-info" style="font-size:.82rem;color:var(--text-dim);"></div>
+    <details style="margin-top:.5rem;">
+      <summary style="font-size:.78rem;cursor:pointer;color:var(--text-dim);">Story so far (snippet)</summary>
+      <pre style="font-size:.75rem;white-space:pre-wrap;word-wrap:break-word;margin-top:.4rem;color:var(--text-dim);" id="memory-story-so-far"></pre>
+    </details>
+  </div>
+
+  <div class="card" id="memory-empty-card">
+    <h3>Story Memory</h3>
+    <p style="font-size:.82rem;color:var(--text-dim);">No checkpoint found. Memory is populated as scenes are generated.</p>
+  </div>
+
+  <div id="memory-content" style="display:none;">
+    <!-- Facts -->
+    <div class="card">
+      <h3>Facts</h3>
+      <div id="mem-list-facts"></div>
+      <button class="btn btn-sm" style="margin-top:.5rem;" onclick="memAddItem('facts')">+ Add fact</button>
+    </div>
+    <!-- Actions -->
+    <div class="card">
+      <h3>Actions</h3>
+      <div id="mem-list-actions"></div>
+      <button class="btn btn-sm" style="margin-top:.5rem;" onclick="memAddItem('actions')">+ Add action</button>
+    </div>
+    <!-- Commitments -->
+    <div class="card">
+      <h3>Commitments</h3>
+      <div id="mem-list-commitments"></div>
+      <button class="btn btn-sm" style="margin-top:.5rem;" onclick="memAddItem('commitments')">+ Add commitment</button>
+    </div>
+    <!-- Minor characters -->
+    <div class="card">
+      <h3>Minor Characters</h3>
+      <div id="mem-list-characters"></div>
+      <button class="btn btn-sm" style="margin-top:.5rem;" onclick="memAddCharacter()">+ Add character</button>
+    </div>
+
+    <div style="display:flex;gap:.5rem;margin-top:.25rem;flex-wrap:wrap;">
+      <button class="btn btn-primary" onclick="saveMemory()">Save Memory</button>
+      <button class="btn btn-sm" onclick="refreshMemory()">Reload from Checkpoint</button>
+    </div>
+  </div>
+
+  <!-- Wizard nav -->
+  <div class="tab-nav">
+    <button class="btn" onclick="switchTab('logs')">‹ Back: Logs</button>
     <button class="btn tab-nav-right" onclick="switchTab('output')">Next: Output ›</button>
   </div>
 </div>
@@ -682,63 +752,6 @@ textarea {
     </label>
   </div>
   <div class="output-viewer" id="output-viewer">(No output yet — start generation to see scenes here.)</div>
-</div>
-
-<!-- ==================== LOGS TAB ==================== -->
-<div class="tab-panel" id="panel-logs">
-  <div style="display:flex; gap:.5rem; margin-bottom:.75rem;">
-    <button class="btn btn-sm" onclick="clearLogs()">🗑 Clear</button>
-  </div>
-  <div class="log-viewer" id="log-viewer"></div>
-</div>
-
-<!-- ==================== MEMORY TAB ==================== -->
-<div class="tab-panel" id="panel-memory">
-  <div class="card" id="memory-progress-card" style="display:none;">
-    <h3>📍 Progress</h3>
-    <div id="memory-progress-info" style="font-size:.82rem;color:var(--text-dim);"></div>
-    <details style="margin-top:.5rem;">
-      <summary style="font-size:.78rem;cursor:pointer;color:var(--text-dim);">Story so far (snippet)</summary>
-      <pre style="font-size:.75rem;white-space:pre-wrap;word-wrap:break-word;margin-top:.4rem;color:var(--text-dim);" id="memory-story-so-far"></pre>
-    </details>
-  </div>
-
-  <div class="card" id="memory-empty-card">
-    <h3>🧠 Story Memory</h3>
-    <p style="font-size:.82rem;color:var(--text-dim);">No checkpoint found. Memory is populated as scenes are generated.</p>
-  </div>
-
-  <div id="memory-content" style="display:none;">
-    <!-- Facts -->
-    <div class="card">
-      <h3>📖 Facts</h3>
-      <div id="mem-list-facts"></div>
-      <button class="btn btn-sm" style="margin-top:.5rem;" onclick="memAddItem('facts')">+ Add fact</button>
-    </div>
-    <!-- Actions -->
-    <div class="card">
-      <h3>⚡ Actions</h3>
-      <div id="mem-list-actions"></div>
-      <button class="btn btn-sm" style="margin-top:.5rem;" onclick="memAddItem('actions')">+ Add action</button>
-    </div>
-    <!-- Commitments -->
-    <div class="card">
-      <h3>🤝 Commitments</h3>
-      <div id="mem-list-commitments"></div>
-      <button class="btn btn-sm" style="margin-top:.5rem;" onclick="memAddItem('commitments')">+ Add commitment</button>
-    </div>
-    <!-- Minor characters -->
-    <div class="card">
-      <h3>👤 Minor Characters</h3>
-      <div id="mem-list-characters"></div>
-      <button class="btn btn-sm" style="margin-top:.5rem;" onclick="memAddCharacter()">+ Add character</button>
-    </div>
-
-    <div style="display:flex;gap:.5rem;margin-top:.25rem;flex-wrap:wrap;">
-      <button class="btn btn-primary" onclick="saveMemory()">💾 Save Memory</button>
-      <button class="btn btn-sm" onclick="refreshMemory()">🔄 Reload from Checkpoint</button>
-    </div>
-  </div>
 </div>
 
 <!-- ==================== EDITOR MODAL ==================== -->
