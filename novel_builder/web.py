@@ -1288,6 +1288,103 @@ def api_consult_save():
 
 
 # ---------------------------------------------------------------------------
+# Memory routes
+# ---------------------------------------------------------------------------
+
+@app.route("/api/memory", methods=["GET"])
+def api_memory_get():
+    """Return the story memory from the current checkpoint.
+
+    Includes story_memory (facts, actions, commitments, characters),
+    last_completed_chapter/scene, and a truncated story_so_far snippet.
+    Returns empty memory if no checkpoint exists yet.
+    """
+    checkpoint_path = os.path.join(WORKSPACE_DIR, "checkpoint.yaml")
+    if not os.path.exists(checkpoint_path):
+        return jsonify({
+            "ok": True,
+            "exists": False,
+            "last_completed_chapter": None,
+            "last_completed_scene": None,
+            "story_so_far_snippet": "",
+            "story_memory": {
+                "characters": {},
+                "facts": [],
+                "actions": [],
+                "commitments": [],
+            },
+        })
+
+    try:
+        with open(checkpoint_path, "r", encoding="utf-8") as f:
+            cp = _yaml.safe_load(f) or {}
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    memory = cp.get("story_memory") or {}
+    if not isinstance(memory, dict):
+        memory = {}
+
+    story_so_far = cp.get("story_so_far", "")
+    snippet = story_so_far[:300] + ("…" if len(story_so_far) > 300 else "")
+
+    return jsonify({
+        "ok": True,
+        "exists": True,
+        "last_completed_chapter": cp.get("last_completed_chapter"),
+        "last_completed_scene": cp.get("last_completed_scene"),
+        "story_so_far_snippet": snippet,
+        "story_memory": {
+            "characters": memory.get("characters") or {},
+            "facts": memory.get("facts") or [],
+            "actions": memory.get("actions") or [],
+            "commitments": memory.get("commitments") or [],
+        },
+    })
+
+
+@app.route("/api/memory", methods=["POST"])
+def api_memory_post():
+    """Save updated story memory back to checkpoint.
+
+    Accepts a partial story_memory dict (facts, actions, commitments,
+    characters) and merges it into the existing checkpoint.  The checkpoint
+    must already exist — this endpoint is for editing, not initialisation.
+    """
+    checkpoint_path = os.path.join(WORKSPACE_DIR, "checkpoint.yaml")
+    if not os.path.exists(checkpoint_path):
+        return jsonify({"ok": False, "error": "No checkpoint found — start generation first"}), 404
+
+    try:
+        with open(checkpoint_path, "r", encoding="utf-8") as f:
+            cp = _yaml.safe_load(f) or {}
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Could not read checkpoint: {e}"}), 500
+
+    data = request.get_json(force=True)
+    new_memory = data.get("story_memory")
+    if not isinstance(new_memory, dict):
+        return jsonify({"ok": False, "error": "story_memory must be a dict"}), 400
+
+    # Merge — replace only the sections provided
+    existing = cp.get("story_memory") or {}
+    if not isinstance(existing, dict):
+        existing = {}
+    for key in ("facts", "actions", "commitments", "characters"):
+        if key in new_memory:
+            existing[key] = new_memory[key]
+    cp["story_memory"] = existing
+
+    try:
+        with open(checkpoint_path, "w", encoding="utf-8") as f:
+            _yaml.dump(cp, f, allow_unicode=True, default_flow_style=False)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Could not write checkpoint: {e}"}), 500
+
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
 # Server launcher
 # ---------------------------------------------------------------------------
 
