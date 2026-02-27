@@ -629,7 +629,7 @@ textarea {
     <button class="btn" id="btn-resume" onclick="startGeneration(true)" style="display:none;">⏩ Resume</button>
     <button class="btn btn-danger" id="btn-stop" onclick="stopGeneration()" style="display:none;">⏹ Stop</button>
     <button class="btn" onclick="refreshParsed()">🔄 Refresh Preview</button>
-    <button class="btn" style="margin-left:auto;" onclick="switchTab('consult')">Next: Consult ›</button>
+    <button class="btn" onclick="switchTab('consult')">Next: Consult ›</button>
   </div>
 
 </div>
@@ -647,7 +647,7 @@ textarea {
       <button class="btn btn-primary" id="btn-consult-start" onclick="startConsult()">&#9654; Start Analysis</button>
       <button class="btn btn-sm" onclick="clearConsult()">✕ Clear</button>
       <span id="consult-status-label" style="font-size:.8rem;color:var(--text-dim);"></span>
-      <button class="btn" style="margin-left:auto;" onclick="switchTab('logs')">Next: Logs ›</button>
+      <button class="btn" onclick="switchTab('logs')">Next: Logs ›</button>
     </div>
   </div>
   <div id="consult-passes-container"></div>
@@ -660,7 +660,7 @@ textarea {
   <div style="display:flex; gap:.5rem; margin-bottom:.75rem;">
     <button class="btn" onclick="switchTab('consult')">‹ Back: Consult</button>
     <button class="btn btn-sm" onclick="clearLogs()">🗑 Clear</button>
-    <button class="btn" style="margin-left:auto;" onclick="switchTab('memory')">Next: Memory ›</button>
+    <button class="btn" onclick="switchTab('memory')">Next: Memory ›</button>
   </div>
   <div class="log-viewer" id="log-viewer"></div>
 
@@ -719,7 +719,7 @@ textarea {
       <button class="btn" onclick="switchTab('logs')">‹ Back: Logs</button>
       <button class="btn btn-primary" onclick="saveMemory()">Save Memory</button>
       <button class="btn btn-sm" onclick="refreshMemory()">Reload from Checkpoint</button>
-      <button class="btn" style="margin-left:auto;" onclick="switchTab('output')">Next: Output ›</button>
+      <button class="btn" onclick="switchTab('output')">Next: Output ›</button>
     </div>
   </div>
 
