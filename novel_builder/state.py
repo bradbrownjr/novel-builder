@@ -11,6 +11,9 @@ _MAX_RECENT_SCENES = 3
 _MAX_MEMORY_CHARACTERS = 20
 _RECENT_ALWAYS_INJECT = 5  # always-inject memory from last N scenes
 _COMPRESSION_INTERVAL = 5  # compress story_so_far every N scenes
+_MAX_IMAGERY_PER_LOCATION = 20  # max used-imagery phrases per location
+_MAX_IMAGERY_PER_CHARACTER = 10  # max used-imagery phrases per character
+_MAX_IMAGERY_GLOBAL = 15  # max unkeyed used-imagery phrases
 
 
 def _sanitize_story_memory(memory):
@@ -83,6 +86,19 @@ def _sanitize_story_memory(memory):
             print(f"Warning: story_memory.actions had {bad_count} non-dict entries — removing them.")
             actions = [a for a in actions if isinstance(a, dict)]
     memory["actions"] = actions
+
+    # used_imagery must be a list of dicts
+    imagery = memory.get("used_imagery", [])
+    if not isinstance(imagery, list):
+        print(f"Warning: story_memory.used_imagery was {type(imagery).__name__!r} "
+              f"(value: {str(imagery)[:80]!r}) — discarding corrupt value.")
+        imagery = []
+    else:
+        bad_count = sum(1 for i in imagery if not isinstance(i, dict))
+        if bad_count:
+            print(f"Warning: story_memory.used_imagery had {bad_count} non-dict entries — removing them.")
+            imagery = [i for i in imagery if isinstance(i, dict)]
+    memory["used_imagery"] = imagery
 
     return memory
 
@@ -164,12 +180,14 @@ def init_state(config, output_file):
             "facts": [],
             "actions": [],
             "commitments": [],
+            "used_imagery": [],
         },
     }
 
 
 def update_after_scene(state, chapter_num, scene_id, summary,
-                       extraction, present_char_ids, known_names=None):
+                       extraction, present_char_ids, known_names=None,
+                       setting_id=None):
     """Update checkpoint state after a scene completes.
 
     Args:
@@ -177,10 +195,13 @@ def update_after_scene(state, chapter_num, scene_id, summary,
         chapter_num: Chapter number just completed.
         scene_id: Scene ID just completed (e.g., "2.1").
         summary: AI-generated scene summary string.
-        extraction: Dict with 'characters', 'facts', 'commitments' lists.
+        extraction: Dict with 'characters', 'facts', 'commitments',
+                    'used_imagery' lists.
         present_char_ids: List of character IDs that appeared in the scene.
         known_names: Optional iterable of known character names from
                      characters.yaml.  Used to block phantom extractions.
+        setting_id: Optional location/setting ID for the scene, used to
+                    key used-imagery entries to the correct location.
     """
     state["last_completed_chapter"] = chapter_num
     state["last_completed_scene"] = str(scene_id)
@@ -208,23 +229,30 @@ def update_after_scene(state, chapter_num, scene_id, summary,
     state["character_appearances"] = appearances
 
     # Merge story memory
-    _merge_story_memory(state, extraction, str(scene_id), known_names=known_names)
+    _merge_story_memory(state, extraction, str(scene_id),
+                        known_names=known_names, setting_id=setting_id,
+                        present_char_ids=present_char_ids)
 
     # Increment compression counter
     state["_scenes_since_compress"] = state.get("_scenes_since_compress", 0) + 1
 
 
-def _merge_story_memory(state, extraction, scene_id, known_names=None):
+def _merge_story_memory(state, extraction, scene_id, known_names=None,
+                        setting_id=None, present_char_ids=None):
     """Merge extracted story memory from a scene into checkpoint state.
 
     Args:
         state: Checkpoint state (mutated).
-        extraction: Dict with 'characters', 'facts', 'commitments'.
+        extraction: Dict with 'characters', 'facts', 'commitments',
+                    'used_imagery'.
         scene_id: Scene ID string.
         known_names: Optional iterable of known character name strings from
                      characters.yaml.  Any extracted character whose full name
                      or first name matches a known character is silently
                      discarded to prevent phantom entries.
+        setting_id: Optional location/setting ID for keying used imagery.
+        present_char_ids: Optional list of character IDs in the scene,
+                          used to key character-scoped used imagery.
     """
     memory = _sanitize_story_memory(state.get("story_memory", {}))
 
@@ -306,7 +334,154 @@ def _merge_story_memory(state, extraction, scene_id, known_names=None):
                 "detail": commitment.strip(),
             })
 
+    # Used imagery — distinctive descriptive phrases keyed to location/character
+    _merge_used_imagery(
+        memory, extraction.get("used_imagery", []),
+        scene_id, setting_id, present_char_ids, known_names,
+    )
+
     state["story_memory"] = memory
+
+
+def _merge_used_imagery(memory, raw_imagery, scene_id, setting_id,
+                        present_char_ids, known_names):
+    """Parse and store used-imagery entries from a scene extraction.
+
+    Each raw entry is expected in "subject: phrase" format where subject
+    is either 'setting' (keyed to the location) or a character name
+    (keyed to a character ID).  Entries that can't be parsed are stored
+    with scope '_global'.
+
+    Caps are enforced per-location, per-character, and globally — oldest
+    entries are evicted when the cap is exceeded.
+
+    Args:
+        memory: story_memory dict (mutated).
+        raw_imagery: List of raw imagery strings from extraction.
+        scene_id: Scene ID string.
+        setting_id: Location/setting ID for the scene, or None.
+        present_char_ids: List of character IDs in the scene, or None.
+        known_names: Iterable of known character name strings, or None.
+    """
+    if not raw_imagery:
+        return
+
+    imagery_list = memory.setdefault("used_imagery", [])
+
+    # Build a name→char_id lookup for matching imagery subjects
+    _name_to_id = {}
+    if known_names and present_char_ids:
+        # known_names and present_char_ids come from the same characters dict
+        # but known_names is all characters while present_char_ids is scene-specific.
+        # We accept matches against present characters for keying.
+        pass
+    if present_char_ids:
+        for cid in present_char_ids:
+            _name_to_id[cid.lower()] = cid
+            # Also add the first part as a short-name match
+            parts = cid.split("_")
+            if parts:
+                _name_to_id[parts[0].lower()] = cid
+    if known_names:
+        for name in known_names:
+            nl = name.lower().strip()
+            # Try to find the matching char_id from present_char_ids
+            first = nl.split()[0] if nl else ""
+            for cid in (present_char_ids or []):
+                cid_first = cid.split("_")[0].lower() if cid else ""
+                if first and (first == cid_first or nl.replace(" ", "_") == cid.lower()):
+                    _name_to_id[nl] = cid
+                    if first:
+                        _name_to_id[first] = cid
+                    break
+
+    for raw in raw_imagery:
+        raw = raw.strip()
+        if not raw or raw.upper() == "NONE":
+            continue
+
+        # Parse "subject: phrase" format
+        scope_type = "_global"
+        scope_id = ""
+        phrase = raw
+
+        if ":" in raw:
+            subject, rest = raw.split(":", 1)
+            subject = subject.strip()
+            rest = rest.strip()
+            if rest:  # Only use the split if there's actually a phrase after ':'
+                phrase = rest
+                subject_lower = subject.lower()
+
+                if subject_lower in ("setting", "location", "place", "environment"):
+                    scope_type = "setting"
+                    scope_id = setting_id or "_unkeyed"
+                elif subject_lower in _name_to_id:
+                    scope_type = "character"
+                    scope_id = _name_to_id[subject_lower]
+                else:
+                    # Unknown subject — try fuzzy match against known names
+                    matched = False
+                    for name_key, cid in _name_to_id.items():
+                        if subject_lower in name_key or name_key in subject_lower:
+                            scope_type = "character"
+                            scope_id = cid
+                            matched = True
+                            break
+                    if not matched:
+                        scope_type = "_global"
+                        scope_id = ""
+
+        # Deduplicate: skip if this exact phrase (case-insensitive) already exists
+        phrase_lower = phrase.lower()
+        if any(e.get("detail", "").lower() == phrase_lower for e in imagery_list):
+            continue
+
+        imagery_list.append({
+            "scene": scene_id,
+            "scope_type": scope_type,
+            "scope_id": scope_id,
+            "detail": phrase,
+        })
+
+    # Enforce per-scope caps — evict oldest entries when over limit
+    _enforce_imagery_caps(imagery_list)
+
+    memory["used_imagery"] = imagery_list
+
+
+def _enforce_imagery_caps(imagery_list):
+    """Evict oldest used-imagery entries when per-scope caps are exceeded.
+
+    Modifies the list in place.
+
+    Args:
+        imagery_list: List of used_imagery dicts.
+    """
+    # Group by (scope_type, scope_id)
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for idx, entry in enumerate(imagery_list):
+        key = (entry.get("scope_type", "_global"), entry.get("scope_id", ""))
+        groups[key].append(idx)
+
+    to_remove = set()
+    for (stype, sid), indices in groups.items():
+        if stype == "setting":
+            cap = _MAX_IMAGERY_PER_LOCATION
+        elif stype == "character":
+            cap = _MAX_IMAGERY_PER_CHARACTER
+        else:
+            cap = _MAX_IMAGERY_GLOBAL
+
+        if len(indices) > cap:
+            # Remove oldest (lowest indices)
+            excess = indices[:len(indices) - cap]
+            to_remove.update(excess)
+
+    if to_remove:
+        for idx in sorted(to_remove, reverse=True):
+            imagery_list.pop(idx)
 
 
 def _clear_scene_memory(state, scene_id):
@@ -325,8 +500,8 @@ def _clear_scene_memory(state, scene_id):
     if not memory:
         return
 
-    # Remove list-based entries (facts, actions, commitments) from this scene
-    for key in ("facts", "actions", "commitments"):
+    # Remove list-based entries (facts, actions, commitments, used_imagery) from this scene
+    for key in ("facts", "actions", "commitments", "used_imagery"):
         entries = memory.get(key, [])
         memory[key] = [e for e in entries if str(e.get("scene", "")) != scene_id]
 
@@ -359,6 +534,7 @@ def get_relevant_memory(state, text_to_scan):
         and not memory.get("facts")
         and not memory.get("actions")
         and not memory.get("commitments")
+        and not memory.get("used_imagery")
     )
     if not memory or all_empty:
         return {"characters": {}, "facts": [], "actions": [], "commitments": []}
@@ -409,6 +585,60 @@ def get_relevant_memory(state, text_to_scan):
             relevant["commitments"].append(commit)
 
     return relevant
+
+
+def get_used_imagery(state, setting_id=None, char_ids=None):
+    """Retrieve used-imagery phrases relevant to the current scene.
+
+    Returns phrases that match the scene's setting and/or characters,
+    plus a small window of recent global (unkeyed) phrases.  This is
+    used to build the imagery-suppression block in the scene prompt.
+
+    Args:
+        state: Checkpoint state dict.
+        setting_id: Current scene's location/setting ID, or None.
+        char_ids: List of character IDs present in the scene, or None.
+
+    Returns:
+        Dict with 'setting' (list of phrases) and 'characters'
+        (dict of char_id -> list of phrases).
+    """
+    memory = state.get("story_memory", {})
+    imagery_list = memory.get("used_imagery", [])
+    if not imagery_list:
+        return {"setting": [], "characters": {}, "global": []}
+
+    setting_phrases = []
+    char_phrases = {}
+    global_phrases = []
+
+    char_set = set(char_ids or [])
+
+    for entry in imagery_list:
+        scope_type = entry.get("scope_type", "_global")
+        scope_id = entry.get("scope_id", "")
+        phrase = entry.get("detail", "")
+        if not phrase:
+            continue
+
+        if scope_type == "setting":
+            if setting_id and scope_id == setting_id:
+                setting_phrases.append(phrase)
+        elif scope_type == "character":
+            if scope_id in char_set:
+                char_phrases.setdefault(scope_id, []).append(phrase)
+        else:
+            global_phrases.append(phrase)
+
+    # Cap global to most recent entries
+    if len(global_phrases) > _MAX_IMAGERY_GLOBAL:
+        global_phrases = global_phrases[-_MAX_IMAGERY_GLOBAL:]
+
+    return {
+        "setting": setting_phrases,
+        "characters": char_phrases,
+        "global": global_phrases,
+    }
 
 
 def resumption_point(state, chapters):

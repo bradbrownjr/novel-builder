@@ -14,7 +14,7 @@ from .characters import (
     should_include_secret,
 )
 from .locations import resolve_location, format_location_for_prompt
-from .state import get_relevant_memory
+from .state import get_relevant_memory, get_used_imagery
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +293,9 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
         for entry in recent:
             parts.append(f"  - {entry.get('summary', '')}")
 
+    # -- Used imagery suppression (avoid repeating distinctive descriptions) --
+    _inject_imagery_suppression(parts, state, setting_ref, scene, all_characters)
+
     # -- Story so far (condensed) --
     story_so_far = state.get("story_so_far", "")
     if story_so_far:
@@ -529,3 +532,66 @@ def _format_story_memory(memory):
                 parts.append(f"  - Commitment: {detail}")
 
     return "\n".join(parts)
+
+
+def _inject_imagery_suppression(parts, state, setting_ref, scene, all_characters):
+    """Build and append the used-imagery suppression block to prompt parts.
+
+    Retrieves previously-used distinctive descriptive phrases for the
+    current scene's location and characters, and instructs the model to
+    vary its language instead of reusing them.
+
+    Args:
+        parts: List of prompt-part strings (mutated — block appended).
+        state: Checkpoint state dict.
+        setting_ref: Scene's setting reference (location ID or string).
+        scene: Current scene dict.
+        all_characters: Full characters dict.
+    """
+    # Determine which character IDs are present
+    explicit_chars = scene.get("characters", [])
+    if explicit_chars:
+        char_ids = list(explicit_chars)
+    else:
+        scene_text = f"{scene.get('events', '')} {scene.get('notes', '')}"
+        char_ids = auto_detect_characters(scene_text, all_characters)
+
+    imagery = get_used_imagery(state, setting_id=setting_ref or None,
+                               char_ids=char_ids)
+
+    setting_phrases = imagery.get("setting", [])
+    char_phrases = imagery.get("characters", {})
+    global_phrases = imagery.get("global", [])
+
+    if not setting_phrases and not char_phrases and not global_phrases:
+        return
+
+    lines = [
+        "\nIMPORTANT — The following descriptive details have already been "
+        "used in this story. Do NOT reuse these exact phrases or close "
+        "paraphrases. Find fresh, original ways to convey atmosphere, "
+        "appearance, and sensory detail:"
+    ]
+
+    if setting_phrases:
+        lines.append("  Setting (already described this way):")
+        for phrase in setting_phrases[-_MAX_IMAGERY_PROMPT:]:
+            lines.append(f"    - \"{phrase}\"")
+
+    for cid, phrases in char_phrases.items():
+        char_name = (all_characters.get(cid, {}).get("Name")
+                     or all_characters.get(cid, {}).get("name", cid))
+        lines.append(f"  {char_name} (already described this way):")
+        for phrase in phrases[-_MAX_IMAGERY_PROMPT:]:
+            lines.append(f"    - \"{phrase}\"")
+
+    if global_phrases:
+        lines.append("  Previously used imagery:")
+        for phrase in global_phrases[-_MAX_IMAGERY_PROMPT:]:
+            lines.append(f"    - \"{phrase}\"")
+
+    parts.append("\n".join(lines))
+
+
+# Max imagery phrases to inject per category in a single prompt
+_MAX_IMAGERY_PROMPT = 8

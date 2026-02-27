@@ -39,7 +39,7 @@ novel_builder/
 ├── config.py             # load_config(), discover_yaml_files()
 ├── ollama_client.py      # call_ollama(), call_ollama_with_retry()
 ├── prompt_builder.py     # build_system_prompt(), build_scene_prompt(), build_summary_prompt()
-├── state.py              # load_checkpoint(), save_checkpoint(), should_resume(), should_compress(), compress_story_so_far()
+├── state.py              # load_checkpoint(), save_checkpoint(), should_resume(), should_compress(), compress_story_so_far(), get_used_imagery()
 ├── story_processor.py    # generate_story(), process_chapter(), process_scene(), regenerate_scene(), regenerate_chapter()
 ├── characters.py         # load_characters(), filter_for_scene(), auto_detect_characters(), get_evolution_context()
 ├── locations.py          # load_locations(), resolve_location()
@@ -76,6 +76,33 @@ _(Update this tree when functions are added, renamed, or moved.)_
 - Character appearance history is tracked in `checkpoint.yaml`.
 - Story memory (auto-extracted minor characters, facts, commitments) is tracked in `checkpoint.yaml` and injected when relevant.
 
+## Used Imagery Tracking
+
+Prevents repetitive location/character descriptions across scenes by tracking distinctive descriptive phrases and suppressing their reuse.
+
+**Extraction:** The summary model extracts `USED_IMAGERY` entries after each scene — vivid sensory details, specific metaphors, and recurring images (e.g., "dust motes danced in shafts of light", "weathered hands like old leather"). Each entry is prefixed with its subject (character name or "setting").
+
+**Storage:** `checkpoint.yaml` → `story_memory.used_imagery` — list of dicts:
+```yaml
+- scene: "1.2"
+  scope_type: setting      # setting | character | _global
+  scope_id: toy_store      # location ID, character ID, or empty
+  detail: "dust motes danced in shafts of light"
+```
+
+**Injection:** `build_scene_prompt()` retrieves imagery matching the current scene's `setting` and characters via `get_used_imagery()`, then appends a suppression block instructing the model to avoid those exact phrases and find fresh alternatives.
+
+**Caps:**
+
+| Scope | Max entries | Notes |
+|---|---|---|
+| Per location | 20 | Oldest evicted when exceeded |
+| Per character | 10 | Oldest evicted when exceeded |
+| Global (unkeyed) | 15 | Rolling window |
+| Per prompt injection | 8 per category | Keeps token budget manageable |
+
+**Editable:** Authors can view, add, edit, and delete used imagery entries in the Memory tab. Each entry shows its scope type, scope ID, phrase, and source scene.
+
 ## Resolved Issues
 
 _(Track fixes here for reference.)_
@@ -84,8 +111,9 @@ _(Track fixes here for reference.)_
 - Checkpoint/resume — generation can be paused and resumed from last completed scene (Phase 1.2).
 - `story_so_far` rolling compression — every 5 scenes, the summary model compresses the accumulated text to stay within token budget (Phase 2.1).
 - Story memory now extracts ACTIONS (who did what) alongside facts/commitments for continuity tracking.
+- Story memory now extracts USED_IMAGERY (distinctive descriptive phrases) to prevent repetitive location/character descriptions.
 - Recent memory items (actions, commitments, facts from last 5 scenes) are always injected into prompts regardless of keyword matching.
-- Editable Memory tab — users can edit, add, and delete story memory items (facts, actions, commitments, characters) and save back to checkpoint.
+- Editable Memory tab — users can edit, add, and delete story memory items (facts, actions, commitments, characters, used imagery) and save back to checkpoint.
 - Scene/chapter regeneration — users can regenerate individual scenes or entire chapters from the Output tab. Old text is logged before replacement.
 - Scene markers (`<!-- scene:X.Y -->` / `<!-- /scene:X.Y -->`, `<!-- chapter:N -->`) embedded in .md output for regeneration targeting. Stripped from downloads.
 - Character roster in system prompt scoped to appeared + current-scene characters only (prevents future character leakage).
@@ -93,6 +121,7 @@ _(Track fixes here for reference.)_
 - Extraction/summary prompt sharpened: focuses on plot-relevant facts, decisions, and commitments rather than trivial physical descriptions.
 - Web UI model selectors with recommended models, RAM estimates, install status, and auto-pull from Ollama.
 - AI Consult tab — multi-pass YAML audit with streaming analysis, per-file fix generation, and side-by-side diff review.
+- Used Imagery tracking — summary model extracts distinctive descriptive phrases; stored per-location and per-character in checkpoint; injected as suppression context to prevent repetitive descriptions across scenes.
 
 ## Scene Marker Format
 
