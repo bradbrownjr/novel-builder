@@ -199,12 +199,20 @@ The Consult tab provides an AI-powered audit of uploaded YAML story files using 
 | Cross-refs | All files | Character-scene alignment, continuity risks, timing |
 
 - Each pass streams incrementally via SSE (`consult_chunk` events)
-- Uses `num_ctx=16384` for analytical depth
+- Uses configurable `consult_num_ctx` (default 32768) for analytical depth
 - Temperature `0.4` for analysis, `0.3` for fix generation
 - "Generate Fixed" buttons appear per file-specific pass after completion
 - Corrected YAML shown in side-by-side diff view (original vs proposed)
-- Proposed pane is editable before applying — user can review and modify
+- Proposed pane is editable before applying -- user can review and modify
 - Apply validates YAML before saving
+
+**Persistence & retry:**
+- Consult results are persisted to `consult_cache.json` in the workspace directory after each pass completes or errors.
+- Results survive server restarts and are restored automatically on startup.
+- Failed passes show a "Retry" button to re-run only that pass without losing completed results.
+- A "Retry Failed" button in the header retries all error'd passes at once.
+- `POST /api/consult` accepts optional `{"passes": ["outline", "crossref"]}` body to retry specific passes.
+- `POST /api/consult-clear` clears both in-memory state and the cache file.
 
 **Live feedback during audit:**
 - Each pass shows a live elapsed-time + token counter in the status badge ("analyzing… 12s · 45 tokens")

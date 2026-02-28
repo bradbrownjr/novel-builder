@@ -59,6 +59,7 @@ app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5 MB upload limit
 WORKSPACE_DIR = os.path.join(os.getcwd(), "workspace")
 ALLOWED_EXTENSIONS = {".yaml", ".yml", ".txt", ".md"}
 CONFIG_FILE = "web_config.json"
+CONSULT_CACHE_FILE = "consult_cache.json"
 
 # Known YAML file roles and their standard names
 FILE_ROLES = {
@@ -233,10 +234,11 @@ class ConsultState:
     def __init__(self):
         self._lock = threading.Lock()
         self.status = "idle"   # idle | running | completed | error
-        self.passes = {}       # pass_name → {label, emoji, text, status, stats, error}
+        self.passes = {}       # pass_name -> {label, emoji, text, status, stats, error}
         self.error = None
         self._thread = None
         self._event_queues = []
+        self._load_from_disk()
 
     def emit(self, event_type, data):
         """Update cached state and push event to all SSE subscribers."""
@@ -272,6 +274,11 @@ class ConsultState:
             elif event_type == "consult_error":
                 self.status = "error"
                 self.error = data.get("message", "")
+
+            # Persist to disk after meaningful state changes
+            if event_type in ("pass_done", "pass_error",
+                               "consult_done", "consult_error"):
+                self._persist()
 
             event = {"type": event_type, "data": data, "time": time.time()}
             dead = []
@@ -323,6 +330,43 @@ class ConsultState:
             self.status = "idle"
             self.passes = {}
             self.error = None
+        self._delete_cache()
+
+    def _persist(self):
+        """Save current passes to disk for restart survival."""
+        try:
+            path = os.path.join(WORKSPACE_DIR, CONSULT_CACHE_FILE)
+            data = {
+                "status": self.status,
+                "passes": {k: dict(v) for k, v in self.passes.items()},
+                "error": self.error,
+            }
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except OSError:
+            pass
+
+    def _load_from_disk(self):
+        """Restore consult results from cache file on startup."""
+        path = os.path.join(WORKSPACE_DIR, CONSULT_CACHE_FILE)
+        if not os.path.exists(path):
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self.status = data.get("status", "idle")
+            self.passes = data.get("passes", {})
+            self.error = data.get("error")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    def _delete_cache(self):
+        """Remove the cache file."""
+        path = os.path.join(WORKSPACE_DIR, CONSULT_CACHE_FILE)
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
 
 consult_state = ConsultState()
@@ -968,10 +1012,26 @@ def api_consult():
     Runs in a background thread so the analysis continues even if the
     initiating browser disconnects.  Any device can reconnect via
     /api/consult-results (snapshot) or /api/consult-events (live stream).
+
+    Body (optional):
+        {"passes": ["outline", "crossref"]}  -- retry only specific passes.
+        If omitted, runs all applicable passes from scratch.
     """
     # If already running, don't start a new one  --  just attach a subscriber
     if consult_state._thread is None or not consult_state._thread.is_alive():
-        consult_state.reset()
+        body = request.get_json(silent=True) or {}
+        requested_passes = body.get("passes")  # None = run all
+
+        # Full run clears everything; selective retry preserves completed passes
+        if requested_passes is None:
+            consult_state.reset()
+        else:
+            # Clear only the passes being retried
+            with consult_state._lock:
+                for pname in requested_passes:
+                    consult_state.passes.pop(pname, None)
+                consult_state.status = "running"
+                consult_state.error = None
 
         def worker():
             from .consult import get_analysis_passes, build_pass_prompt
@@ -1001,6 +1061,10 @@ def api_consult():
                         pass
 
             passes = get_analysis_passes(files)
+            # Filter to only requested passes when doing a selective retry
+            if requested_passes is not None:
+                passes = [(n, c) for n, c in passes
+                          if n in requested_passes]
             if not passes:
                 consult_state.emit("consult_error", {
                     "message": (
