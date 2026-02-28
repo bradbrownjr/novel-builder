@@ -649,6 +649,7 @@ textarea {
     <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
       <button class="btn" onclick="switchTab('setup')">‹ Back: Setup</button>
       <button class="btn btn-primary" id="btn-consult-start" onclick="startConsult()">&#9654; Start Analysis</button>
+      <button class="btn" id="btn-consult-retry" onclick="retryFailed()" style="display:none;">Retry Failed</button>
       <button class="btn" onclick="clearConsult()">✕ Clear</button>
       <span id="consult-status-label" style="font-size:.8rem;color:var(--text-dim);"></span>
       <button class="btn" onclick="switchTab('logs')">Next: Logs ›</button>
@@ -1501,15 +1502,19 @@ function _consultPassHtml(name, label, emoji, text, status, stats, err) {
     stats.elapsed     ? stats.elapsed     + 's'        : '',
   ].filter(Boolean).join(' \u00b7 ')}</div>` : '';
   const fixable = ['characters', 'outline', 'locations'].includes(name);
-  const actionsDisplay = status === 'done' ? 'flex' : 'none';
-  const fixBtn = (status === 'done' && fixable)
-    ? `<button class="btn btn-sm" onclick="startFix('${name}')">\u26a1 Generate Fix</button>` : '';
+  const actionsDisplay = (status === 'done' || status === 'error') ? 'flex' : 'none';
+  let actionsHtml = '';
+  if (status === 'done' && fixable) {
+    actionsHtml = `<button class="btn btn-sm" onclick="startFix('${name}')">\u26a1 Generate Fix</button>`;
+  } else if (status === 'error') {
+    actionsHtml = `<button class="btn btn-sm" onclick="retryPass('${name}')">Retry</button>`;
+  }
   return `
     <div class="card" id="cpass-${name}">
       <h3>${emoji} ${escHtml(label)} <span class="${badgeCls}" id="cbadge-${name}">${badgeTxt}</span></h3>
       <pre class="consult-text" id="ctext-${name}">${escHtml(text || '')}</pre>
       ${statsHtml ? `<div id="cstats-${name}">${statsHtml}</div>` : `<div id="cstats-${name}"></div>`}
-      <div id="cactions-${name}" style="display:${actionsDisplay};gap:.4rem;flex-wrap:wrap;">${fixBtn}</div>
+      <div id="cactions-${name}" style="display:${actionsDisplay};gap:.4rem;flex-wrap:wrap;">${actionsHtml}</div>
       <div id="cfix-${name}" style="display:none;">
         <h4 style="font-size:.82rem;color:var(--text-dim);margin:.75rem 0 .3rem;">
           Proposed Fix <span id="cfix-badge-${name}"></span>
@@ -1589,6 +1594,7 @@ async function restoreConsult() {
   } else if (r.status === 'error') {
     label.textContent = 'Previous analysis had an error: ' + (r.error || '');
   }
+  _updateRetryFailedBtn();
 }
 
 function _streamConsultResponse(resp) {
@@ -1687,18 +1693,26 @@ function _handleConsultEvent(ev, container) {
       if (badge) { badge.className = 'cbadge error'; badge.textContent = 'error'; }
       const el = document.getElementById('ctext-' + name);
       if (el) el.textContent += `\n\n[Error: ${ev.data.message}]`;
+      const actions = document.getElementById('cactions-' + name);
+      if (actions) {
+        actions.style.display = 'flex';
+        actions.innerHTML = `<button class="btn btn-sm" onclick="retryPass('${name}')">Retry</button>`;
+      }
+      _updateRetryFailedBtn();
       break;
     }
 
     case 'consult_done':
       statusLbl.textContent = 'Analysis complete';
       document.getElementById('btn-consult-start').disabled = false;
+      _updateRetryFailedBtn();
       break;
 
     case 'consult_error':
       statusLbl.textContent = 'Error: ' + (ev.data.message || ev.message || '');
       toast(ev.data.message || ev.message || 'Consult error', 'error');
       document.getElementById('btn-consult-start').disabled = false;
+      _updateRetryFailedBtn();
       break;
   }
 }
@@ -1709,9 +1723,65 @@ async function clearConsult() {
     document.getElementById('consult-passes-container').innerHTML = '';
     document.getElementById('consult-status-label').textContent = '';
     document.getElementById('btn-consult-start').disabled = false;
+    document.getElementById('btn-consult-retry').style.display = 'none';
   } else {
     toast(r?.error || 'Cannot clear while analysis is running', 'warn');
   }
+}
+
+function _getFailedPasses() {
+  const failed = [];
+  document.querySelectorAll('.cbadge.error').forEach(el => {
+    const id = (el.id || '').replace('cbadge-', '');
+    if (id) failed.push(id);
+  });
+  return failed;
+}
+
+function _updateRetryFailedBtn() {
+  const btn = document.getElementById('btn-consult-retry');
+  if (!btn) return;
+  const failed = _getFailedPasses();
+  btn.style.display = failed.length > 0 ? '' : 'none';
+}
+
+async function retryPass(name) {
+  await _startConsultWithPasses([name]);
+}
+
+async function retryFailed() {
+  const failed = _getFailedPasses();
+  if (!failed.length) { toast('No failed passes to retry', 'warn'); return; }
+  await _startConsultWithPasses(failed);
+}
+
+async function _startConsultWithPasses(passList) {
+  if (_consultSource) { _consultSource.close(); _consultSource = null; }
+  document.getElementById('btn-consult-start').disabled = true;
+  document.getElementById('btn-consult-retry').style.display = 'none';
+  document.getElementById('consult-status-label').textContent = 'Retrying\u2026';
+
+  // Remove the old cards for passes being retried
+  for (const name of passList) {
+    const card = document.getElementById('cpass-' + name);
+    if (card) card.remove();
+  }
+
+  const resp = await fetch('/api/consult', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ passes: passList }),
+  });
+
+  if (!resp.ok) {
+    const d = await resp.json().catch(() => ({}));
+    toast(d.message || 'Failed to start retry', 'error');
+    document.getElementById('btn-consult-start').disabled = false;
+    _updateRetryFailedBtn();
+    return;
+  }
+
+  _streamConsultResponse(resp);
 }
 
 function startFix(role) {
