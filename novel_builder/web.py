@@ -1045,7 +1045,9 @@ def api_consult():
                 for attempt in range(1, retries + 1):
                     try:
                         resp = _requests.post(
-                            url, json=payload, timeout=timeout, stream=True
+                            url, json=payload,
+                            timeout=(30, None),
+                            stream=True
                         )
                         resp.raise_for_status()
 
@@ -1257,7 +1259,7 @@ def api_consult_apply():
         backoff = [60, 180, 300, 600, 900]
         for attempt in range(1, retries + 1):
             try:
-                resp = _requests.post(url, json=payload, timeout=timeout, stream=True)
+                resp = _requests.post(url, json=payload, timeout=(30, None), stream=True)
                 resp.raise_for_status()
 
                 for line in resp.iter_lines():
