@@ -535,7 +535,7 @@ textarea {
         <label for="cfg-summary-model">Summary Model</label>
         <input type="text" id="cfg-summary-model" placeholder="gemma3:1b">
       </div>
-      <div class="form-group" style="display:grid; grid-template-columns:1fr 1fr; gap:.5rem;">
+      <div class="form-group" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:.5rem;">
         <div>
           <label for="cfg-retries">Retries</label>
           <input type="number" id="cfg-retries" min="1" max="10" value="3">
@@ -543,6 +543,10 @@ textarea {
         <div>
           <label for="cfg-timeout">Timeout (s)</label>
           <input type="number" id="cfg-timeout" min="60" max="3600" value="900">
+        </div>
+        <div>
+          <label for="cfg-consult-ctx">Consult Context</label>
+          <input type="number" id="cfg-consult-ctx" min="4096" max="131072" step="1024" value="32768" title="num_ctx for AI Consult passes. Increase if outline/cross-ref passes time out.">
         </div>
       </div>
     </div>
@@ -850,6 +854,7 @@ function loadConfigIntoForm(cfg) {
   document.getElementById('cfg-summary-model').value = cfg.summary_model || 'gemma3:1b';
   document.getElementById('cfg-retries').value = cfg.retries || 3;
   document.getElementById('cfg-timeout').value = cfg.timeout || 900;
+  document.getElementById('cfg-consult-ctx').value = cfg.consult_num_ctx || 32768;
 }
 async function saveConfig() {
   const cfg = {
@@ -858,6 +863,7 @@ async function saveConfig() {
     summary_model: document.getElementById('cfg-summary-model').value.trim(),
     retries: parseInt(document.getElementById('cfg-retries').value) || 3,
     timeout: parseInt(document.getElementById('cfg-timeout').value) || 900,
+    consult_num_ctx: parseInt(document.getElementById('cfg-consult-ctx').value) || 32768,
   };
   const r = await apiPost('/api/config', cfg);
   if (r && r.ok) { toast('Config saved', 'ok'); checkOllamaHealth(); }

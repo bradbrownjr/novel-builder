@@ -529,7 +529,8 @@ def api_config():
 
     data = request.get_json(force=True)
     # Sanitize  --  only accept known keys
-    allowed = {"host", "model", "summary_model", "retries", "timeout"}
+    allowed = {"host", "model", "summary_model", "retries", "timeout",
+               "consult_num_ctx"}
     cfg = _load_web_config()
     for key in allowed:
         if key in data:
@@ -977,10 +978,11 @@ def api_consult():
             cfg = _load_web_config()
             host = _normalize_host(cfg.get("host", ""))
             model = cfg.get("model", "gemma3:12b")
-            # Consult passes use num_ctx=16384 on large YAML  --  needs a generous
-            # floor regardless of the standard generation timeout setting.
+            # Consult passes can need a large context window for full YAML
+            # analysis.  Default 32768; configurable via Settings tab.
             timeout = max(int(cfg.get("timeout", 900)), 1800)
             retries = int(cfg.get("retries", 3))
+            consult_ctx = int(cfg.get("consult_num_ctx", 32768))
 
             if not host:
                 consult_state.emit("consult_error", {
@@ -1032,7 +1034,7 @@ def api_consult():
                     "prompt": user_prompt,
                     "stream": True,
                     "options": {
-                        "num_ctx": 16384,
+                        "num_ctx": consult_ctx,
                         "temperature": 0.4,
                         "top_p": 0.9,
                     },
@@ -1234,8 +1236,9 @@ def api_consult_apply():
         cfg = _load_web_config()
         host = _normalize_host(cfg.get("host", ""))
         model = cfg.get("model", "gemma3:12b")
-        # Same floor as analysis passes -- fix generation also uses num_ctx=16384.
+        # Same floor as analysis passes.
         timeout = max(int(cfg.get("timeout", 900)), 1800)
+        consult_ctx = int(cfg.get("consult_num_ctx", 32768))
         retries = int(cfg.get("retries", 3))
 
         if not host:
@@ -1251,7 +1254,7 @@ def api_consult_apply():
             "prompt": user_prompt,
             "stream": True,
             "options": {
-                "num_ctx": 16384,
+                "num_ctx": consult_ctx,
                 "temperature": 0.3,
             },
         }
