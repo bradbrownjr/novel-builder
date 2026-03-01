@@ -1872,6 +1872,40 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 /* ==========================================================
+   Swipe left/right to navigate tabs on mobile
+   ========================================================== */
+(function () {
+  const TAB_ORDER = ['setup', 'consult', 'logs', 'memory', 'output'];
+  const SWIPE_THRESHOLD = 50;   // minimum horizontal px to count as a swipe
+  const ANGLE_THRESHOLD = 0.6;  // max abs(dy/dx) ratio -- rejects near-vertical drags
+
+  let startX = 0, startY = 0;
+
+  function currentTabIndex() {
+    const active = document.querySelector('.tab-btn.active');
+    return active ? TAB_ORDER.indexOf(active.dataset.tab) : 0;
+  }
+
+  document.addEventListener('touchstart', e => {
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+
+  document.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - startX;
+    const dy = e.changedTouches[0].clientY - startY;
+
+    // Ignore if not horizontal enough or too short
+    if (Math.abs(dx) < SWIPE_THRESHOLD) return;
+    if (Math.abs(dy) / Math.abs(dx) > ANGLE_THRESHOLD) return;
+
+    const idx = currentTabIndex();
+    const next = dx < 0 ? idx + 1 : idx - 1;  // swipe left -> next tab; swipe right -> prev tab
+    if (next >= 0 && next < TAB_ORDER.length) switchTab(TAB_ORDER[next]);
+  }, { passive: true });
+}());
+
+/* ==========================================================
    Memory tab
    ========================================================== */
 let _memoryData = { facts: [], actions: [], commitments: [], characters: {}, used_imagery: [] };
