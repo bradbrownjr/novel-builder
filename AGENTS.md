@@ -18,6 +18,7 @@ _(Add directives here when the user says "always" or "never" do something.)_
 - **Never** use em-dashes (--) in Python source code, comments, strings, or log messages. Use ` -- ` (space-hyphen-hyphen-space) instead. Em-dashes (U+2014) cause SyntaxErrors in some Python environments.
 - **Never** include markdown formatting (`---`, scene headers, etc.) in generated scene text.
 - **Always** preserve chapter headers before each chapter's first scene.
+- **Never** censor, sanitize, or recommend removing story content based on moral judgments. This is a tool for adult authors writing fiction for adult readers. Dark themes, morally complex characters, erotic material, and violence are valid creative choices.
 
 ## Project Conventions
 
@@ -123,7 +124,7 @@ _(Track fixes here for reference.)_
 - Extraction/summary prompt sharpened: focuses on plot-relevant facts, decisions, and commitments rather than trivial physical descriptions.
 - Web UI model selectors with recommended models, RAM estimates, install status, and auto-pull from Ollama.
 - AI Consult tab — multi-pass YAML audit with streaming analysis, per-file fix generation, and side-by-side diff review.
-- Used Imagery tracking — summary model extracts distinctive descriptive phrases; stored per-location and per-character in checkpoint; injected as suppression context to prevent repetitive descriptions across scenes.
+- Used Imagery tracking -- summary model extracts distinctive descriptive phrases; stored per-location and per-character in checkpoint; injected as suppression context to prevent repetitive descriptions across scenes.\n- Consult Generate Fix errors and crossref fix support -- fixed fix generation errors, added crossref multi-file fix support, diff view, download, fix persistence across page refresh, and \"Generate All Fixes\" button.\n- Content policy -- anti-censorship directives in all prompts (consult analysis, fix generation, story generation).
 
 ## Scene Marker Format
 
@@ -186,7 +187,7 @@ The Consult tab provides an AI-powered audit of uploaded YAML story files using 
 
 **Architecture:**
 - `consult.py` — prompt construction for multi-pass analysis and fix generation
-- `web.py` — `/api/consult` (streaming SSE), `/api/consult-apply` (fix generation), `/api/consult-save`
+- `web.py` -- `/api/consult` (streaming SSE), `/api/consult-apply` (fix generation), `/api/consult-save`, `/api/consult-save-fix` (persist edits), `/api/consult-download-fix/<role>`, `/api/consult-original/<role>` (diff source)
 - UI: Consult tab between Story and Settings in wizard flow
 
 **Multi-pass analysis:**
@@ -201,10 +202,20 @@ The Consult tab provides an AI-powered audit of uploaded YAML story files using 
 - Each pass streams incrementally via SSE (`consult_chunk` events)
 - Uses configurable `consult_num_ctx` (default 32768) for analytical depth
 - Temperature `0.4` for analysis, `0.3` for fix generation
-- "Generate Fixed" buttons appear per file-specific pass after completion
-- Corrected YAML shown in side-by-side diff view (original vs proposed)
+- "Generate Fixed" buttons appear for ALL passes including Cross-References after completion
+- Cross-ref fix uses multi-file output with `--- FILE: filename.yaml ---` markers
+- "Generate All Fixes" button triggers fix generation for all completed passes at once
+- Corrected YAML shown in side-by-side diff view (original vs proposed) via "Show Diff" toggle
 - Proposed pane is editable before applying -- user can review and modify
+- Fix content is persisted in `consult_cache.json` and survives page refresh
+- "Download Fix" button lets user save proposed YAML locally as backup
 - Apply validates YAML before saving
+
+**Content policy:**
+- All analysis and fix prompts include explicit anti-censorship directives
+- Consult will never recommend removing content for being dark, sexual, or violent
+- Generation system prompt instructs the model to write authentically without content filtering
+- The tool treats adult themes, morally complex characters, and mature content as valid creative choices
 
 **Persistence & retry:**
 - Consult results are persisted to `consult_cache.json` in the workspace directory after each pass completes or errors.

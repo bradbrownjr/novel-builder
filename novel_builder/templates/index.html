@@ -448,6 +448,43 @@ textarea {
   min-height: 200px;
   outline: none;
 }
+.diff-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .5rem;
+  margin: .5rem 0;
+}
+.diff-pane { display: flex; flex-direction: column; min-width: 0; }
+.diff-pane label {
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: .25rem;
+}
+.diff-pane textarea, .diff-pane pre {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: .72rem;
+  padding: .4rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  min-height: 300px;
+  max-height: 60vh;
+  overflow-y: auto;
+  resize: vertical;
+}
+.diff-pane textarea { border-color: var(--blue); outline: none; }
+.diff-pane pre { opacity: .85; }
+@media (max-width: 768px) {
+  .diff-container { grid-template-columns: 1fr; }
+}
 .cbadge {
   display: inline-block;
   font-size: .68rem;
@@ -658,10 +695,11 @@ textarea {
     <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
       <button class="btn" onclick="switchTab('setup')">‹ Back: Setup</button>
       <button class="btn btn-primary" id="btn-consult-start" onclick="startConsult()">&#9654; Start Analysis</button>
+      <button class="btn" id="btn-consult-genall" onclick="generateAllFixes()" style="display:none;">Generate All Fixes</button>
       <button class="btn" id="btn-consult-retry" onclick="retryFailed()" style="display:none;">Retry Failed</button>
-      <button class="btn" onclick="clearConsult()">✕ Clear</button>
+      <button class="btn" onclick="clearConsult()">&#10005; Clear</button>
       <span id="consult-status-label" style="font-size:.8rem;color:var(--text-dim);"></span>
-      <button class="btn" onclick="switchTab('logs')">Next: Logs ›</button>
+      <button class="btn" onclick="switchTab('logs')">Next: Logs &#8250;</button>
     </div>
   </div>
   <div id="consult-passes-container"></div>
@@ -1497,12 +1535,12 @@ function setupDropZones() {
 const _PASS_ORDER = ['characters', 'outline', 'locations', 'crossref'];
 let _consultSource = null;
 
-function _consultPassHtml(name, label, emoji, text, status, stats, err) {
+function _consultPassHtml(name, label, emoji, text, status, stats, err, fixContent) {
   const badgeCls = status === 'running' ? 'cbadge running'
                  : status === 'done'    ? 'cbadge done'
                  : status === 'error'   ? 'cbadge error'
                  : 'cbadge';
-  const badgeTxt = status === 'running' ? 'analyzing…'
+  const badgeTxt = status === 'running' ? 'analyzing...'
                  : status === 'done'    ? 'done'
                  : status === 'error'   ? 'error'
                  : 'pending';
@@ -1511,27 +1549,39 @@ function _consultPassHtml(name, label, emoji, text, status, stats, err) {
     stats.toks_per_s  ? stats.toks_per_s  + ' tok/s'  : '',
     stats.elapsed     ? stats.elapsed     + 's'        : '',
   ].filter(Boolean).join(' \u00b7 ')}</div>` : '';
-  const fixable = ['characters', 'outline', 'locations'].includes(name);
   const actionsDisplay = (status === 'done' || status === 'error') ? 'flex' : 'none';
   let actionsHtml = '';
-  if (status === 'done' && fixable) {
-    actionsHtml = `<button class="btn btn-sm" onclick="startFix('${name}')">\u26a1 Generate Fix</button>`;
+  if (status === 'done') {
+    actionsHtml = `<button class="btn btn-sm" onclick="startFix('${name}')">Generate Fix</button>`;
   } else if (status === 'error') {
     actionsHtml = `<button class="btn btn-sm" onclick="retryPass('${name}')">Retry</button>`;
   }
+
+  const fixDisplay = fixContent ? 'block' : 'none';
+  const fixBadgeText = fixContent ? 'done' : '';
+  const fixBadgeStyle = fixContent ? 'color:var(--green);' : '';
+  const fixBtnsDisplay = fixContent ? 'flex' : 'none';
+
   return `
     <div class="card" id="cpass-${name}">
       <h3>${emoji} ${escHtml(label)} <span class="${badgeCls}" id="cbadge-${name}">${badgeTxt}</span></h3>
       <pre class="consult-text" id="ctext-${name}">${escHtml(text || '')}</pre>
       ${statsHtml ? `<div id="cstats-${name}">${statsHtml}</div>` : `<div id="cstats-${name}"></div>`}
       <div id="cactions-${name}" style="display:${actionsDisplay};gap:.4rem;flex-wrap:wrap;">${actionsHtml}</div>
-      <div id="cfix-${name}" style="display:none;">
+      <div id="cfix-${name}" style="display:${fixDisplay};">
         <h4 style="font-size:.82rem;color:var(--text-dim);margin:.75rem 0 .3rem;">
-          Proposed Fix <span id="cfix-badge-${name}"></span>
+          Proposed Fix <span id="cfix-badge-${name}" style="${fixBadgeStyle}">${fixBadgeText}</span>
         </h4>
-        <textarea class="consult-fix-yaml" id="cfix-yaml-${name}" rows="22" spellcheck="false"></textarea>
-        <div id="cfix-btns-${name}" style="display:none;gap:.4rem;margin-top:.4rem;">
-          <button class="btn btn-primary btn-sm" onclick="saveConsultFix('${name}')">💾 Save to Workspace</button>
+        <div class="diff-container" id="cdiff-${name}" style="display:none;"></div>
+        <textarea class="consult-fix-yaml" id="cfix-yaml-${name}" rows="22" spellcheck="false"
+          oninput="_debounceSaveFix('${name}')">${escHtml(fixContent || '')}</textarea>
+        <div id="cfix-btns-${name}" style="display:${fixBtnsDisplay};gap:.4rem;margin-top:.4rem;flex-wrap:wrap;">
+          <button class="btn btn-sm" onclick="showDiff('${name}')">Show Diff</button>
+          <button class="btn btn-sm" onclick="downloadFix('${name}')">Download Fix</button>
+          ${name !== 'crossref'
+            ? `<button class="btn btn-primary btn-sm" onclick="saveConsultFix('${name}')">Apply to Workspace</button>`
+            : `<button class="btn btn-primary btn-sm" onclick="saveCrossrefFixes()">Apply All to Workspace</button>`
+          }
         </div>
       </div>
     </div>`;
@@ -1541,7 +1591,7 @@ function _getOrCreatePassCard(container, name, label, emoji) {
   let card = document.getElementById('cpass-' + name);
   if (!card) {
     const wrapper = document.createElement('div');
-    wrapper.innerHTML = _consultPassHtml(name, label, emoji, '', 'running', null, null);
+    wrapper.innerHTML = _consultPassHtml(name, label, emoji, '', 'running', null, null, '');
     card = wrapper.firstElementChild;
     container.appendChild(card);
   }
@@ -1551,10 +1601,9 @@ function _getOrCreatePassCard(container, name, label, emoji) {
 async function startConsult() {
   if (_consultSource) { _consultSource.close(); _consultSource = null; }
   document.getElementById('btn-consult-start').disabled = true;
-  document.getElementById('consult-status-label').textContent = 'Starting\u2026';
+  document.getElementById('consult-status-label').textContent = 'Starting...';
   document.getElementById('consult-passes-container').innerHTML = '';
 
-  // POST to start the analysis; response is an SSE stream
   const resp = await fetch('/api/consult', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1582,16 +1631,18 @@ async function restoreConsult() {
   for (const name of _PASS_ORDER) {
     const p = r.passes[name];
     if (!p) continue;
+    const fixData = (r.fixes || {})[name];
+    const fixContent = fixData ? fixData.content || '' : '';
     const wrapper = document.createElement('div');
-    wrapper.innerHTML = _consultPassHtml(name, p.label, p.emoji, p.text, p.status, p.stats, p.error);
+    wrapper.innerHTML = _consultPassHtml(name, p.label, p.emoji, p.text, p.status, p.stats, p.error, fixContent);
     container.appendChild(wrapper.firstElementChild);
   }
 
   if (r.status === 'completed') {
     label.textContent = 'Analysis complete';
+    _updateGenAllBtn();
   } else if (r.status === 'running' || r.is_alive) {
-    label.textContent = 'Analysis in progress \u2014 connecting\u2026';
-    // Connect to live stream to continue receiving events
+    label.textContent = 'Analysis in progress -- connecting...';
     const resp = await fetch('/api/consult', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1641,15 +1692,14 @@ function _handleConsultEvent(ev, container) {
 
   switch (ev.type) {
     case 'consult_start':
-      statusLbl.textContent = `Running ${ev.data.total_passes} passes\u2026`;
+      statusLbl.textContent = `Running ${ev.data.total_passes} passes...`;
       break;
 
     case 'pass_restore': {
-      // Replay full accumulated text captured at subscribe time
       const d = ev.data;
       const existing = document.getElementById('cpass-' + d.pass);
       const wrapper = document.createElement('div');
-      wrapper.innerHTML = _consultPassHtml(d.pass, d.label, d.emoji, d.text, d.status, d.stats, d.error);
+      wrapper.innerHTML = _consultPassHtml(d.pass, d.label, d.emoji, d.text, d.status, d.stats, d.error, '');
       const newCard = wrapper.firstElementChild;
       if (existing) existing.replaceWith(newCard);
       else container.appendChild(newCard);
@@ -1660,8 +1710,8 @@ function _handleConsultEvent(ev, container) {
       const d = ev.data;
       _getOrCreatePassCard(container, d.pass, d.label, d.emoji);
       const badge = document.getElementById('cbadge-' + d.pass);
-      if (badge) { badge.className = 'cbadge running'; badge.textContent = 'analyzing\u2026'; }
-      statusLbl.textContent = `Pass ${d.index}/${d.total}: ${d.label}\u2026`;
+      if (badge) { badge.className = 'cbadge running'; badge.textContent = 'analyzing...'; }
+      statusLbl.textContent = `Pass ${d.index}/${d.total}: ${d.label}...`;
       break;
     }
 
@@ -1690,9 +1740,7 @@ function _handleConsultEvent(ev, container) {
       const actions = document.getElementById('cactions-' + name);
       if (actions) {
         actions.style.display = 'flex';
-        if (['characters', 'outline', 'locations'].includes(name)) {
-          actions.innerHTML = `<button class="btn btn-sm" onclick="startFix('${name}')">⚡ Generate Fix</button>`;
-        }
+        actions.innerHTML = `<button class="btn btn-sm" onclick="startFix('${name}')">Generate Fix</button>`;
       }
       break;
     }
@@ -1716,6 +1764,7 @@ function _handleConsultEvent(ev, container) {
       statusLbl.textContent = 'Analysis complete';
       document.getElementById('btn-consult-start').disabled = false;
       _updateRetryFailedBtn();
+      _updateGenAllBtn();
       break;
 
     case 'consult_error':
@@ -1734,6 +1783,7 @@ async function clearConsult() {
     document.getElementById('consult-status-label').textContent = '';
     document.getElementById('btn-consult-start').disabled = false;
     document.getElementById('btn-consult-retry').style.display = 'none';
+    document.getElementById('btn-consult-genall').style.display = 'none';
   } else {
     toast(r?.error || 'Cannot clear while analysis is running', 'warn');
   }
@@ -1755,6 +1805,14 @@ function _updateRetryFailedBtn() {
   btn.style.display = failed.length > 0 ? '' : 'none';
 }
 
+function _updateGenAllBtn() {
+  const btn = document.getElementById('btn-consult-genall');
+  if (!btn) return;
+  // Show if at least one pass is done
+  const donePasses = document.querySelectorAll('.cbadge.done');
+  btn.style.display = donePasses.length > 0 ? '' : 'none';
+}
+
 async function retryPass(name) {
   await _startConsultWithPasses([name]);
 }
@@ -1769,9 +1827,8 @@ async function _startConsultWithPasses(passList) {
   if (_consultSource) { _consultSource.close(); _consultSource = null; }
   document.getElementById('btn-consult-start').disabled = true;
   document.getElementById('btn-consult-retry').style.display = 'none';
-  document.getElementById('consult-status-label').textContent = 'Retrying\u2026';
+  document.getElementById('consult-status-label').textContent = 'Retrying...';
 
-  // Remove the old cards for passes being retried
   for (const name of passList) {
     const card = document.getElementById('cpass-' + name);
     if (card) card.remove();
@@ -1794,15 +1851,32 @@ async function _startConsultWithPasses(passList) {
   _streamConsultResponse(resp);
 }
 
+/* ----------------------------------------------------------
+   Fix generation, diff, download, save
+   ---------------------------------------------------------- */
+
+let _fixSaveTimers = {};
+
+function _debounceSaveFix(role) {
+  clearTimeout(_fixSaveTimers[role]);
+  _fixSaveTimers[role] = setTimeout(() => {
+    const content = document.getElementById('cfix-yaml-' + role)?.value || '';
+    apiPost('/api/consult-save-fix', { role, content });
+  }, 2000);
+}
+
 function startFix(role) {
   const fixSection = document.getElementById('cfix-' + role);
   const fixYaml    = document.getElementById('cfix-yaml-' + role);
   const fixBadge   = document.getElementById('cfix-badge-' + role);
   const fixBtns    = document.getElementById('cfix-btns-' + role);
+  const diffEl     = document.getElementById('cdiff-' + role);
 
   fixSection.style.display = 'block';
   fixYaml.value = '';
-  fixBadge.textContent = 'generating\u2026';
+  fixYaml.style.display = 'block';
+  if (diffEl) diffEl.style.display = 'none';
+  fixBadge.textContent = 'generating...';
   fixBadge.style.cssText = 'color:var(--blue);';
   fixBtns.style.display = 'none';
 
@@ -1849,16 +1923,159 @@ function startFix(role) {
   });
 }
 
+async function generateAllFixes() {
+  const donePasses = [];
+  for (const name of _PASS_ORDER) {
+    const badge = document.getElementById('cbadge-' + name);
+    if (badge && badge.classList.contains('done')) donePasses.push(name);
+  }
+  if (!donePasses.length) { toast('No completed passes to generate fixes for', 'warn'); return; }
+
+  toast(`Generating fixes for ${donePasses.length} passes...`, 'ok');
+
+  for (const name of donePasses) {
+    startFix(name);
+    // Small delay so UI doesn't freeze
+    await new Promise(r => setTimeout(r, 200));
+  }
+}
+
+async function showDiff(role) {
+  const diffEl = document.getElementById('cdiff-' + role);
+  const fixYaml = document.getElementById('cfix-yaml-' + role);
+  if (!diffEl) return;
+
+  if (diffEl.style.display !== 'none') {
+    diffEl.style.display = 'none';
+    fixYaml.style.display = 'block';
+    return;
+  }
+
+  const proposed = fixYaml.value || '';
+  if (!proposed.trim()) { toast('No proposed fix to compare', 'warn'); return; }
+
+  if (role === 'crossref') {
+    // For crossref, show multi-file diff
+    const roles = ['characters', 'outline', 'locations'];
+    let html = '';
+    for (const r of roles) {
+      const origResp = await api(`/api/consult-original/${r}`);
+      const origText = origResp?.content || '(file not found)';
+      const parsed = _parseCrossrefFile(proposed, r);
+      if (!parsed) continue;
+      html += `<div style="margin-bottom:.75rem;"><strong style="color:var(--text-dim);font-size:.75rem;">${_fileLabel(r)}</strong>
+        <div class="diff-container">
+          <div class="diff-pane"><label>Original</label><pre>${escHtml(origText)}</pre></div>
+          <div class="diff-pane"><label>Proposed</label><pre>${escHtml(parsed)}</pre></div>
+        </div></div>`;
+    }
+    diffEl.innerHTML = html || '<p style="color:var(--text-dim);font-size:.8rem;">No file sections found in output.</p>';
+  } else {
+    const origResp = await api(`/api/consult-original/${role}`);
+    const origText = origResp?.content || '(file not found)';
+    diffEl.innerHTML = `
+      <div class="diff-container">
+        <div class="diff-pane"><label>Original</label><pre>${escHtml(origText)}</pre></div>
+        <div class="diff-pane"><label>Proposed</label><pre>${escHtml(proposed)}</pre></div>
+      </div>`;
+  }
+  diffEl.style.display = 'block';
+  fixYaml.style.display = 'none';
+}
+
+function _fileLabel(role) {
+  return { characters: 'characters.yaml', outline: 'story_outline.yaml', locations: 'locations.yaml' }[role] || role;
+}
+
+function _parseCrossrefFile(fullText, role) {
+  const filename = _fileLabel(role);
+  const marker = `--- FILE: ${filename} ---`;
+  const idx = fullText.indexOf(marker);
+  if (idx === -1) return null;
+  const start = idx + marker.length;
+  // Find next marker or end
+  const nextMarker = fullText.indexOf('--- FILE:', start);
+  const section = nextMarker === -1 ? fullText.slice(start) : fullText.slice(start, nextMarker);
+  return section.trim();
+}
+
+function downloadFix(role) {
+  const content = document.getElementById('cfix-yaml-' + role)?.value || '';
+  if (!content.trim()) { toast('No fix content to download', 'warn'); return; }
+
+  if (role === 'crossref') {
+    // For crossref, split into separate files and download each
+    const roles = ['characters', 'outline', 'locations'];
+    let downloaded = 0;
+    for (const r of roles) {
+      const parsed = _parseCrossrefFile(content, r);
+      if (parsed) {
+        _triggerDownload(`fixed_${_fileLabel(r)}`, parsed);
+        downloaded++;
+      }
+    }
+    if (!downloaded) {
+      // Fallback: download as single file
+      _triggerDownload('crossref_fixes.yaml', content);
+    }
+  } else {
+    _triggerDownload(`fixed_${_fileLabel(role)}`, content);
+  }
+}
+
+function _triggerDownload(filename, content) {
+  const blob = new Blob([content], { type: 'text/yaml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 async function saveConsultFix(role) {
   const content = document.getElementById('cfix-yaml-' + role).value;
   if (!content.trim()) { toast('No content to save', 'warn'); return; }
   const r = await apiPost('/api/consult-save', { role, content });
   if (r && r.ok) {
-    toast(`${role} saved to workspace (${formatBytes(r.size)})`, 'ok');
+    toast(`${_fileLabel(role)} saved to workspace (${formatBytes(r.size)})`, 'ok');
     refreshFiles();
     refreshParsed();
   } else {
     toast(r?.error || 'Save failed', 'error');
+  }
+}
+
+async function saveCrossrefFixes() {
+  const content = document.getElementById('cfix-yaml-crossref')?.value || '';
+  if (!content.trim()) { toast('No content to save', 'warn'); return; }
+
+  const roles = ['characters', 'outline', 'locations'];
+  let saved = 0;
+  let errors = [];
+  for (const role of roles) {
+    const parsed = _parseCrossrefFile(content, role);
+    if (!parsed) continue;
+    const r = await apiPost('/api/consult-save', { role, content: parsed });
+    if (r && r.ok) {
+      saved++;
+    } else {
+      errors.push(`${_fileLabel(role)}: ${r?.error || 'failed'}`);
+    }
+  }
+
+  if (saved > 0) {
+    toast(`${saved} file(s) saved to workspace`, 'ok');
+    refreshFiles();
+    refreshParsed();
+  }
+  if (errors.length) {
+    toast('Errors: ' + errors.join('; '), 'error');
+  }
+  if (saved === 0 && errors.length === 0) {
+    toast('No file sections found in crossref output', 'warn');
   }
 }
 
