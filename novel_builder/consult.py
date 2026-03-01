@@ -52,7 +52,19 @@ IMPORTANT CONTEXT — how Novel Builder uses these files:
 
 Your job: identify weaknesses that will produce mediocre AI output, and \
 recommend specific improvements. Focus on what will make the GENERATED STORY \
-better — not just what looks nice in a YAML file."""
+better -- not just what looks nice in a YAML file.
+
+CRITICAL CONTENT POLICY:
+- This tool is used by adult authors writing fiction for adult readers.
+- Stories may contain morally complex characters, villains, erotic content, \
+violence, dark themes, and mature subject matter. This is normal for fiction.
+- NEVER recommend removing, sanitizing, or toning down content based on \
+moral judgments. The author's creative choices are intentional.
+- DO NOT flag content as problematic for being dark, sexual, violent, or \
+morally ambiguous. Instead, evaluate whether it serves the story effectively.
+- If a character is meant to be evil, manipulative, or morally grey, help \
+make them MORE convincing, not less edgy.
+- Your role is story quality consultant, not content moderator."""
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +273,36 @@ Characters YAML:
 # Fix generation prompt
 # ---------------------------------------------------------------------------
 
+_FIX_SYSTEM = (
+    "You are a YAML editor for Novel Builder. Your job is to produce a "
+    "corrected version of a YAML file based on editorial analysis.\n\n"
+    "RULES:\n"
+    "- Output ONLY valid YAML -- no explanatory text before or after.\n"
+    "- Preserve all existing structure, keys, and IDs.\n"
+    "- Improve or add fields based on the analysis recommendations.\n"
+    "- Do NOT remove any existing content unless the analysis explicitly "
+    "says to remove it.\n"
+    "- Do NOT sanitize, censor, or tone down any content. This tool is "
+    "used by adult authors writing fiction for adult readers. Dark themes, "
+    "morally complex characters, erotic material, and violence are valid "
+    "creative choices. Preserve and enhance them.\n"
+    "- Do NOT change character names, IDs, chapter numbers, or scene "
+    "numbers -- these are structural anchors.\n"
+    "- Use proper YAML formatting: consistent indentation (2 spaces), "
+    "quoted strings with special characters, folded blocks (>) for "
+    "multi-line text.\n"
+    "- For multi-line text fields (events, atmosphere, summary), use "
+    "YAML folded scalar (>) format.\n"
+    "- Your output will be used as-is to replace the original file.\n"
+)
+
+_FIX_LABELS = {
+    "characters": "characters.yaml",
+    "outline": "story_outline.yaml",
+    "locations": "locations.yaml",
+}
+
+
 def build_fix_prompt(role, original_yaml, analysis_text):
     """Build a prompt to produce a corrected YAML file.
 
@@ -272,41 +314,71 @@ def build_fix_prompt(role, original_yaml, analysis_text):
     Returns:
         Tuple of (system_prompt, user_prompt).
     """
-    system = (
-        "You are a YAML editor for Novel Builder. Your job is to produce a "
-        "corrected version of a YAML file based on editorial analysis.\n\n"
-        "RULES:\n"
-        "- Output ONLY valid YAML — no explanatory text before or after.\n"
-        "- Preserve all existing structure, keys, and IDs.\n"
-        "- Improve or add fields based on the analysis recommendations.\n"
-        "- Do NOT remove any existing content unless the analysis explicitly "
-        "says to remove it.\n"
-        "- Do NOT change character names, IDs, chapter numbers, or scene "
-        "numbers — these are structural anchors.\n"
-        "- Use proper YAML formatting: consistent indentation (2 spaces), "
-        "quoted strings with special characters, folded blocks (>) for "
-        "multi-line text.\n"
-        "- For multi-line text fields (events, atmosphere, summary), use "
-        "YAML folded scalar (>) format.\n"
-        "- Your output will be used as-is to replace the original file.\n"
-    )
-
-    labels = {
-        "characters": "characters.yaml",
-        "outline": "story_outline.yaml",
-        "locations": "locations.yaml",
-    }
-
     user = (
         f"Based on the editorial analysis below, produce a corrected version "
-        f"of this {labels.get(role, role)} file.\n\n"
+        f"of this {_FIX_LABELS.get(role, role)} file.\n\n"
         f"Apply all recommendations from the analysis that improve story "
-        f"output quality. Be thorough but conservative — enhance, don't "
+        f"output quality. Be thorough but conservative -- enhance, don't "
         f"restructure.\n\n"
         f"## Editorial Analysis\n\n{analysis_text}\n\n"
         f"## Original YAML\n\n```yaml\n{original_yaml}\n```\n\n"
         f"Now output the complete corrected YAML file (no markdown fences, "
-        f"no explanatory text — YAML only):"
+        f"no explanatory text -- YAML only):"
+    )
+
+    return _FIX_SYSTEM, user
+
+
+def build_crossref_fix_prompt(files, analysis_text):
+    """Build a prompt to produce corrected YAML files from cross-ref analysis.
+
+    The cross-reference pass analyzes all files together, so the fix must
+    output all files in a single response separated by file markers.
+
+    Args:
+        files: Dict with keys "outline", "characters", "locations" mapping
+               to their YAML content strings (or None).
+        analysis_text: The cross-reference analysis text.
+
+    Returns:
+        Tuple of (system_prompt, user_prompt).
+    """
+    system = (
+        _FIX_SYSTEM +
+        "\nSPECIAL OUTPUT FORMAT for multi-file fix:\n"
+        "Output each corrected file separated by a file marker line.\n"
+        "The marker format is: --- FILE: filename.yaml ---\n"
+        "Example:\n"
+        "--- FILE: characters.yaml ---\n"
+        "(corrected characters YAML)\n"
+        "--- FILE: story_outline.yaml ---\n"
+        "(corrected outline YAML)\n"
+        "--- FILE: locations.yaml ---\n"
+        "(corrected locations YAML)\n\n"
+        "Include ALL files that need changes. If a file needs no changes, "
+        "you may omit it.\n"
+    )
+
+    yaml_sections = []
+    for role in ("characters", "outline", "locations"):
+        content = files.get(role)
+        if content:
+            label = _FIX_LABELS.get(role, role)
+            yaml_sections.append(
+                f"### {label}\n```yaml\n{content}\n```"
+            )
+
+    user = (
+        f"Based on the cross-reference analysis below, produce corrected "
+        f"versions of the YAML files. Fix character-scene alignment issues, "
+        f"continuity risks, timing problems, and missing references.\n\n"
+        f"Be thorough but conservative -- enhance, don't restructure.\n\n"
+        f"## Cross-Reference Analysis\n\n{analysis_text}\n\n"
+        f"## Original YAML Files\n\n"
+        + "\n\n".join(yaml_sections)
+        + "\n\nNow output the corrected YAML files using the "
+        f"--- FILE: filename.yaml --- marker format (no markdown fences, "
+        f"no explanatory text -- YAML only):"
     )
 
     return system, user

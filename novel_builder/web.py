@@ -235,6 +235,7 @@ class ConsultState:
         self._lock = threading.Lock()
         self.status = "idle"   # idle | running | completed | error
         self.passes = {}       # pass_name -> {label, emoji, text, status, stats, error}
+        self.fixes = {}        # role -> {status, content} -- generated fix YAML
         self.error = None
         self._thread = None
         self._event_queues = []
@@ -316,11 +317,23 @@ class ConsultState:
             if q in self._event_queues:
                 self._event_queues.remove(q)
 
+    def set_fix(self, role, content, status="done"):
+        """Store a generated fix for a role."""
+        with self._lock:
+            self.fixes[role] = {"status": status, "content": content}
+            self._persist()
+
+    def get_fix(self, role):
+        """Retrieve stored fix content for a role."""
+        with self._lock:
+            return self.fixes.get(role, {}).get("content", "")
+
     def snapshot(self):
         with self._lock:
             return {
                 "status": self.status,
                 "passes": {k: dict(v) for k, v in self.passes.items()},
+                "fixes": {k: dict(v) for k, v in self.fixes.items()},
                 "error": self.error,
                 "is_alive": self._thread is not None and self._thread.is_alive(),
             }
@@ -329,6 +342,7 @@ class ConsultState:
         with self._lock:
             self.status = "idle"
             self.passes = {}
+            self.fixes = {}
             self.error = None
         self._delete_cache()
 
@@ -339,6 +353,7 @@ class ConsultState:
             data = {
                 "status": self.status,
                 "passes": {k: dict(v) for k, v in self.passes.items()},
+                "fixes": {k: dict(v) for k, v in self.fixes.items()},
                 "error": self.error,
             }
             with open(path, "w", encoding="utf-8") as f:
@@ -356,6 +371,7 @@ class ConsultState:
                 data = json.load(f)
             self.status = data.get("status", "idle")
             self.passes = data.get("passes", {})
+            self.fixes = data.get("fixes", {})
             self.error = data.get("error")
         except (json.JSONDecodeError, OSError):
             pass
@@ -1271,11 +1287,14 @@ def api_consult_apply():
 
     Streams the proposed fixed YAML from the LLM.  The client can review
     the result in an editable textarea before saving.
+
+    Supports all roles including ``crossref``, which produces multi-file
+    output separated by ``--- FILE: filename.yaml ---`` markers.
     """
     data = request.get_json(force=True)
     role = data.get("role", "")
 
-    if role not in ("outline", "characters", "locations"):
+    if role not in ("outline", "characters", "locations", "crossref"):
         return jsonify({"ok": False, "error": f"Unknown role: {role}"}), 400
 
     snap = consult_state.snapshot()
@@ -1285,23 +1304,26 @@ def api_consult_apply():
 
     analysis_text = pass_data["text"]
 
-    yaml_path = os.path.join(WORKSPACE_DIR, FILE_ROLES[role])
-    if not os.path.exists(yaml_path):
+    # Load YAML files from workspace
+    files = {}
+    roles_needed = [role] if role != "crossref" else ["outline", "characters", "locations"]
+    for r in roles_needed:
+        yaml_path = os.path.join(WORKSPACE_DIR, FILE_ROLES.get(r, ""))
+        if os.path.exists(yaml_path):
+            try:
+                with open(yaml_path, "r", encoding="utf-8") as f:
+                    files[r] = f.read()
+            except OSError:
+                pass
+
+    if role != "crossref" and role not in files:
         return jsonify({"ok": False, "error": "YAML file not found in workspace"}), 404
 
-    try:
-        with open(yaml_path, "r", encoding="utf-8") as f:
-            original_yaml = f.read()
-    except OSError as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
     def stream():
-        from .consult import build_fix_prompt
+        from .consult import build_fix_prompt, build_crossref_fix_prompt
         cfg = _load_web_config()
         host = _normalize_host(cfg.get("host", ""))
         model = cfg.get("model", "gemma3:12b")
-        # Same floor as analysis passes.
-        timeout = max(int(cfg.get("timeout", 900)), 1800)
         consult_ctx = int(cfg.get("consult_num_ctx", 32768))
         retries = int(cfg.get("retries", 3))
 
@@ -1309,7 +1331,10 @@ def api_consult_apply():
             yield f"data: {json.dumps({'type': 'fix_error', 'message': 'No Ollama host configured'})}\n\n"
             return
 
-        system_prompt, user_prompt = build_fix_prompt(role, original_yaml, analysis_text)
+        if role == "crossref":
+            system_prompt, user_prompt = build_crossref_fix_prompt(files, analysis_text)
+        else:
+            system_prompt, user_prompt = build_fix_prompt(role, files[role], analysis_text)
 
         url = f"{host}/api/generate"
         payload = {
@@ -1323,6 +1348,7 @@ def api_consult_apply():
             },
         }
 
+        accumulated = ""
         backoff = [60, 180, 300, 600, 900]
         for attempt in range(1, retries + 1):
             try:
@@ -1338,12 +1364,15 @@ def api_consult_apply():
                         continue
                     token = chunk.get("response", "")
                     if token:
+                        accumulated += token
                         yield f"data: {json.dumps({'type': 'fix_chunk', 'chunk': token})}\n\n"
                     if chunk.get("done"):
+                        consult_state.set_fix(role, accumulated)
                         yield f"data: {json.dumps({'type': 'fix_done'})}\n\n"
                         return
 
                 # Stream ended without done -- treat as success
+                consult_state.set_fix(role, accumulated)
                 yield f"data: {json.dumps({'type': 'fix_done'})}\n\n"
                 return
 
@@ -1352,7 +1381,9 @@ def api_consult_apply():
             except Exception as e:
                 if attempt < retries:
                     delay = backoff[min(attempt - 1, len(backoff) - 1)]
-                    yield f"data: {json.dumps({'type': 'fix_chunk', 'chunk': f'[Retry {attempt}/{retries}] {e} -- retrying in {delay}s...'})}\n\n"
+                    note = f"[Retry {attempt}/{retries}] {e} -- retrying in {delay}s..."
+                    accumulated += note
+                    yield f"data: {json.dumps({'type': 'fix_chunk', 'chunk': note})}\n\n"
                     time.sleep(delay)
                 else:
                     yield f"data: {json.dumps({'type': 'fix_error', 'message': str(e)})}\n\n"
@@ -1402,6 +1433,59 @@ def api_consult_save():
         "filename": FILE_ROLES[role],
         "size": len(content.encode("utf-8")),
     })
+
+
+@app.route("/api/consult-save-fix", methods=["POST"])
+def api_consult_save_fix():
+    """Persist the user-edited fix content back to consult cache.
+
+    This is called when the user edits the proposed fix textarea so
+    the edits survive page refreshes.
+    """
+    data = request.get_json(force=True)
+    role = data.get("role", "")
+    content = data.get("content", "")
+
+    if role not in ("outline", "characters", "locations", "crossref"):
+        return jsonify({"ok": False, "error": f"Unknown role: {role}"}), 400
+
+    consult_state.set_fix(role, content)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/consult-download-fix/<role>")
+def api_consult_download_fix(role):
+    """Download the proposed fix YAML as a file."""
+    content = consult_state.get_fix(role)
+    if not content:
+        return jsonify({"ok": False, "error": "No fix available"}), 404
+
+    filename = FILE_ROLES.get(role, f"{role}_fix.yaml")
+    return Response(
+        content,
+        mimetype="text/yaml",
+        headers={
+            "Content-Disposition": f"attachment; filename=\"fixed_{filename}\"",
+        },
+    )
+
+
+@app.route("/api/consult-original/<role>")
+def api_consult_original(role):
+    """Return the original YAML content for diff comparison."""
+    if role not in FILE_ROLES:
+        return jsonify({"ok": False, "error": f"Unknown role: {role}"}), 400
+
+    yaml_path = os.path.join(WORKSPACE_DIR, FILE_ROLES[role])
+    if not os.path.exists(yaml_path):
+        return jsonify({"ok": False, "error": "File not found"}), 404
+
+    try:
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return jsonify({"ok": True, "content": content, "filename": FILE_ROLES[role]})
+    except OSError as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 # ---------------------------------------------------------------------------
