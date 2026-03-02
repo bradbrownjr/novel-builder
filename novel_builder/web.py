@@ -1043,6 +1043,16 @@ def _migrate_preset_value(val):
     return {}
 
 
+def _strip_code_fences(text):
+    """Remove markdown code fences (```yaml / ```) wrapping LLM output."""
+    import re
+    stripped = text.strip()
+    # Match optional language tag: ```yaml or just ```
+    stripped = re.sub(r'^```[a-zA-Z]*\s*\n', '', stripped)
+    stripped = re.sub(r'\n```\s*$', '', stripped)
+    return stripped.strip()
+
+
 def _load_style_presets():
     """Load style_presets.yaml from workspace. Seeds built-in presets on first run."""
     path = os.path.join(WORKSPACE_DIR, STYLE_PRESETS_FILE)
@@ -2010,6 +2020,9 @@ def api_consult_save():
         return jsonify({"ok": False, "error": "Content is empty"}), 400
     if len(content) > 5 * 1024 * 1024:
         return jsonify({"ok": False, "error": "Content too large (>5MB)"}), 400
+
+    # Strip markdown code fences the LLM may have wrapped the YAML in
+    content = _strip_code_fences(content)
 
     # Validate YAML syntax before saving
     try:
