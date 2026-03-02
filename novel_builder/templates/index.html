@@ -553,6 +553,7 @@ textarea {
 <!-- ==================== TABS ==================== -->
 <div class="tabs">
   <button class="tab-btn active" data-tab="setup">Setup</button>
+  <button class="tab-btn" data-tab="plan">Plan</button>
   <button class="tab-btn" data-tab="consult">Consult</button>
   <button class="tab-btn" data-tab="logs">Logs</button>
   <button class="tab-btn" data-tab="memory">Memory</button>
@@ -599,6 +600,30 @@ textarea {
     </div>
     <button class="btn btn-sm" onclick="saveConfig()">Save Config</button>
   </div>
+
+  <div class="card" id="card-style">
+    <h3>🎨 Custom Style Prompt <span style="font-size:.7rem;color:var(--text-dim)">(optional)</span></h3>
+    <div class="drop-zone" id="drop-style">
+      <input type="file" accept=".txt,.yaml,.yml" onchange="handleFile(this,'style')">
+      <div class="icon">✍</div>
+      Upload, drag & drop, or <a href="#" onclick="showEditor('style');event.stopPropagation();return false;">paste/type</a> style directives
+    </div>
+    <div class="file-status empty" id="fstat-style">No file loaded</div>
+    <div class="file-actions" id="factions-style" style="display:none;">
+      <button class="btn btn-sm" onclick="downloadFile('style')">⬇ Export</button>
+      <button class="btn btn-sm" onclick="editFile('style')">✏ Edit</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteFile('style')">✕</button>
+    </div>
+  </div>
+
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
+    <button class="btn" onclick="switchTab('plan')">Next: Plan ›</button>
+  </div>
+
+</div>
+
+<!-- ==================== PLAN TAB ==================== -->
+<div class="tab-panel" id="panel-plan">
 
   <!-- File upload cards — one per role -->
   <div class="card" id="card-outline">
@@ -652,21 +677,6 @@ textarea {
     <div class="validation-results" id="vresults-locations"></div>
   </div>
 
-  <div class="card" id="card-style">
-    <h3>🎨 Custom Style Prompt <span style="font-size:.7rem;color:var(--text-dim)">(optional)</span></h3>
-    <div class="drop-zone" id="drop-style">
-      <input type="file" accept=".txt,.yaml,.yml" onchange="handleFile(this,'style')">
-      <div class="icon">✍</div>
-      Upload, drag & drop, or <a href="#" onclick="showEditor('style');event.stopPropagation();return false;">paste/type</a> style directives
-    </div>
-    <div class="file-status empty" id="fstat-style">No file loaded</div>
-    <div class="file-actions" id="factions-style" style="display:none;">
-      <button class="btn btn-sm" onclick="downloadFile('style')">⬇ Export</button>
-      <button class="btn btn-sm" onclick="editFile('style')">✏ Edit</button>
-      <button class="btn btn-sm btn-danger" onclick="deleteFile('style')">✕</button>
-    </div>
-  </div>
-
   <!-- Loaded data overview -->
   <div class="card" id="card-loaded" style="display:none;">
     <h3>📊 Loaded Data Overview</h3>
@@ -680,6 +690,7 @@ textarea {
     <button class="btn" id="btn-resume" onclick="startGeneration(true)" style="display:none;">⏩ Resume</button>
     <button class="btn btn-danger" id="btn-stop" onclick="stopGeneration()" style="display:none;">⏹ Stop</button>
     <button class="btn" onclick="refreshParsed()">🔄 Refresh Preview</button>
+    <button class="btn" onclick="switchTab('setup')">‹ Back: Setup</button>
     <button class="btn" onclick="switchTab('consult')">Next: Consult ›</button>
   </div>
 
@@ -694,7 +705,7 @@ textarea {
       — safe to refresh or open on another device.
     </p>
     <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
-      <button class="btn" onclick="switchTab('setup')">‹ Back: Setup</button>
+      <button class="btn" onclick="switchTab('plan')">‹ Back: Plan</button>
       <button class="btn btn-primary" id="btn-consult-start" onclick="startConsult()">&#9654; Start Analysis</button>
       <button class="btn" id="btn-consult-genall" onclick="generateAllFixes()" style="display:none;">Generate All Fixes</button>
       <button class="btn" id="btn-consult-retry" onclick="retryFailed()" style="display:none;">Retry Failed</button>
@@ -2205,7 +2216,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
    Swipe left/right to navigate tabs on mobile
    ========================================================== */
 (function () {
-  const TAB_ORDER = ['setup', 'consult', 'logs', 'memory', 'output'];
+  const TAB_ORDER = ['setup', 'plan', 'consult', 'logs', 'memory', 'output'];
   const SWIPE_THRESHOLD = 50;   // minimum horizontal px to count as a swipe
   const ANGLE_THRESHOLD = 0.6;  // max abs(dy/dx) ratio -- rejects near-vertical drags
 

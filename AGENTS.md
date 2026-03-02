@@ -240,7 +240,7 @@ The Consult tab provides an AI-powered audit of uploaded YAML story files using 
 - Pass progress indicator in header status bar ("Pass 2/4 — analyzing outline…")
 - All audit events (start, per-pass start/complete/error, finish) emitted to Logs tab via `state.emit("log")` and `addLogEntry()`
 
-**Tab order (wizard flow):** Story → Consult → Settings → Logs → Memory → Output
+**Tab order (wizard flow):** Setup → Plan → Consult → Logs → Memory → Output
 
 ## Regeneration Workflow
 
