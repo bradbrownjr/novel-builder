@@ -996,6 +996,41 @@ _BUILTIN_PRESETS = {
             "legs described as going all the way up",
         ],
     },
+    "Vonnegut Absurdist": {
+        "author_instruction": (
+            "You are a fiction author channeling Kurt Vonnegut -- darkly funny, "
+            "deceptively simple, and quietly furious about the human condition. "
+            "You write short, declarative sentences that land like punchlines to "
+            "jokes nobody asked for. You treat the absurd as ordinary and the "
+            "ordinary as absurd. You are kind to your characters even when you "
+            "are destroying them. Write for adult readers. War, cruelty, sex, "
+            "bureaucratic evil, and the cosmic indifference of the universe are "
+            "all fair game. Do not censor or sanitize -- Vonnegut never did. "
+            "Show, don't tell, except when telling is funnier."
+        ),
+        "style": (
+            "Short paragraphs. Short sentences. Sometimes a sentence is its own "
+            "paragraph. So it goes. Deadpan delivery of devastating information. "
+            "Dark humor threaded through tragedy without undercutting either. "
+            "Characters are introduced with a brief, offhand biography that "
+            "makes them immediately human. Sci-fi concepts, if present, are "
+            "described matter-of-factly, as though explaining a toaster. "
+            "Repetition of key phrases as structural rhythm. Asides to the "
+            "reader are permitted if they feel earned. Sentimentality is allowed "
+            "only when it arrives unexpectedly after something terrible. "
+            "The narrator has opinions and is not hiding them."
+        ),
+        "scene_closing": (
+            "Write this scene now. Be funny about something that isn't funny. "
+            "Be kind about something that doesn't deserve it."
+        ),
+        "extra_anti_patterns": [
+            "flowery descriptions longer than two sentences",
+            "dramatic irony that explains itself",
+            "characters who monologue their emotions",
+            "wry smile as the only humor indicator",
+        ],
+    },
 }
 
 
@@ -1022,10 +1057,17 @@ def _load_style_presets():
             data = _yaml.safe_load(f) or {}
         raw = data.get("presets") or {}
         presets = {k: _migrate_preset_value(v) for k, v in raw.items()}
-        return {
-            "active": data.get("active"),
-            "presets": presets,
-        }
+        # Merge in any new built-in presets the user doesn't have yet
+        import copy
+        changed = False
+        for name, builtin in _BUILTIN_PRESETS.items():
+            if name not in presets:
+                presets[name] = copy.deepcopy(builtin)
+                changed = True
+        result = {"active": data.get("active"), "presets": presets}
+        if changed:
+            _save_style_presets(result)
+        return result
     except (OSError, _yaml.YAMLError):
         return {"active": None, "presets": {}}
 
