@@ -1751,7 +1751,7 @@ async function restoreConsult() {
     const p = r.passes[name];
     if (!p) continue;
     const fixData = (r.fixes || {})[name];
-    const fixContent = fixData ? fixData.content || '' : '';
+    const fixContent = fixData ? _stripCodeFences(fixData.content || '') : '';
     const fixStatus = fixData ? fixData.status || '' : '';
     if (fixStatus === 'generating' || fixStatus === 'queued') anyFixActive = true;
     const wrapper = document.createElement('div');
@@ -2107,7 +2107,7 @@ async function _pollFixProgress() {
     if (fixYaml && fix.content) {
       const lastLen = _fixPollLastContent[role] || 0;
       if (fix.content.length > lastLen) {
-        fixYaml.value = fix.content;
+        fixYaml.value = _stripCodeFences(fix.content);
         fixYaml.scrollTop = fixYaml.scrollHeight;
         _fixPollLastContent[role] = fix.content.length;
       }
@@ -2164,6 +2164,13 @@ async function showDiff(role) {
   }
   diffEl.style.display = 'block';
   fixYaml.style.display = 'none';
+}
+
+function _stripCodeFences(text) {
+  let s = text.trim();
+  s = s.replace(/^```[a-zA-Z]*\s*\n/, '');
+  s = s.replace(/\n```\s*$/, '');
+  return s.trim();
 }
 
 function _fileLabel(role) {
