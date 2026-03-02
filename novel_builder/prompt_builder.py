@@ -76,6 +76,22 @@ def _merge_anti_patterns(user_patterns):
 
 
 # ---------------------------------------------------------------------------
+# Default prompt text exposed for UI display and override
+# ---------------------------------------------------------------------------
+
+DEFAULT_SYSTEM_OPENING = (
+    "You are an expert fiction author writing a novel for adult readers. "
+    "Write vivid, immersive prose with natural dialogue. "
+    "Show, don't tell. Maintain consistent characterization. "
+    "This is adult fiction -- do not censor, sanitize, or shy away from "
+    "mature themes, dark content, morally complex situations, violence, "
+    "or erotic material when the story calls for it. Write authentically "
+    "without content filtering."
+)
+
+DEFAULT_SCENE_CLOSING = "Write this scene now."
+
+# ---------------------------------------------------------------------------
 # System prompt
 # ---------------------------------------------------------------------------
 
@@ -95,15 +111,9 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
     Returns:
         System prompt string.
     """
-    parts = [
-        "You are an expert fiction author writing a novel for adult readers. "
-        "Write vivid, immersive prose with natural dialogue. "
-        "Show, don't tell. Maintain consistent characterization. "
-        "This is adult fiction -- do not censor, sanitize, or shy away from "
-        "mature themes, dark content, morally complex situations, violence, "
-        "or erotic material when the story calls for it. Write authentically "
-        "without content filtering."
-    ]
+    overrides = config.get("_prompt_overrides", {}) or {}
+    opening = overrides.get("system_opening") or DEFAULT_SYSTEM_OPENING
+    parts = [opening]
 
     # World context (era, tech level, genre rules)
     world = config.get("world", "")
@@ -172,7 +182,12 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
             )
 
     # Anti-pattern suppression — always includes built-in defaults
-    user_patterns = config.get("anti_patterns", [])
+    overrides = config.get("_prompt_overrides", {}) or {}
+    user_patterns = list(config.get("anti_patterns", []) or [])
+    extra_raw = overrides.get("extra_anti_patterns") or []
+    if isinstance(extra_raw, str):
+        extra_raw = [p.strip() for p in extra_raw.replace(",", "\n").split("\n") if p.strip()]
+    user_patterns.extend(extra_raw)
     merged = _merge_anti_patterns(user_patterns if user_patterns else None)
     patterns_str = "; ".join(merged[:20])  # Cap list size for token budget
     parts.append(
@@ -313,7 +328,9 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
                 story_so_far = story_so_far[first_period + 2:]
         parts.append(f"\nStory so far: {story_so_far}")
 
-    parts.append("\nWrite this scene now.")
+    overrides = config.get("_prompt_overrides", {}) or {}
+    scene_closing = overrides.get("scene_closing") or DEFAULT_SCENE_CLOSING
+    parts.append(f"\n{scene_closing}")
 
     return "\n".join(parts)
 

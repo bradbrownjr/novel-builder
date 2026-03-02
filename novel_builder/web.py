@@ -60,6 +60,8 @@ WORKSPACE_DIR = os.path.join(os.getcwd(), "workspace")
 ALLOWED_EXTENSIONS = {".yaml", ".yml", ".txt", ".md"}
 CONFIG_FILE = "web_config.json"
 CONSULT_CACHE_FILE = "consult_cache.json"
+STYLE_PRESETS_FILE = "style_presets.yaml"
+PROMPT_OVERRIDES_FILE = "prompt_overrides.yaml"
 
 # Known YAML file roles and their standard names
 FILE_ROLES = {
@@ -593,6 +595,17 @@ def _start_generation(web_config):
         else:
             config["style_directives"] = custom_style
 
+    # Load prompt overrides if present
+    overrides_path = os.path.join(WORKSPACE_DIR, PROMPT_OVERRIDES_FILE)
+    if os.path.exists(overrides_path):
+        try:
+            with open(overrides_path, "r", encoding="utf-8") as f:
+                prompt_overrides = _yaml.safe_load(f) or {}
+            if prompt_overrides:
+                config["_prompt_overrides"] = prompt_overrides
+        except (OSError, _yaml.YAMLError):
+            pass
+
     # Reset state and start
     state.reset()
     state.start_time = time.time()
@@ -757,6 +770,131 @@ def api_download_file(role):
         as_attachment=True,
         download_name=FILE_ROLES[role],
     )
+
+
+# ---------------------------------------------------------------------------
+# Style presets
+# ---------------------------------------------------------------------------
+
+def _load_style_presets():
+    """Load style_presets.yaml from workspace. Returns dict with active+presets."""
+    path = os.path.join(WORKSPACE_DIR, STYLE_PRESETS_FILE)
+    if not os.path.exists(path):
+        return {"active": None, "presets": {}}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = _yaml.safe_load(f) or {}
+        return {
+            "active": data.get("active"),
+            "presets": data.get("presets") or {},
+        }
+    except (OSError, _yaml.YAMLError):
+        return {"active": None, "presets": {}}
+
+
+def _save_style_presets(data):
+    """Save style_presets.yaml to workspace."""
+    _ensure_workspace()
+    path = os.path.join(WORKSPACE_DIR, STYLE_PRESETS_FILE)
+    with open(path, "w", encoding="utf-8") as f:
+        _yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+
+
+@app.route("/api/style-presets", methods=["GET"])
+def api_style_presets_get():
+    """Return all style presets and the active preset name."""
+    data = _load_style_presets()
+    return jsonify({"ok": True, "active": data["active"], "presets": data["presets"]})
+
+
+@app.route("/api/style-presets", methods=["POST"])
+def api_style_presets_post():
+    """Create or update a style preset. If activate=True, also deploys it."""
+    body = request.get_json(force=True)
+    name = (body.get("name") or "").strip()
+    text = body.get("text", "")
+    activate = bool(body.get("activate", False))
+    if not name:
+        return jsonify({"ok": False, "error": "Name required"}), 400
+    data = _load_style_presets()
+    data["presets"][name] = text
+    if activate:
+        data["active"] = name
+        _ensure_workspace()
+        dest = os.path.join(WORKSPACE_DIR, FILE_ROLES["style"])
+        with open(dest, "w", encoding="utf-8") as f:
+            f.write(text)
+    _save_style_presets(data)
+    return jsonify({"ok": True, "name": name, "active": data["active"]})
+
+
+@app.route("/api/style-presets/<name>", methods=["DELETE"])
+def api_style_presets_delete(name):
+    """Delete a named style preset. Clears custom_style.txt if it was active."""
+    data = _load_style_presets()
+    if name not in data.get("presets", {}):
+        return jsonify({"ok": False, "error": "Preset not found"}), 404
+    del data["presets"][name]
+    if data.get("active") == name:
+        data["active"] = None
+        dest = os.path.join(WORKSPACE_DIR, FILE_ROLES["style"])
+        if os.path.exists(dest):
+            os.remove(dest)
+    _save_style_presets(data)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/style-presets/<name>/activate", methods=["POST"])
+def api_style_presets_activate(name):
+    """Activate a preset: write its text to custom_style.txt."""
+    data = _load_style_presets()
+    if name not in data.get("presets", {}):
+        return jsonify({"ok": False, "error": "Preset not found"}), 404
+    text = data["presets"][name]
+    data["active"] = name
+    _ensure_workspace()
+    dest = os.path.join(WORKSPACE_DIR, FILE_ROLES["style"])
+    with open(dest, "w", encoding="utf-8") as f:
+        f.write(text)
+    _save_style_presets(data)
+    return jsonify({"ok": True, "active": name})
+
+
+# ---------------------------------------------------------------------------
+# Prompt overrides
+# ---------------------------------------------------------------------------
+
+@app.route("/api/prompt-overrides", methods=["GET"])
+def api_prompt_overrides_get():
+    """Return current prompt overrides from workspace."""
+    path = os.path.join(WORKSPACE_DIR, PROMPT_OVERRIDES_FILE)
+    if not os.path.exists(path):
+        return jsonify({"ok": True, "overrides": {}})
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            overrides = _yaml.safe_load(f) or {}
+        return jsonify({"ok": True, "overrides": overrides})
+    except (OSError, _yaml.YAMLError) as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/prompt-overrides", methods=["POST"])
+def api_prompt_overrides_post():
+    """Save prompt overrides to workspace. Empty overrides removes the file."""
+    body = request.get_json(force=True)
+    overrides = body.get("overrides", {}) or {}
+    _ensure_workspace()
+    path = os.path.join(WORKSPACE_DIR, PROMPT_OVERRIDES_FILE)
+    # Only non-empty values count
+    non_empty = {k: v for k, v in overrides.items()
+                 if v and (not isinstance(v, list) or v)}
+    if non_empty:
+        with open(path, "w", encoding="utf-8") as f:
+            _yaml.dump(non_empty, f, allow_unicode=True, default_flow_style=False)
+    else:
+        if os.path.exists(path):
+            os.remove(path)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/new-story", methods=["POST"])

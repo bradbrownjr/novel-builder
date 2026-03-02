@@ -242,6 +242,27 @@ The Consult tab provides an AI-powered audit of uploaded YAML story files using 
 
 **Tab order (wizard flow):** Setup → Plan → Consult → Logs → Memory → Output
 
+## Style Presets
+
+Named, reusable style prompt profiles stored in `style_presets.yaml` in the workspace.
+
+- `GET/POST /api/style-presets` -- list presets or create/update one
+- `DELETE /api/style-presets/<name>` -- delete a preset
+- `POST /api/style-presets/<name>/activate` -- copy preset text to `custom_style.txt` (the live source for generation)
+- Activating a preset is the same as the old Upload flow -- generation reads `custom_style.txt` unchanged
+- UI: Style Presets card on Setup tab
+
+## Prompt Overrides
+
+Named overrides for specific sections of the built-in generation prompts stored in `prompt_overrides.yaml` in the workspace.
+
+- `GET/POST /api/prompt-overrides` -- read or save overrides
+- Override keys: `system_opening` (replaces the author instruction), `scene_closing` (replaces "Write this scene now."), `extra_anti_patterns` (list of phrases appended to built-in anti-patterns)
+- Empty value for any key = use built-in default (the key is omitted from the saved file)
+- `prompt_builder.py` reads overrides from `config["_prompt_overrides"]` (injected at generation time by `web.py`)
+- `DEFAULT_SYSTEM_OPENING` and `DEFAULT_SCENE_CLOSING` are exported constants from `prompt_builder.py`
+- UI: Prompt Overrides card on Setup tab
+
 ## Regeneration Workflow
 
 1. User clicks 🔄 Regen on a scene or chapter in the Output tab.
