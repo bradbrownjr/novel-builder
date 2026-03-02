@@ -242,26 +242,29 @@ The Consult tab provides an AI-powered audit of uploaded YAML story files using 
 
 **Tab order (wizard flow):** Setup → Plan → Consult → Logs → Memory → Output
 
-## Style Presets
+## Prompt Presets
 
-Named, reusable style prompt profiles stored in `style_presets.yaml` in the workspace.
+Named, reusable prompt configurations stored in `style_presets.yaml` in the workspace. Each preset carries four fields that together define the AI's writing behavior:
 
-- `GET/POST /api/style-presets` -- list presets or create/update one
+- **`author_instruction`** -- replaces the system prompt opening (model identity/role). Pre-populated with `DEFAULT_SYSTEM_OPENING` for new presets.
+- **`style`** -- prose style directives appended to outline's `style_directives`. Deployed to `custom_style.txt`.
+- **`scene_closing`** -- replaces "Write this scene now." at the end of each scene prompt. Pre-populated with `DEFAULT_SCENE_CLOSING` for new presets.
+- **`extra_anti_patterns`** -- list of phrases appended to built-in anti-pattern suppression list.
+
+**API:**
+- `GET /api/style-presets` -- returns presets, active preset name, and built-in defaults
+- `POST /api/style-presets` -- create/update a preset (fields: name, author_instruction, style, scene_closing, extra_anti_patterns, activate)
 - `DELETE /api/style-presets/<name>` -- delete a preset
-- `POST /api/style-presets/<name>/activate` -- copy preset text to `custom_style.txt` (the live source for generation)
-- Activating a preset is the same as the old Upload flow -- generation reads `custom_style.txt` unchanged
-- UI: Style Presets card on Setup tab
+- `POST /api/style-presets/<name>/activate` -- deploy a preset
+- `POST /api/style-presets/deactivate` -- clear active preset, revert to built-in defaults
 
-## Prompt Overrides
+**Deploy behavior:** Activating a preset writes `style` to `custom_style.txt` and `author_instruction`/`scene_closing`/`extra_anti_patterns` to `prompt_overrides.yaml`. Deactivating clears both files.
 
-Named overrides for specific sections of the built-in generation prompts stored in `prompt_overrides.yaml` in the workspace.
+**Backward compat:** Old string-only preset values (pre-merge format) are auto-migrated to `{style: "..."}`.
 
-- `GET/POST /api/prompt-overrides` -- read or save overrides
-- Override keys: `system_opening` (replaces the author instruction), `scene_closing` (replaces "Write this scene now."), `extra_anti_patterns` (list of phrases appended to built-in anti-patterns)
-- Empty value for any key = use built-in default (the key is omitted from the saved file)
-- `prompt_builder.py` reads overrides from `config["_prompt_overrides"]` (injected at generation time by `web.py`)
-- `DEFAULT_SYSTEM_OPENING` and `DEFAULT_SCENE_CLOSING` are exported constants from `prompt_builder.py`
-- UI: Prompt Overrides card on Setup tab
+**Generation pipeline:** `prompt_builder.py` reads overrides from `config["_prompt_overrides"]` (injected by `web.py` from `prompt_overrides.yaml`). `DEFAULT_SYSTEM_OPENING` and `DEFAULT_SCENE_CLOSING` are exported constants.
+
+- UI: Prompt Presets card on Setup tab (merged Style Presets + Prompt Overrides)
 
 ## Regeneration Workflow
 
