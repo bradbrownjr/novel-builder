@@ -776,6 +776,15 @@ def api_download_file(role):
 # Style presets
 # ---------------------------------------------------------------------------
 
+def _migrate_preset_value(val):
+    """Migrate old string-only preset format to structured dict."""
+    if isinstance(val, str):
+        return {"style": val}
+    if isinstance(val, dict):
+        return val
+    return {}
+
+
 def _load_style_presets():
     """Load style_presets.yaml from workspace. Returns dict with active+presets."""
     path = os.path.join(WORKSPACE_DIR, STYLE_PRESETS_FILE)
@@ -784,9 +793,11 @@ def _load_style_presets():
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = _yaml.safe_load(f) or {}
+        raw = data.get("presets") or {}
+        presets = {k: _migrate_preset_value(v) for k, v in raw.items()}
         return {
             "active": data.get("active"),
-            "presets": data.get("presets") or {},
+            "presets": presets,
         }
     except (OSError, _yaml.YAMLError):
         return {"active": None, "presets": {}}
@@ -802,62 +813,125 @@ def _save_style_presets(data):
 
 @app.route("/api/style-presets", methods=["GET"])
 def api_style_presets_get():
-    """Return all style presets and the active preset name."""
+    """Return all style presets, the active preset name, and defaults."""
+    from .prompt_builder import DEFAULT_SYSTEM_OPENING, DEFAULT_SCENE_CLOSING
     data = _load_style_presets()
-    return jsonify({"ok": True, "active": data["active"], "presets": data["presets"]})
+    return jsonify({
+        "ok": True,
+        "active": data["active"],
+        "presets": data["presets"],
+        "defaults": {
+            "author_instruction": DEFAULT_SYSTEM_OPENING,
+            "scene_closing": DEFAULT_SCENE_CLOSING,
+        },
+    })
+
+
+def _deploy_preset(preset_data):
+    """Write a preset's fields to custom_style.txt and prompt_overrides.yaml."""
+    _ensure_workspace()
+    # Style -> custom_style.txt
+    style = (preset_data.get("style") or "").strip()
+    dest = os.path.join(WORKSPACE_DIR, FILE_ROLES["style"])
+    if style:
+        with open(dest, "w", encoding="utf-8") as f:
+            f.write(style)
+    elif os.path.exists(dest):
+        os.remove(dest)
+
+    # Author instruction, scene closing, extra anti-patterns -> prompt_overrides.yaml
+    overrides = {}
+    ai = (preset_data.get("author_instruction") or "").strip()
+    sc = (preset_data.get("scene_closing") or "").strip()
+    eap = preset_data.get("extra_anti_patterns") or []
+    if isinstance(eap, str):
+        eap = [p.strip() for p in eap.split("\n") if p.strip()]
+    if ai:
+        overrides["system_opening"] = ai
+    if sc:
+        overrides["scene_closing"] = sc
+    if eap:
+        overrides["extra_anti_patterns"] = eap
+
+    ov_path = os.path.join(WORKSPACE_DIR, PROMPT_OVERRIDES_FILE)
+    if overrides:
+        with open(ov_path, "w", encoding="utf-8") as f:
+            _yaml.dump(overrides, f, allow_unicode=True, default_flow_style=False)
+    elif os.path.exists(ov_path):
+        os.remove(ov_path)
+
+
+def _undeploy_preset():
+    """Clear custom_style.txt and prompt_overrides.yaml."""
+    for path in (
+        os.path.join(WORKSPACE_DIR, FILE_ROLES["style"]),
+        os.path.join(WORKSPACE_DIR, PROMPT_OVERRIDES_FILE),
+    ):
+        if os.path.exists(path):
+            os.remove(path)
 
 
 @app.route("/api/style-presets", methods=["POST"])
 def api_style_presets_post():
-    """Create or update a style preset. If activate=True, also deploys it."""
+    """Create or update a preset. If activate=True, also deploys it."""
     body = request.get_json(force=True)
     name = (body.get("name") or "").strip()
-    text = body.get("text", "")
     activate = bool(body.get("activate", False))
     if not name:
         return jsonify({"ok": False, "error": "Name required"}), 400
+
+    preset_data = {
+        "author_instruction": body.get("author_instruction", ""),
+        "style": body.get("style", ""),
+        "scene_closing": body.get("scene_closing", ""),
+        "extra_anti_patterns": body.get("extra_anti_patterns", []),
+    }
+
     data = _load_style_presets()
-    data["presets"][name] = text
+    data["presets"][name] = preset_data
     if activate:
         data["active"] = name
-        _ensure_workspace()
-        dest = os.path.join(WORKSPACE_DIR, FILE_ROLES["style"])
-        with open(dest, "w", encoding="utf-8") as f:
-            f.write(text)
+        _deploy_preset(preset_data)
     _save_style_presets(data)
     return jsonify({"ok": True, "name": name, "active": data["active"]})
 
 
 @app.route("/api/style-presets/<name>", methods=["DELETE"])
 def api_style_presets_delete(name):
-    """Delete a named style preset. Clears custom_style.txt if it was active."""
+    """Delete a named preset. Clears deployed files if it was active."""
     data = _load_style_presets()
     if name not in data.get("presets", {}):
         return jsonify({"ok": False, "error": "Preset not found"}), 404
     del data["presets"][name]
     if data.get("active") == name:
         data["active"] = None
-        dest = os.path.join(WORKSPACE_DIR, FILE_ROLES["style"])
-        if os.path.exists(dest):
-            os.remove(dest)
+        _undeploy_preset()
     _save_style_presets(data)
     return jsonify({"ok": True})
 
 
 @app.route("/api/style-presets/<name>/activate", methods=["POST"])
 def api_style_presets_activate(name):
-    """Activate a preset: write its text to custom_style.txt."""
+    """Activate a preset: deploy its fields to the appropriate files."""
     data = _load_style_presets()
     if name not in data.get("presets", {}):
         return jsonify({"ok": False, "error": "Preset not found"}), 404
-    text = data["presets"][name]
+    preset_data = data["presets"][name]
     data["active"] = name
-    _ensure_workspace()
-    dest = os.path.join(WORKSPACE_DIR, FILE_ROLES["style"])
-    with open(dest, "w", encoding="utf-8") as f:
-        f.write(text)
+    _deploy_preset(preset_data)
     _save_style_presets(data)
     return jsonify({"ok": True, "active": name})
+
+
+@app.route("/api/style-presets/deactivate", methods=["POST"])
+def api_style_presets_deactivate():
+    """Deactivate the active preset, clearing deployed files."""
+    data = _load_style_presets()
+    if data.get("active"):
+        data["active"] = None
+        _undeploy_preset()
+        _save_style_presets(data)
+    return jsonify({"ok": True})
 
 
 # ---------------------------------------------------------------------------
