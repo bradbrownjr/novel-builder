@@ -543,6 +543,10 @@ textarea {
     <div class="indicator" id="ind-progress" style="display:none;">
       <span id="lbl-progress">0%</span>
     </div>
+    <div class="indicator" id="ind-preset" style="display:none;">
+      <span style="font-size:.72rem;color:var(--text-dim)">Preset:</span>
+      <span id="lbl-preset" style="font-size:.72rem;font-weight:600;"></span>
+    </div>
   </div>
   <div class="header-actions">
     <button onclick="toggleTheme()" title="Toggle light/dark">🌓</button>
@@ -2273,6 +2277,7 @@ async function loadPromptPresets() {
   // Show deactivate row if a preset is active
   const deact = document.getElementById('preset-deactivate-row');
   if (deact) deact.style.display = _activePreset ? '' : 'none';
+  _updatePresetIndicator();
   // If a preset is active, show it selected; otherwise show default view
   if (_activePreset && _stylePresets[_activePreset]) {
     _selectedPreset = _activePreset;
@@ -2327,6 +2332,18 @@ function _readPresetEditor() {
 }
 
 let _isNewPreset = false;
+
+function _updatePresetIndicator() {
+  const ind = document.getElementById('ind-preset');
+  const lbl = document.getElementById('lbl-preset');
+  if (!ind || !lbl) return;
+  if (_activePreset) {
+    lbl.textContent = _activePreset;
+    ind.style.display = '';
+  } else {
+    ind.style.display = 'none';
+  }
+}
 
 function _showDefaultView() {
   _selectedPreset = null;
@@ -2417,6 +2434,7 @@ async function activatePreset() {
   const note = document.getElementById('preset-active-note');
   if (note) note.textContent = 'This preset is currently active.';
   _renderPresetList();
+  _updatePresetIndicator();
   const deact = document.getElementById('preset-deactivate-row');
   if (deact) deact.style.display = '';
   toast(`Preset "${name}" activated`);
@@ -2445,6 +2463,7 @@ async function deactivatePreset() {
   _activePreset = null;
   const deact = document.getElementById('preset-deactivate-row');
   if (deact) deact.style.display = 'none';
+  _updatePresetIndicator();
   _showDefaultView();
   toast('Preset deactivated -- built-in defaults will be used');
 }
