@@ -146,9 +146,8 @@ class GenerationState:
                 if data.get("message"):
                     self.error = data["message"]
             elif event_type == "log":
-                ts = datetime.now().strftime("%H:%M:%S")
                 entry = {
-                    "time": ts,
+                    "time": time.time(),
                     "message": data.get("message", ""),
                     "level": data.get("level", "info"),
                 }
