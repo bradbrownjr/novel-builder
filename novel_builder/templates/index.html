@@ -57,6 +57,12 @@ a { color: var(--blue); }
 /* =========================================================
    Header
    ========================================================= */
+#sticky-chrome {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--bg-card);
+}
 header {
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
@@ -65,9 +71,6 @@ header {
   align-items: center;
   gap: .75rem;
   flex-wrap: wrap;
-  position: sticky;
-  top: 0;
-  z-index: 100;
 }
 .logo { font-size: 1.2rem; font-weight: 700; white-space: nowrap; }
 .logo span { color: var(--accent); }
@@ -525,6 +528,7 @@ textarea {
 <body>
 
 <!-- ==================== HEADER ==================== -->
+<div id="sticky-chrome">
 <header>
   <div class="logo">Novel<span>Builder</span></div>
   <div class="status-bar">
@@ -563,6 +567,7 @@ textarea {
   <button class="tab-btn" data-tab="memory">Memory</button>
   <button class="tab-btn" data-tab="output">Output</button>
 </div>
+</div><!-- /#sticky-chrome -->
 
 <div class="page-body">
 
