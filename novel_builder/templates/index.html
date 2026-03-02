@@ -1031,9 +1031,10 @@ async function uploadFile(file, role) {
    File status display
    ========================================================== */
 function updateFileStatus(files) {
-  ['outline', 'characters', 'locations', 'style'].forEach(role => {
+  ['outline', 'characters', 'locations'].forEach(role => {
     const el = document.getElementById('fstat-' + role);
     const actions = document.getElementById('factions-' + role);
+    if (!el || !actions) return;
     const info = files[role];
     if (info) {
       el.className = 'file-status';
