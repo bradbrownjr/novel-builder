@@ -270,6 +270,84 @@ Characters YAML:
 
 
 # ---------------------------------------------------------------------------
+# Story context extractor
+# ---------------------------------------------------------------------------
+
+def build_story_context(outline_data, prompt_overrides=None):
+    """Build a story-specific context preamble from the loaded outline config.
+
+    The returned string is prepended to the analysis/fix system prompt so
+    the consultant evaluates content against the story's own declared intent,
+    genre, tone, and style -- not generic fiction norms.
+
+    Args:
+        outline_data: Parsed dict from story_outline.yaml (or None).
+        prompt_overrides: Parsed dict from prompt_overrides.yaml (or None).
+
+    Returns:
+        A string to prepend to system prompts, or "" if no context available.
+    """
+    if not outline_data and not prompt_overrides:
+        return ""
+
+    parts = []
+
+    # Author instruction / custom system opening from prompt presets
+    overrides = prompt_overrides or {}
+    author_inst = overrides.get("system_opening") or overrides.get("author_instruction", "")
+    if author_inst:
+        parts.append(f"AUTHOR'S DECLARED INTENT:\n{author_inst}")
+
+    outline = outline_data or {}
+
+    # World context (era, tech level, genre rules)
+    world = outline.get("world", "")
+    if world:
+        parts.append(f"STORY WORLD / SETTING:\n{world}")
+
+    # Overall arc (genre, tone, themes, pov)
+    arc = outline.get("overall_arc", {})
+    if isinstance(arc, dict):
+        arc_parts = []
+        if arc.get("genre"):
+            arc_parts.append(f"Genre: {arc['genre']}")
+        if arc.get("tone"):
+            arc_parts.append(f"Tone: {arc['tone']}")
+        if arc.get("themes"):
+            themes = arc["themes"]
+            if isinstance(themes, list):
+                themes = ", ".join(themes)
+            arc_parts.append(f"Themes: {themes}")
+        if arc.get("pov"):
+            arc_parts.append(f"POV: {arc['pov']}")
+        if arc_parts:
+            parts.append("STORY ARC:\n" + "\n".join(arc_parts))
+    elif isinstance(arc, str) and arc:
+        parts.append(f"STORY ARC:\n{arc}")
+
+    # Style directives
+    style = outline.get("style_directives", "")
+    if style:
+        if isinstance(style, list):
+            style = " ".join(style)
+        parts.append(f"AUTHOR'S STYLE DIRECTIVES:\n{style}")
+
+    if not parts:
+        return ""
+
+    return (
+        "STORY-SPECIFIC CONTEXT -- READ BEFORE EVALUATING:\n"
+        "The following defines the story you are consulting on. "
+        "Evaluate all content against this story's specific intent, genre, "
+        "tone, and style. Do not apply generic fiction standards that conflict "
+        "with what the author has declared. This is the author's vision -- "
+        "your job is to make it stronger, not to redirect it.\n\n"
+        + "\n\n".join(parts)
+        + "\n\n"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Fix generation prompt
 # ---------------------------------------------------------------------------
 
@@ -303,13 +381,15 @@ _FIX_LABELS = {
 }
 
 
-def build_fix_prompt(role, original_yaml, analysis_text):
+def build_fix_prompt(role, original_yaml, analysis_text, story_context=""):
     """Build a prompt to produce a corrected YAML file.
 
     Args:
         role: "characters", "outline", or "locations".
         original_yaml: The current YAML content.
         analysis_text: The audit analysis with recommendations.
+        story_context: Optional story-specific context preamble from
+            build_story_context().
 
     Returns:
         Tuple of (system_prompt, user_prompt).
@@ -326,10 +406,11 @@ def build_fix_prompt(role, original_yaml, analysis_text):
         f"no explanatory text -- YAML only):"
     )
 
-    return _FIX_SYSTEM, user
+    system = (story_context + _FIX_SYSTEM) if story_context else _FIX_SYSTEM
+    return system, user
 
 
-def build_crossref_fix_prompt(files, analysis_text):
+def build_crossref_fix_prompt(files, analysis_text, story_context=""):
     """Build a prompt to produce corrected YAML files from cross-ref analysis.
 
     The cross-reference pass analyzes all files together, so the fix must
@@ -339,6 +420,8 @@ def build_crossref_fix_prompt(files, analysis_text):
         files: Dict with keys "outline", "characters", "locations" mapping
                to their YAML content strings (or None).
         analysis_text: The cross-reference analysis text.
+        story_context: Optional story-specific context preamble from
+            build_story_context().
 
     Returns:
         Tuple of (system_prompt, user_prompt).
@@ -381,6 +464,8 @@ def build_crossref_fix_prompt(files, analysis_text):
         f"no explanatory text -- YAML only):"
     )
 
+    if story_context:
+        system = story_context + system
     return system, user
 
 
@@ -435,12 +520,15 @@ def get_analysis_passes(files):
     return passes
 
 
-def build_pass_prompt(pass_name, files):
+def build_pass_prompt(pass_name, files, story_context=""):
     """Build the prompt for a specific analysis pass.
 
     Args:
         pass_name: One of "characters", "outline", "locations", "crossref".
         files: Dict with YAML content strings.
+        story_context: Optional story-specific context preamble from
+            build_story_context(); prepended to the schema context so the
+            model evaluates content against the story's own declared intent.
 
     Returns:
         Tuple of (system_prompt, user_prompt).
@@ -459,4 +547,5 @@ def build_pass_prompt(pass_name, files):
     else:
         raise ValueError(f"Unknown pass: {pass_name}")
 
-    return _SCHEMA_CONTEXT, user_prompt
+    system = (story_context + _SCHEMA_CONTEXT) if story_context else _SCHEMA_CONTEXT
+    return system, user_prompt

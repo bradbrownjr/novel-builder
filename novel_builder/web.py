@@ -1601,7 +1601,7 @@ def api_consult():
                 consult_state.error = None
 
         def worker():
-            from .consult import get_analysis_passes, build_pass_prompt
+            from .consult import get_analysis_passes, build_pass_prompt, build_story_context
             cfg = _load_web_config()
             host = _normalize_host(cfg.get("host", ""))
             model = cfg.get("model", "gemma3:12b")
@@ -1626,6 +1626,24 @@ def api_consult():
                             files[role] = f.read()
                     except OSError:
                         pass
+
+            # Build story-specific context so the consultant evaluates content
+            # against the author's declared intent, not generic fiction norms.
+            _outline_data = {}
+            if files.get("outline"):
+                try:
+                    _outline_data = _yaml.safe_load(files["outline"]) or {}
+                except _yaml.YAMLError:
+                    pass
+            _po_data = {}
+            _po_path = os.path.join(WORKSPACE_DIR, "prompt_overrides.yaml")
+            if os.path.exists(_po_path):
+                try:
+                    with open(_po_path, "r", encoding="utf-8") as _f:
+                        _po_data = _yaml.safe_load(_f) or {}
+                except (OSError, _yaml.YAMLError):
+                    pass
+            story_ctx = build_story_context(_outline_data, _po_data)
 
             passes = get_analysis_passes(files)
             # Filter to only requested passes when doing a selective retry
@@ -1656,7 +1674,7 @@ def api_consult():
                 })
                 state.emit("model_active", {"model": "consult", "name": model})
 
-                system_prompt, user_prompt = build_pass_prompt(pass_name, files)
+                system_prompt, user_prompt = build_pass_prompt(pass_name, files, story_context=story_ctx)
 
                 url = f"{host}/api/generate"
                 payload = {
@@ -1876,7 +1894,7 @@ def api_consult_apply():
         consult_state.emit("fix_queued", {"role": r})
 
     def fix_worker(fix_roles):
-        from .consult import build_fix_prompt, build_crossref_fix_prompt
+        from .consult import build_fix_prompt, build_crossref_fix_prompt, build_story_context
         cfg = _load_web_config()
         host = _normalize_host(cfg.get("host", ""))
         model = cfg.get("model", "gemma3:12b")
@@ -1891,6 +1909,25 @@ def api_consult_apply():
                 })
             consult_state.emit("all_fixes_done", {})
             return
+
+        # Load story-specific context once for all fix passes.
+        _outline_path = os.path.join(WORKSPACE_DIR, FILE_ROLES.get("outline", "story_outline.yaml"))
+        _outline_data = {}
+        if os.path.exists(_outline_path):
+            try:
+                with open(_outline_path, "r", encoding="utf-8") as _f:
+                    _outline_data = _yaml.safe_load(_f) or {}
+            except (OSError, _yaml.YAMLError):
+                pass
+        _po_data = {}
+        _po_path = os.path.join(WORKSPACE_DIR, "prompt_overrides.yaml")
+        if os.path.exists(_po_path):
+            try:
+                with open(_po_path, "r", encoding="utf-8") as _f:
+                    _po_data = _yaml.safe_load(_f) or {}
+            except (OSError, _yaml.YAMLError):
+                pass
+        story_ctx = build_story_context(_outline_data, _po_data)
 
         total = len(fix_roles)
         for idx, role in enumerate(fix_roles, 1):
@@ -1922,9 +1959,9 @@ def api_consult_apply():
                 continue
 
             if role == "crossref":
-                system_prompt, user_prompt = build_crossref_fix_prompt(files, analysis_text)
+                system_prompt, user_prompt = build_crossref_fix_prompt(files, analysis_text, story_context=story_ctx)
             else:
-                system_prompt, user_prompt = build_fix_prompt(role, files[role], analysis_text)
+                system_prompt, user_prompt = build_fix_prompt(role, files[role], analysis_text, story_context=story_ctx)
 
             url = f"{host}/api/generate"
             payload = {
