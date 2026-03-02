@@ -486,6 +486,54 @@ textarea {
 }
 .diff-pane textarea { border-color: var(--blue); outline: none; }
 .diff-pane pre { opacity: .85; }
+/* GitHub-style line diff */
+.diff-pre {
+  overflow-y: auto;
+  overflow-x: auto;
+  max-height: 60vh;
+  min-height: 200px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: .72rem;
+  line-height: 1.55;
+  flex: 1;
+}
+.diff-row {
+  display: flex;
+  align-items: stretch;
+  min-height: 1.55em;
+}
+.diff-row.diff-eq  { background: transparent; }
+.diff-row.diff-del { background: rgba(248,81,73,.18); }
+.diff-row.diff-add { background: rgba(46,160,67,.18); }
+.diff-row.diff-empty { background: rgba(0,0,0,.2); }
+.diff-ln {
+  min-width: 3em;
+  text-align: right;
+  padding: 0 .5em;
+  color: var(--text-dim);
+  user-select: none;
+  border-right: 1px solid var(--border);
+  flex-shrink: 0;
+  opacity: .6;
+}
+.diff-pfx {
+  padding: 0 .4em;
+  flex-shrink: 0;
+  user-select: none;
+  color: var(--text-dim);
+}
+.diff-row.diff-del .diff-pfx { color: #f85149; }
+.diff-row.diff-add .diff-pfx { color: #3fb950; }
+.diff-code {
+  flex: 1;
+  padding: 0 .4em;
+  white-space: pre;
+  overflow: visible;
+  word-break: normal;
+}
 @media (max-width: 768px) {
   .diff-container { grid-template-columns: 1fr; }
 }
@@ -2138,32 +2186,128 @@ async function showDiff(role) {
   if (!proposed.trim()) { toast('No proposed fix to compare', 'warn'); return; }
 
   if (role === 'crossref') {
-    // For crossref, show multi-file diff
     const roles = ['characters', 'outline', 'locations'];
     let html = '';
     for (const r of roles) {
       const origResp = await api(`/api/consult-original/${r}`);
-      const origText = origResp?.content || '(file not found)';
+      const origText = origResp?.content || '';
       const parsed = _parseCrossrefFile(proposed, r);
       if (!parsed) continue;
-      html += `<div style="margin-bottom:.75rem;"><strong style="color:var(--text-dim);font-size:.75rem;">${_fileLabel(r)}</strong>
-        <div class="diff-container">
-          <div class="diff-pane"><label>Original</label><pre>${escHtml(origText)}</pre></div>
-          <div class="diff-pane"><label>Proposed</label><pre>${escHtml(parsed)}</pre></div>
-        </div></div>`;
+      html += `<div style="margin-bottom:.75rem;">
+        <strong style="color:var(--text-dim);font-size:.75rem;">${_fileLabel(r)}</strong>
+        ${_buildDiffHtml(origText, parsed)}
+      </div>`;
     }
     diffEl.innerHTML = html || '<p style="color:var(--text-dim);font-size:.8rem;">No file sections found in output.</p>';
   } else {
     const origResp = await api(`/api/consult-original/${role}`);
-    const origText = origResp?.content || '(file not found)';
-    diffEl.innerHTML = `
-      <div class="diff-container">
-        <div class="diff-pane"><label>Original</label><pre>${escHtml(origText)}</pre></div>
-        <div class="diff-pane"><label>Proposed</label><pre>${escHtml(proposed)}</pre></div>
-      </div>`;
+    const origText = origResp?.content || '';
+    diffEl.innerHTML = _buildDiffHtml(origText, proposed);
   }
+  _attachDiffScrollSync(diffEl);
   diffEl.style.display = 'block';
   fixYaml.style.display = 'none';
+}
+
+function _computeLineDiff(a, b) {
+  // LCS-based line diff. Falls back to simple replace for very large files.
+  const m = a.length, n = b.length;
+  if (m === 0 && n === 0) return [];
+  if (m * n > 250000) {
+    // Too large for O(mn) -- just mark everything as changed
+    return [{ type: 'chg', del: a, ins: b }];
+  }
+  const dp = [];
+  for (let i = 0; i <= m; i++) dp[i] = new Int32Array(n + 1);
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] + 1 : Math.max(dp[i-1][j], dp[i][j-1]);
+
+  const ops = [];
+  let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i-1] === b[j-1]) { ops.push({ t: '=', v: a[i-1] }); i--; j--; }
+    else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) { ops.push({ t: '+', v: b[j-1] }); j--; }
+    else { ops.push({ t: '-', v: a[i-1] }); i--; }
+  }
+  ops.reverse();
+
+  // Group into hunks
+  const hunks = [];
+  let cur = null;
+  for (const op of ops) {
+    if (op.t === '=') {
+      if (cur && cur.type !== 'eq') { hunks.push(cur); cur = null; }
+      if (!cur) cur = { type: 'eq', lines: [] };
+      cur.lines.push(op.v);
+    } else {
+      if (cur && cur.type === 'eq') { hunks.push(cur); cur = null; }
+      if (!cur) cur = { type: 'chg', del: [], ins: [] };
+      if (op.t === '-') cur.del.push(op.v); else cur.ins.push(op.v);
+    }
+  }
+  if (cur) hunks.push(cur);
+  return hunks;
+}
+
+function _buildDiffHtml(origText, proposedText) {
+  const a = origText.split('\n');
+  const b = proposedText.split('\n');
+  const hunks = _computeLineDiff(a, b);
+
+  const leftRows = [], rightRows = [];
+  let ln = 1, rn = 1;
+  for (const h of hunks) {
+    if (h.type === 'eq') {
+      for (const line of h.lines) {
+        leftRows.push({ cls: 'diff-eq',    num: ln++, pfx: ' ', text: line });
+        rightRows.push({ cls: 'diff-eq',   num: rn++, pfx: ' ', text: line });
+      }
+    } else {
+      const max = Math.max(h.del.length, h.ins.length);
+      for (let k = 0; k < max; k++) {
+        if (k < h.del.length)
+          leftRows.push({  cls: 'diff-del',   num: ln++, pfx: '-', text: h.del[k] });
+        else
+          leftRows.push({  cls: 'diff-empty', num: null, pfx: ' ', text: '' });
+        if (k < h.ins.length)
+          rightRows.push({ cls: 'diff-add',   num: rn++, pfx: '+', text: h.ins[k] });
+        else
+          rightRows.push({ cls: 'diff-empty', num: null, pfx: ' ', text: '' });
+      }
+    }
+  }
+
+  function rowsToHtml(rows) {
+    return rows.map(r =>
+      `<div class="diff-row ${r.cls}">` +
+      `<span class="diff-ln">${r.num !== null ? r.num : ''}</span>` +
+      `<span class="diff-pfx">${r.pfx}</span>` +
+      `<span class="diff-code">${escHtml(r.text)}</span>` +
+      `</div>`
+    ).join('');
+  }
+
+  return `<div class="diff-container">
+    <div class="diff-pane"><label>Original</label><div class="diff-pre">${rowsToHtml(leftRows)}</div></div>
+    <div class="diff-pane"><label>Proposed</label><div class="diff-pre">${rowsToHtml(rightRows)}</div></div>
+  </div>`;
+}
+
+function _attachDiffScrollSync(diffEl) {
+  diffEl.querySelectorAll('.diff-container').forEach(container => {
+    const panes = container.querySelectorAll('.diff-pre');
+    if (panes.length < 2) return;
+    let lock = false;
+    panes.forEach(p => {
+      p.addEventListener('scroll', () => {
+        if (lock) return;
+        lock = true;
+        panes.forEach(o => { if (o !== p) { o.scrollTop = p.scrollTop; o.scrollLeft = p.scrollLeft; } });
+        lock = false;
+      });
+    });
+  });
 }
 
 function _stripCodeFences(text) {
