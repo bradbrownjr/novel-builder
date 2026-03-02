@@ -229,6 +229,9 @@ class ConsultState:
 
     Uses a subscriber queue pattern matching GenerationState so results
     persist across page refreshes and are accessible from any device.
+    Fix generation also runs in a background thread and emits events
+    through the same subscriber mechanism, ensuring progress survives
+    page refreshes and is visible across devices.
     """
 
     def __init__(self):
@@ -238,6 +241,9 @@ class ConsultState:
         self.fixes = {}        # role -> {status, content} -- generated fix YAML
         self.error = None
         self._thread = None
+        self._fix_thread = None
+        self._fix_queue_roles = []  # ordered list of roles queued for fix generation
+        self._fix_current = None    # role currently being generated
         self._event_queues = []
         self._load_from_disk()
 
@@ -276,9 +282,38 @@ class ConsultState:
                 self.status = "error"
                 self.error = data.get("message", "")
 
+            # Fix generation events
+            elif event_type == "fix_start":
+                role = data["role"]
+                self.fixes[role] = {"status": "generating", "content": ""}
+                self._fix_current = role
+            elif event_type == "fix_chunk":
+                role = data["role"]
+                if role in self.fixes:
+                    self.fixes[role]["content"] += data.get("chunk", "")
+            elif event_type == "fix_done":
+                role = data["role"]
+                if role in self.fixes:
+                    self.fixes[role]["status"] = "done"
+                self._fix_current = None
+            elif event_type == "fix_error":
+                role = data["role"]
+                if role in self.fixes:
+                    self.fixes[role]["status"] = "error"
+                self._fix_current = None
+            elif event_type == "fix_queued":
+                role = data["role"]
+                if role not in self.fixes or self.fixes[role].get("status") != "generating":
+                    self.fixes[role] = {"status": "queued", "content": ""}
+            elif event_type == "all_fixes_done":
+                self._fix_current = None
+                self._fix_queue_roles = []
+
             # Persist to disk after meaningful state changes
             if event_type in ("pass_done", "pass_error",
-                               "consult_done", "consult_error"):
+                               "consult_done", "consult_error",
+                               "fix_start", "fix_done", "fix_error",
+                               "all_fixes_done"):
                 self._persist()
 
             event = {"type": event_type, "data": data, "time": time.time()}
@@ -292,7 +327,7 @@ class ConsultState:
                 self._event_queues.remove(q)
 
     def subscribe_with_snapshot(self):
-        """Subscribe atomically with a snapshot  --  prevents duplicate chunks.
+        """Subscribe atomically with a snapshot -- prevents duplicate chunks.
 
         By subscribing inside the lock, any chunk emitted after we return
         will be in the queue, and the snapshot will contain all chunks
@@ -307,8 +342,12 @@ class ConsultState:
             snapshot = {
                 "status": self.status,
                 "passes": {k: dict(v) for k, v in self.passes.items()},
+                "fixes": {k: dict(v) for k, v in self.fixes.items()},
                 "error": self.error,
                 "is_alive": self._thread is not None and self._thread.is_alive(),
+                "fix_alive": self._fix_thread is not None and self._fix_thread.is_alive(),
+                "fix_current": self._fix_current,
+                "fix_queue": list(self._fix_queue_roles),
             }
         return q, snapshot
 
@@ -328,6 +367,11 @@ class ConsultState:
         with self._lock:
             return self.fixes.get(role, {}).get("content", "")
 
+    def is_fix_running(self):
+        """Check if fix generation is currently active."""
+        with self._lock:
+            return self._fix_thread is not None and self._fix_thread.is_alive()
+
     def snapshot(self):
         with self._lock:
             return {
@@ -336,6 +380,9 @@ class ConsultState:
                 "fixes": {k: dict(v) for k, v in self.fixes.items()},
                 "error": self.error,
                 "is_alive": self._thread is not None and self._thread.is_alive(),
+                "fix_alive": self._fix_thread is not None and self._fix_thread.is_alive(),
+                "fix_current": self._fix_current,
+                "fix_queue": list(self._fix_queue_roles),
             }
 
     def reset(self):
@@ -344,6 +391,8 @@ class ConsultState:
             self.passes = {}
             self.fixes = {}
             self.error = None
+            self._fix_queue_roles = []
+            self._fix_current = None
         self._delete_cache()
 
     def _persist(self):
@@ -373,6 +422,11 @@ class ConsultState:
             self.passes = data.get("passes", {})
             self.fixes = data.get("fixes", {})
             self.error = data.get("error")
+            # Reset any stale "generating" or "queued" fixes from crash
+            for role, fix_data in self.fixes.items():
+                if fix_data.get("status") in ("generating", "queued"):
+                    fix_data["status"] = "error"
+                    fix_data["content"] = fix_data.get("content", "")
         except (json.JSONDecodeError, OSError):
             pass
 
@@ -1277,49 +1331,54 @@ def api_consult_clear():
     """Clear cached consult results."""
     if consult_state._thread is not None and consult_state._thread.is_alive():
         return jsonify({"ok": False, "error": "Analysis still running"}), 400
+    if consult_state.is_fix_running():
+        return jsonify({"ok": False, "error": "Fix generation still running"}), 400
     consult_state.reset()
     return jsonify({"ok": True})
 
 
 @app.route("/api/consult-apply", methods=["POST"])
 def api_consult_apply():
-    """Generate a corrected YAML file for a completed analysis pass (SSE).
+    """Start background fix generation for one or more analysis passes.
 
-    Streams the proposed fixed YAML from the LLM.  The client can review
-    the result in an editable textarea before saving.
+    Runs fix generation in a background thread so it persists across
+    browser refreshes and is visible from any device.  Multiple roles
+    are processed sequentially to avoid overloading the LLM.
 
-    Supports all roles including ``crossref``, which produces multi-file
-    output separated by ``--- FILE: filename.yaml ---`` markers.
+    Body:
+        {"role": "characters"}  -- single role
+        {"roles": ["characters", "outline"]}  -- multiple roles (sequential)
     """
     data = request.get_json(force=True)
-    role = data.get("role", "")
 
-    if role not in ("outline", "characters", "locations", "crossref"):
-        return jsonify({"ok": False, "error": f"Unknown role: {role}"}), 400
+    # Accept either a single role or a list of roles
+    roles = data.get("roles", [])
+    if not roles:
+        single = data.get("role", "")
+        if single:
+            roles = [single]
 
+    valid_roles = ("outline", "characters", "locations", "crossref")
+    for r in roles:
+        if r not in valid_roles:
+            return jsonify({"ok": False, "error": f"Unknown role: {r}"}), 400
+
+    # Validate all requested passes are completed
     snap = consult_state.snapshot()
-    pass_data = snap["passes"].get(role)
-    if not pass_data or pass_data.get("status") != "done":
-        return jsonify({"ok": False, "error": "Pass not completed"}), 400
+    for r in roles:
+        pass_data = snap["passes"].get(r)
+        if not pass_data or pass_data.get("status") != "done":
+            return jsonify({"ok": False, "error": f"Pass '{r}' not completed"}), 400
 
-    analysis_text = pass_data["text"]
+    # If fix generation is already running, reject
+    if consult_state.is_fix_running():
+        return jsonify({"ok": False, "error": "Fix generation already in progress"}), 409
 
-    # Load YAML files from workspace
-    files = {}
-    roles_needed = [role] if role != "crossref" else ["outline", "characters", "locations"]
-    for r in roles_needed:
-        yaml_path = os.path.join(WORKSPACE_DIR, FILE_ROLES.get(r, ""))
-        if os.path.exists(yaml_path):
-            try:
-                with open(yaml_path, "r", encoding="utf-8") as f:
-                    files[r] = f.read()
-            except OSError:
-                pass
+    # Mark all as queued
+    for r in roles:
+        consult_state.emit("fix_queued", {"role": r})
 
-    if role != "crossref" and role not in files:
-        return jsonify({"ok": False, "error": "YAML file not found in workspace"}), 404
-
-    def stream():
+    def fix_worker(fix_roles):
         from .consult import build_fix_prompt, build_crossref_fix_prompt
         cfg = _load_web_config()
         host = _normalize_host(cfg.get("host", ""))
@@ -1328,75 +1387,129 @@ def api_consult_apply():
         retries = int(cfg.get("retries", 3))
 
         if not host:
-            yield f"data: {json.dumps({'type': 'fix_error', 'message': 'No Ollama host configured'})}\n\n"
+            for r in fix_roles:
+                consult_state.emit("fix_error", {
+                    "role": r,
+                    "message": "No Ollama host configured",
+                })
+            consult_state.emit("all_fixes_done", {})
             return
 
-        if role == "crossref":
-            system_prompt, user_prompt = build_crossref_fix_prompt(files, analysis_text)
-        else:
-            system_prompt, user_prompt = build_fix_prompt(role, files[role], analysis_text)
+        total = len(fix_roles)
+        for idx, role in enumerate(fix_roles, 1):
+            consult_state.emit("fix_start", {"role": role, "index": idx, "total": total})
+            state.emit("model_active", {"model": "consult", "name": f"{model} (fix: {role})"})
+            state.emit("log", {
+                "message": f"[Consult] Generating fix {idx}/{total}: {role}...",
+                "level": "info",
+            })
 
-        url = f"{host}/api/generate"
-        payload = {
-            "model": model,
-            "system": system_prompt,
-            "prompt": user_prompt,
-            "stream": True,
-            "options": {
-                "num_ctx": consult_ctx,
-                "temperature": 0.3,
-            },
-        }
+            snap_inner = consult_state.snapshot()
+            analysis_text = snap_inner["passes"].get(role, {}).get("text", "")
 
-        accumulated = ""
-        backoff = [60, 180, 300, 600, 900]
-        for attempt in range(1, retries + 1):
-            try:
-                resp = _requests.post(url, json=payload, timeout=(30, None), stream=True)
-                resp.raise_for_status()
-
-                for line in resp.iter_lines():
-                    if not line:
-                        continue
+            # Load YAML files from workspace
+            files = {}
+            roles_needed = [role] if role != "crossref" else ["outline", "characters", "locations"]
+            for rr in roles_needed:
+                yaml_path = os.path.join(WORKSPACE_DIR, FILE_ROLES.get(rr, ""))
+                if os.path.exists(yaml_path):
                     try:
-                        chunk = json.loads(line)
-                    except ValueError:
-                        continue
-                    token = chunk.get("response", "")
-                    if token:
-                        accumulated += token
-                        yield f"data: {json.dumps({'type': 'fix_chunk', 'chunk': token})}\n\n"
-                    if chunk.get("done"):
-                        consult_state.set_fix(role, accumulated)
-                        yield f"data: {json.dumps({'type': 'fix_done'})}\n\n"
-                        return
+                        with open(yaml_path, "r", encoding="utf-8") as f:
+                            files[rr] = f.read()
+                    except OSError:
+                        pass
 
-                # Stream ended without done -- treat as success
-                consult_state.set_fix(role, accumulated)
-                yield f"data: {json.dumps({'type': 'fix_done'})}\n\n"
-                return
+            if role != "crossref" and role not in files:
+                consult_state.emit("fix_error", {"role": role, "message": "YAML file not found"})
+                state.emit("model_active", {"model": "idle", "name": ""})
+                continue
 
-            except GeneratorExit:
-                return
-            except Exception as e:
-                if attempt < retries:
-                    delay = backoff[min(attempt - 1, len(backoff) - 1)]
-                    note = f"[Retry {attempt}/{retries}] {e} -- retrying in {delay}s..."
-                    accumulated += note
-                    yield f"data: {json.dumps({'type': 'fix_chunk', 'chunk': note})}\n\n"
-                    time.sleep(delay)
-                else:
-                    yield f"data: {json.dumps({'type': 'fix_error', 'message': str(e)})}\n\n"
+            if role == "crossref":
+                system_prompt, user_prompt = build_crossref_fix_prompt(files, analysis_text)
+            else:
+                system_prompt, user_prompt = build_fix_prompt(role, files[role], analysis_text)
 
-    return Response(
-        stream(),
-        mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
-    )
+            url = f"{host}/api/generate"
+            payload = {
+                "model": model,
+                "system": system_prompt,
+                "prompt": user_prompt,
+                "stream": True,
+                "options": {
+                    "num_ctx": consult_ctx,
+                    "temperature": 0.3,
+                },
+            }
+
+            accumulated = ""
+            backoff = [60, 180, 300, 600, 900]
+            success = False
+
+            for attempt in range(1, retries + 1):
+                try:
+                    resp = _requests.post(url, json=payload, timeout=(30, None), stream=True)
+                    resp.raise_for_status()
+
+                    for line in resp.iter_lines():
+                        if not line:
+                            continue
+                        try:
+                            chunk = json.loads(line)
+                        except ValueError:
+                            continue
+                        token = chunk.get("response", "")
+                        if token:
+                            accumulated += token
+                            consult_state.emit("fix_chunk", {"role": role, "chunk": token})
+                        if chunk.get("done"):
+                            success = True
+                            break
+
+                    if not success:
+                        # Stream ended without done flag -- treat as success
+                        success = True
+                    break
+
+                except Exception as e:
+                    if attempt < retries:
+                        delay = backoff[min(attempt - 1, len(backoff) - 1)]
+                        note = f"\n[Retry {attempt}/{retries}] {e} -- retrying in {delay}s...\n"
+                        accumulated += note
+                        consult_state.emit("fix_chunk", {"role": role, "chunk": note})
+                        state.emit("log", {
+                            "message": f"[Consult fix {role}] Retry {attempt}/{retries}: {e}. Waiting {delay}s...",
+                            "level": "warn",
+                        })
+                        time.sleep(delay)
+                    else:
+                        consult_state.emit("fix_error", {"role": role, "message": str(e)})
+                        state.emit("log", {
+                            "message": f"[Consult fix {role}] Failed: {e}",
+                            "level": "error",
+                        })
+                        state.emit("model_active", {"model": "idle", "name": ""})
+                        success = False
+                        break
+
+            if success:
+                consult_state.emit("fix_done", {"role": role})
+                state.emit("log", {
+                    "message": f"[Consult] Fix generated for {role} ({len(accumulated)} chars)",
+                    "level": "info",
+                })
+
+            state.emit("model_active", {"model": "idle", "name": ""})
+
+        consult_state.emit("all_fixes_done", {})
+
+    with consult_state._lock:
+        consult_state._fix_queue_roles = list(roles)
+
+    t = threading.Thread(target=fix_worker, args=(roles,), daemon=True, name="novel-consult-fix")
+    t.start()
+    consult_state._fix_thread = t
+
+    return jsonify({"ok": True, "roles": roles, "message": f"Fix generation started for {len(roles)} pass(es)"})
 
 
 @app.route("/api/consult-save", methods=["POST"])
