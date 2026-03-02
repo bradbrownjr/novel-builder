@@ -605,7 +605,8 @@ textarea {
   <div class="card" id="card-style">
     <h3>Prompt Presets</h3>
     <p style="font-size:.8rem;color:var(--text-dim);margin:0 0 .6rem;">
-      Named configurations that control how the AI writes. Each preset sets the author instruction, style directives, scene closing, and anti-pattern suppressions.
+      Save named configurations that control how the AI writes. Each preset sets the author instruction (model identity),
+      style directives (prose style), scene closing instruction, and anti-pattern suppressions.
       Activating a preset applies all its fields to every generation run.
     </p>
     <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-start;">
@@ -615,9 +616,10 @@ textarea {
         <button class="btn btn-sm" style="margin-top:.5rem;width:100%;" onclick="newPreset()">+ New Preset</button>
       </div>
       <div id="preset-editor" style="flex:1;min-width:280px;">
-        <div id="preset-name-row" style="display:flex;gap:.4rem;align-items:center;margin-bottom:.5rem;display:none;">
-          <input type="text" id="preset-name-input" placeholder="Preset name (e.g. Cyberpunk, High Fantasy, Noir)..." style="flex:1;font-size:.82rem;padding:.25rem .4rem;">
+        <div id="preset-name-row" style="display:none;margin-bottom:.5rem;">
+          <input type="text" id="preset-name-input" placeholder="Preset name (e.g. Cyberpunk, High Fantasy, Noir)..." style="width:100%;font-size:.82rem;padding:.25rem .4rem;box-sizing:border-box;">
         </div>
+        <div id="preset-default-note" style="font-size:.75rem;color:var(--text-dim);font-style:italic;margin-bottom:.5rem;">Showing built-in defaults. Select a preset to customize, or create a new one.</div>
 
         <div style="margin-bottom:.6rem;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.2rem;">
@@ -655,7 +657,7 @@ textarea {
           <textarea id="preset-anti-patterns" rows="3" style="width:100%;resize:vertical;box-sizing:border-box;" placeholder="phrase to avoid&#10;another phrase to avoid"></textarea>
         </div>
 
-        <div id="preset-buttons-row" style="display:none;gap:.4rem;margin-top:.4rem;flex-wrap:wrap;align-items:center;">
+        <div id="preset-action-row" style="display:none;gap:.4rem;margin-top:.4rem;flex-wrap:wrap;align-items:center;">
           <button class="btn btn-sm" onclick="savePreset()">Save</button>
           <button class="btn btn-primary btn-sm" onclick="activatePreset()">Save & Activate</button>
           <button class="btn btn-sm btn-danger" onclick="deletePreset()">Delete</button>
@@ -2268,26 +2270,30 @@ async function loadPromptPresets() {
   _stylePresets = r.presets || {};
   _activePreset = r.active || null;
   _presetDefaults = r.defaults || _presetDefaults;
-  // Show defaults in fields and render list
-  selectDefault();
   // Show deactivate row if a preset is active
   const deact = document.getElementById('preset-deactivate-row');
   if (deact) deact.style.display = _activePreset ? '' : 'none';
+  // If a preset is active, show it selected; otherwise show default view
+  if (_activePreset && _stylePresets[_activePreset]) {
+    _selectedPreset = _activePreset;
+    _showPresetEditorView(_activePreset);
+  } else {
+    _showDefaultView();
+  }
 }
 
 function _renderPresetList() {
   const list = document.getElementById('preset-list');
   if (!list) return;
   const names = Object.keys(_stylePresets);
-  // Default entry always at top
-  const defaultActive = !_activePreset;
-  const defaultSel = _selectedPreset === null;
-  const defaultEntry = `<button class="btn btn-sm${defaultSel ? ' btn-primary' : ''}" style="text-align:left;${defaultActive ? 'font-weight:600;' : ''}" onclick="selectDefault()">Default${defaultActive ? ' (active)' : ''}</button>`;
+  const isDefaultSel = _selectedPreset === null && !_isNewPreset;
+  // Always show Default at top
+  const defaultBtn = `<button class="btn btn-sm${isDefaultSel ? ' btn-primary' : ''}" style="text-align:left;" onclick="selectDefaultPreset()">Default</button>`;
   if (!names.length) {
-    list.innerHTML = defaultEntry;
+    list.innerHTML = defaultBtn;
     return;
   }
-  list.innerHTML = defaultEntry + names.map(name => {
+  list.innerHTML = defaultBtn + names.map(name => {
     const isActive = name === _activePreset;
     const isSel = name === _selectedPreset;
     const safeName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -2320,43 +2326,64 @@ function _readPresetEditor() {
   };
 }
 
-function selectDefault() {
+let _isNewPreset = false;
+
+function _showDefaultView() {
   _selectedPreset = null;
-  document.getElementById('preset-name-row').style.display = 'none';
-  document.getElementById('preset-buttons-row').style.display = 'none';
+  _isNewPreset = false;
+  const nameRow = document.getElementById('preset-name-row');
+  if (nameRow) nameRow.style.display = 'none';
+  const actionRow = document.getElementById('preset-action-row');
+  if (actionRow) actionRow.style.display = 'none';
+  const defNote = document.getElementById('preset-default-note');
+  if (defNote) defNote.style.display = '';
+  const note = document.getElementById('preset-active-note');
+  if (note) note.textContent = '';
   _populatePresetEditor({});
   _renderPresetList();
+}
+
+function _showPresetEditorView(name) {
+  const nameRow = document.getElementById('preset-name-row');
+  if (nameRow) nameRow.style.display = '';
+  const actionRow = document.getElementById('preset-action-row');
+  if (actionRow) { actionRow.style.display = 'flex'; }
+  const defNote = document.getElementById('preset-default-note');
+  if (defNote) defNote.style.display = 'none';
+  const ni = document.getElementById('preset-name-input');
+  if (ni) ni.value = name || '';
+  const note = document.getElementById('preset-active-note');
+  if (note) note.textContent = name && name === _activePreset ? 'This preset is currently active.' : '';
+}
+
+function selectDefaultPreset() {
+  _showDefaultView();
 }
 
 function selectPreset(name) {
   // Toggle off if already selected
-  if (name === _selectedPreset) { selectDefault(); return; }
+  if (_selectedPreset === name && !_isNewPreset) {
+    _showDefaultView();
+    return;
+  }
   _selectedPreset = name;
-  document.getElementById('preset-name-row').style.display = 'flex';
-  document.getElementById('preset-buttons-row').style.display = 'flex';
-  const ni = document.getElementById('preset-name-input');
-  if (ni) ni.value = name;
+  _isNewPreset = false;
+  _showPresetEditorView(name);
   const data = _stylePresets[name] || {};
   _populatePresetEditor(data);
-  const note = document.getElementById('preset-active-note');
-  if (note) note.textContent = name === _activePreset ? 'This preset is currently active.' : '';
   _renderPresetList();
 }
 
 function newPreset() {
-  _selectedPreset = '__new__';
-  document.getElementById('preset-name-row').style.display = 'flex';
-  document.getElementById('preset-buttons-row').style.display = 'flex';
-  const ni = document.getElementById('preset-name-input');
-  if (ni) ni.value = '';
+  _selectedPreset = null;
+  _isNewPreset = true;
+  _showPresetEditorView('');
   _populatePresetEditor({});
-  const note = document.getElementById('preset-active-note');
-  if (note) note.textContent = '';
   _renderPresetList();
 }
 
 function cancelPresetEditor() {
-  selectDefault();
+  _showDefaultView();
 }
 
 function clearPresetField(fieldId) {
@@ -2372,9 +2399,7 @@ async function savePreset() {
   if (!r || !r.ok) { toast(r?.error || 'Save failed', 'error'); return; }
   _stylePresets[name] = data;
   _selectedPreset = name;
-  // Stay in edit mode for the saved preset
-  document.getElementById('preset-name-row').style.display = 'flex';
-  document.getElementById('preset-buttons-row').style.display = 'flex';
+  _isNewPreset = false;
   _renderPresetList();
   toast(`Preset "${name}" saved`);
 }
@@ -2388,8 +2413,7 @@ async function activatePreset() {
   _stylePresets[name] = data;
   _activePreset = name;
   _selectedPreset = name;
-  document.getElementById('preset-name-row').style.display = 'flex';
-  document.getElementById('preset-buttons-row').style.display = 'flex';
+  _isNewPreset = false;
   const note = document.getElementById('preset-active-note');
   if (note) note.textContent = 'This preset is currently active.';
   _renderPresetList();
@@ -2400,16 +2424,18 @@ async function activatePreset() {
 
 async function deletePreset() {
   const name = _selectedPreset;
-  if (!name || name === '__new__') return;
+  if (!name) return;
   if (!confirm(`Delete preset "${name}"?`)) return;
   const r = await fetch(`/api/style-presets/${encodeURIComponent(name)}`, { method: 'DELETE' });
   const data = await r.json().catch(() => ({}));
   if (!data.ok) { toast(data.error || 'Delete failed', 'error'); return; }
   delete _stylePresets[name];
-  if (_activePreset === name) _activePreset = null;
-  const deact = document.getElementById('preset-deactivate-row');
-  if (deact) deact.style.display = _activePreset ? '' : 'none';
-  selectDefault();
+  if (_activePreset === name) {
+    _activePreset = null;
+    const deact = document.getElementById('preset-deactivate-row');
+    if (deact) deact.style.display = 'none';
+  }
+  _showDefaultView();
   toast(`Preset "${name}" deleted`);
 }
 
@@ -2419,7 +2445,7 @@ async function deactivatePreset() {
   _activePreset = null;
   const deact = document.getElementById('preset-deactivate-row');
   if (deact) deact.style.display = 'none';
-  selectDefault();
+  _showDefaultView();
   toast('Preset deactivated -- built-in defaults will be used');
 }
 
