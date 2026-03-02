@@ -205,9 +205,17 @@ The Consult tab provides an AI-powered audit of uploaded YAML story files using 
 - "Generate Fixed" buttons appear for ALL passes including Cross-References after completion
 - Cross-ref fix uses multi-file output with `--- FILE: filename.yaml ---` markers
 - "Generate All Fixes" button triggers fix generation for all completed passes at once
+- Fix generation runs in a background thread on the server (sequential, one role at a time)
+- Fix generation persists across browser refreshes and device switches
+- Fix progress tracked via polling `/api/consult-results` (1.5s interval)
+- Model indicator shows active fix generation in the header status bar
+- Log entries emitted for fix start, completion, and errors
+- Fix statuses: `queued` | `generating` | `done` | `error`
+- `POST /api/consult-apply` accepts `{"roles": [...]}` for batch fix generation
 - Corrected YAML shown in side-by-side diff view (original vs proposed) via "Show Diff" toggle
 - Proposed pane is editable before applying -- user can review and modify
 - Fix content is persisted in `consult_cache.json` and survives page refresh
+- Stale `generating`/`queued` fix statuses from crashes are reset to `error` on server restart
 - "Download Fix" button lets user save proposed YAML locally as backup
 - Apply validates YAML before saving
 

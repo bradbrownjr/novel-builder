@@ -103,6 +103,7 @@ header {
 .indicator .dot.blue   { background: var(--blue); box-shadow: 0 0 6px var(--blue); }
 .indicator .dot.pulse  { animation: pulse 1.5s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+.pulse { animation: pulse 1.5s ease-in-out infinite; }
 
 .header-actions {
   display: flex;
@@ -144,7 +145,7 @@ header {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
   min-height: 0;
 }
 .tabs {
@@ -153,6 +154,9 @@ header {
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
+  position: sticky;
+  top: 0;
+  z-index: 99;
 }
 .tab-btn {
   padding: .55rem 1.2rem;
@@ -170,7 +174,7 @@ header {
 .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
 
 .tab-panel { display: none; padding: 1rem; }
-.tab-panel.active { display: block; flex: 1; overflow-y: auto; min-height: 0; }
+.tab-panel.active { display: block; flex: 1; min-height: 0; }
 
 /* =========================================================
    Cards
@@ -1535,7 +1539,7 @@ function setupDropZones() {
 const _PASS_ORDER = ['characters', 'outline', 'locations', 'crossref'];
 let _consultSource = null;
 
-function _consultPassHtml(name, label, emoji, text, status, stats, err, fixContent) {
+function _consultPassHtml(name, label, emoji, text, status, stats, err, fixContent, fixStatus) {
   const badgeCls = status === 'running' ? 'cbadge running'
                  : status === 'done'    ? 'cbadge done'
                  : status === 'error'   ? 'cbadge error'
@@ -1557,10 +1561,29 @@ function _consultPassHtml(name, label, emoji, text, status, stats, err, fixConte
     actionsHtml = `<button class="btn btn-sm" onclick="retryPass('${name}')">Retry</button>`;
   }
 
-  const fixDisplay = fixContent ? 'block' : 'none';
-  const fixBadgeText = fixContent ? 'done' : '';
-  const fixBadgeStyle = fixContent ? 'color:var(--green);' : '';
-  const fixBtnsDisplay = fixContent ? 'flex' : 'none';
+  // Determine fix section state
+  const hasFixContent = fixContent || fixStatus === 'queued' || fixStatus === 'generating';
+  const fixDisplay = hasFixContent ? 'block' : 'none';
+  const effectiveFixStatus = fixStatus || (fixContent ? 'done' : '');
+  let fixBadgeText = '';
+  let fixBadgeStyle = '';
+  let fixBadgeClass = '';
+  let fixBtnsDisplay = 'none';
+  if (effectiveFixStatus === 'done') {
+    fixBadgeText = 'done';
+    fixBadgeStyle = 'color:var(--green);';
+    fixBtnsDisplay = 'flex';
+  } else if (effectiveFixStatus === 'generating') {
+    fixBadgeText = 'generating...';
+    fixBadgeStyle = 'color:var(--blue);';
+    fixBadgeClass = ' pulse';
+  } else if (effectiveFixStatus === 'queued') {
+    fixBadgeText = 'queued';
+    fixBadgeStyle = 'color:var(--text-dim);';
+  } else if (effectiveFixStatus === 'error') {
+    fixBadgeText = 'error';
+    fixBadgeStyle = 'color:var(--red);';
+  }
 
   return `
     <div class="card" id="cpass-${name}">
@@ -1570,7 +1593,7 @@ function _consultPassHtml(name, label, emoji, text, status, stats, err, fixConte
       <div id="cactions-${name}" style="display:${actionsDisplay};gap:.4rem;flex-wrap:wrap;">${actionsHtml}</div>
       <div id="cfix-${name}" style="display:${fixDisplay};">
         <h4 style="font-size:.82rem;color:var(--text-dim);margin:.75rem 0 .3rem;">
-          Proposed Fix <span id="cfix-badge-${name}" style="${fixBadgeStyle}">${fixBadgeText}</span>
+          Proposed Fix <span id="cfix-badge-${name}" class="${fixBadgeClass}" style="${fixBadgeStyle}">${fixBadgeText}</span>
         </h4>
         <div class="diff-container" id="cdiff-${name}" style="display:none;"></div>
         <textarea class="consult-fix-yaml" id="cfix-yaml-${name}" rows="22" spellcheck="false"
@@ -1591,7 +1614,7 @@ function _getOrCreatePassCard(container, name, label, emoji) {
   let card = document.getElementById('cpass-' + name);
   if (!card) {
     const wrapper = document.createElement('div');
-    wrapper.innerHTML = _consultPassHtml(name, label, emoji, '', 'running', null, null, '');
+    wrapper.innerHTML = _consultPassHtml(name, label, emoji, '', 'running', null, null, '', '');
     card = wrapper.firstElementChild;
     container.appendChild(card);
   }
@@ -1628,13 +1651,17 @@ async function restoreConsult() {
   const label = document.getElementById('consult-status-label');
   container.innerHTML = '';
 
+  let anyFixActive = false;
+
   for (const name of _PASS_ORDER) {
     const p = r.passes[name];
     if (!p) continue;
     const fixData = (r.fixes || {})[name];
     const fixContent = fixData ? fixData.content || '' : '';
+    const fixStatus = fixData ? fixData.status || '' : '';
+    if (fixStatus === 'generating' || fixStatus === 'queued') anyFixActive = true;
     const wrapper = document.createElement('div');
-    wrapper.innerHTML = _consultPassHtml(name, p.label, p.emoji, p.text, p.status, p.stats, p.error, fixContent);
+    wrapper.innerHTML = _consultPassHtml(name, p.label, p.emoji, p.text, p.status, p.stats, p.error, fixContent, fixStatus);
     container.appendChild(wrapper.firstElementChild);
   }
 
@@ -1656,6 +1683,11 @@ async function restoreConsult() {
     label.textContent = 'Previous analysis had an error: ' + (r.error || '');
   }
   _updateRetryFailedBtn();
+
+  // If fix generation is in progress, start polling to track it
+  if (anyFixActive || r.fix_alive) {
+    _startFixPolling();
+  }
 }
 
 function _streamConsultResponse(resp) {
@@ -1699,7 +1731,7 @@ function _handleConsultEvent(ev, container) {
       const d = ev.data;
       const existing = document.getElementById('cpass-' + d.pass);
       const wrapper = document.createElement('div');
-      wrapper.innerHTML = _consultPassHtml(d.pass, d.label, d.emoji, d.text, d.status, d.stats, d.error, '');
+      wrapper.innerHTML = _consultPassHtml(d.pass, d.label, d.emoji, d.text, d.status, d.stats, d.error, '', '');
       const newCard = wrapper.firstElementChild;
       if (existing) existing.replaceWith(newCard);
       else container.appendChild(newCard);
@@ -1856,6 +1888,8 @@ async function _startConsultWithPasses(passList) {
    ---------------------------------------------------------- */
 
 let _fixSaveTimers = {};
+let _fixPollTimer = null;
+let _fixPollLastContent = {};  // track content length per role to detect changes
 
 function _debounceSaveFix(role) {
   clearTimeout(_fixSaveTimers[role]);
@@ -1866,61 +1900,7 @@ function _debounceSaveFix(role) {
 }
 
 function startFix(role) {
-  const fixSection = document.getElementById('cfix-' + role);
-  const fixYaml    = document.getElementById('cfix-yaml-' + role);
-  const fixBadge   = document.getElementById('cfix-badge-' + role);
-  const fixBtns    = document.getElementById('cfix-btns-' + role);
-  const diffEl     = document.getElementById('cdiff-' + role);
-
-  fixSection.style.display = 'block';
-  fixYaml.value = '';
-  fixYaml.style.display = 'block';
-  if (diffEl) diffEl.style.display = 'none';
-  fixBadge.textContent = 'generating...';
-  fixBadge.style.cssText = 'color:var(--blue);';
-  fixBtns.style.display = 'none';
-
-  fetch('/api/consult-apply', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ role }),
-  }).then(resp => {
-    if (!resp.ok) return resp.json().then(d => { throw new Error(d.error || 'Fix failed'); });
-    const reader = resp.body.getReader();
-    const dec = new TextDecoder();
-    let buf = '';
-    function read() {
-      reader.read().then(({ done, value }) => {
-        if (done) return;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop();
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          let ev;
-          try { ev = JSON.parse(line.slice(6)); } catch { continue; }
-          if (ev.type === 'fix_chunk') {
-            fixYaml.value += ev.chunk;
-            fixYaml.scrollTop = fixYaml.scrollHeight;
-          } else if (ev.type === 'fix_done') {
-            fixBadge.textContent = 'done';
-            fixBadge.style.cssText = 'color:var(--green);';
-            fixBtns.style.display = 'flex';
-          } else if (ev.type === 'fix_error') {
-            fixBadge.textContent = 'error';
-            fixBadge.style.cssText = 'color:var(--red);';
-            toast('Fix error: ' + ev.message, 'error');
-          }
-        }
-        read();
-      });
-    }
-    read();
-  }).catch(e => {
-    fixBadge.textContent = 'error';
-    fixBadge.style.cssText = 'color:var(--red);';
-    toast('Fix error: ' + e.message, 'error');
-  });
+  _requestFixGeneration([role]);
 }
 
 async function generateAllFixes() {
@@ -1931,12 +1911,121 @@ async function generateAllFixes() {
   }
   if (!donePasses.length) { toast('No completed passes to generate fixes for', 'warn'); return; }
 
-  toast(`Generating fixes for ${donePasses.length} passes...`, 'ok');
+  _requestFixGeneration(donePasses);
+}
 
-  for (const name of donePasses) {
-    startFix(name);
-    // Small delay so UI doesn't freeze
-    await new Promise(r => setTimeout(r, 200));
+async function _requestFixGeneration(roles) {
+  // Set up UI for all requested roles
+  for (const role of roles) {
+    _showFixSection(role, 'queued');
+  }
+
+  const resp = await apiPost('/api/consult-apply', { roles });
+  if (!resp || !resp.ok) {
+    toast(resp?.error || 'Failed to start fix generation', 'error');
+    for (const role of roles) {
+      _updateFixBadge(role, 'error');
+    }
+    return;
+  }
+
+  toast(`Fix generation started for ${roles.length} pass(es) -- runs sequentially on server`, 'ok');
+  _startFixPolling();
+}
+
+function _showFixSection(role, status) {
+  const fixSection = document.getElementById('cfix-' + role);
+  const fixYaml    = document.getElementById('cfix-yaml-' + role);
+  const fixBadge   = document.getElementById('cfix-badge-' + role);
+  const fixBtns    = document.getElementById('cfix-btns-' + role);
+  const diffEl     = document.getElementById('cdiff-' + role);
+  if (!fixSection) return;
+
+  fixSection.style.display = 'block';
+  if (status !== 'done') {
+    fixYaml.value = '';
+    _fixPollLastContent[role] = 0;
+  }
+  fixYaml.style.display = 'block';
+  if (diffEl) diffEl.style.display = 'none';
+  _updateFixBadge(role, status);
+  fixBtns.style.display = 'none';
+}
+
+function _updateFixBadge(role, status) {
+  const fixBadge = document.getElementById('cfix-badge-' + role);
+  if (!fixBadge) return;
+  if (status === 'generating') {
+    fixBadge.textContent = 'generating...';
+    fixBadge.style.cssText = 'color:var(--blue);';
+    fixBadge.classList.add('pulse');
+  } else if (status === 'queued') {
+    fixBadge.textContent = 'queued';
+    fixBadge.style.cssText = 'color:var(--text-dim);';
+    fixBadge.classList.remove('pulse');
+  } else if (status === 'done') {
+    fixBadge.textContent = 'done';
+    fixBadge.style.cssText = 'color:var(--green);';
+    fixBadge.classList.remove('pulse');
+    const fixBtns = document.getElementById('cfix-btns-' + role);
+    if (fixBtns) fixBtns.style.display = 'flex';
+  } else if (status === 'error') {
+    fixBadge.textContent = 'error';
+    fixBadge.style.cssText = 'color:var(--red);';
+    fixBadge.classList.remove('pulse');
+  }
+}
+
+function _startFixPolling() {
+  if (_fixPollTimer) return;  // already polling
+  _fixPollTimer = setInterval(_pollFixProgress, 1500);
+}
+
+function _stopFixPolling() {
+  if (_fixPollTimer) {
+    clearInterval(_fixPollTimer);
+    _fixPollTimer = null;
+  }
+}
+
+async function _pollFixProgress() {
+  const r = await api('/api/consult-results');
+  if (!r || !r.fixes) { _stopFixPolling(); return; }
+
+  let anyActive = false;
+
+  for (const role of _PASS_ORDER) {
+    const fix = r.fixes[role];
+    if (!fix) continue;
+
+    const fixSection = document.getElementById('cfix-' + role);
+    const fixYaml = document.getElementById('cfix-yaml-' + role);
+
+    // Ensure fix section is visible
+    if (fixSection && fixSection.style.display === 'none') {
+      _showFixSection(role, fix.status);
+    }
+
+    // Update badge status
+    _updateFixBadge(role, fix.status);
+
+    // Update content if changed (streaming tokens)
+    if (fixYaml && fix.content) {
+      const lastLen = _fixPollLastContent[role] || 0;
+      if (fix.content.length > lastLen) {
+        fixYaml.value = fix.content;
+        fixYaml.scrollTop = fixYaml.scrollHeight;
+        _fixPollLastContent[role] = fix.content.length;
+      }
+    }
+
+    if (fix.status === 'generating' || fix.status === 'queued') {
+      anyActive = true;
+    }
+  }
+
+  if (!anyActive) {
+    _stopFixPolling();
   }
 }
 
