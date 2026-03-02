@@ -1600,6 +1600,17 @@ def api_consult():
                 consult_state.status = "running"
                 consult_state.error = None
 
+        # Log the moment the analysis was requested so the user has a timestamp.
+        _req_label = (
+            "retrying: " + ", ".join(requested_passes)
+            if requested_passes else "full analysis"
+        )
+        state.emit("log", {
+            "message": f"[Consult] Analysis requested ({_req_label})",
+            "level": "info",
+            "time": time.time(),
+        })
+
         def worker():
             from .consult import get_analysis_passes, build_pass_prompt, build_story_context
             cfg = _load_web_config()
@@ -1657,8 +1668,23 @@ def api_consult():
                         "Upload your story files first."
                     )
                 })
+                state.emit("log", {
+                    "message": "[Consult] No YAML files found -- analysis aborted.",
+                    "level": "error",
+                    "time": time.time(),
+                })
                 return
 
+            worker_start = time.time()
+            pass_labels = ", ".join(c["label"] for _, c in passes)
+            state.emit("log", {
+                "message": (
+                    f"[Consult] Starting {len(passes)}-pass analysis "
+                    f"with model {model} (ctx {consult_ctx}): {pass_labels}"
+                ),
+                "level": "info",
+                "time": time.time(),
+            })
             consult_state.emit("consult_start", {"total_passes": len(passes)})
 
             for idx, (pass_name, pass_cfg) in enumerate(passes, 1):
@@ -1673,6 +1699,11 @@ def api_consult():
                     "total": len(passes),
                 })
                 state.emit("model_active", {"model": "consult", "name": model})
+                state.emit("log", {
+                    "message": f"[Consult] Pass {idx}/{len(passes)}: {label} -- started",
+                    "level": "info",
+                    "time": time.time(),
+                })
 
                 system_prompt, user_prompt = build_pass_prompt(pass_name, files, story_context=story_ctx)
 
@@ -1746,6 +1777,14 @@ def api_consult():
                                 "pass": pass_name,
                                 "message": str(e),
                             })
+                            state.emit("log", {
+                                "message": (
+                                    f"[Consult] Pass {idx}/{len(passes)}: {label} "
+                                    f"-- failed after {retries} attempts: {e}"
+                                ),
+                                "level": "error",
+                                "time": time.time(),
+                            })
                             done_data = None
                             break
 
@@ -1756,6 +1795,7 @@ def api_consult():
 
                 elapsed = time.time() - t_start
                 stats = {"elapsed": round(elapsed, 1)}
+                eval_count = 0
                 if done_data:
                     eval_count = done_data.get("eval_count", 0)
                     eval_dur = done_data.get("eval_duration", 0)
@@ -1775,7 +1815,24 @@ def api_consult():
                 })
                 state.emit("model_active", {"model": "idle", "name": ""})
 
+                _log_parts = [f"[Consult] Pass {idx}/{len(passes)}: {label} -- done in {round(elapsed, 1)}s"]
+                if eval_count:
+                    _log_parts.append(f"{eval_count} tokens")
+                if stats.get("toks_per_s"):
+                    _log_parts.append(f"{stats['toks_per_s']} tok/s")
+                state.emit("log", {
+                    "message": " -- ".join(_log_parts),
+                    "level": "info",
+                    "time": time.time(),
+                })
+
+            total_elapsed = round(time.time() - worker_start, 1)
             consult_state.emit("consult_done", {})
+            state.emit("log", {
+                "message": f"[Consult] Analysis complete -- {total_elapsed}s total",
+                "level": "info",
+                "time": time.time(),
+            })
 
         t = threading.Thread(target=worker, daemon=True, name="novel-consult")
         t.start()
@@ -1933,9 +1990,11 @@ def api_consult_apply():
         for idx, role in enumerate(fix_roles, 1):
             consult_state.emit("fix_start", {"role": role, "index": idx, "total": total})
             state.emit("model_active", {"model": "consult", "name": f"{model} (fix: {role})"})
+            fix_start_time = time.time()
             state.emit("log", {
                 "message": f"[Consult] Generating fix {idx}/{total}: {role}...",
                 "level": "info",
+                "time": time.time(),
             })
 
             snap_inner = consult_state.snapshot()
@@ -2013,6 +2072,7 @@ def api_consult_apply():
                         state.emit("log", {
                             "message": f"[Consult fix {role}] Retry {attempt}/{retries}: {e}. Waiting {delay}s...",
                             "level": "warn",
+                            "time": time.time(),
                         })
                         time.sleep(delay)
                     else:
@@ -2020,6 +2080,7 @@ def api_consult_apply():
                         state.emit("log", {
                             "message": f"[Consult fix {role}] Failed: {e}",
                             "level": "error",
+                            "time": time.time(),
                         })
                         state.emit("model_active", {"model": "idle", "name": ""})
                         success = False
@@ -2027,14 +2088,21 @@ def api_consult_apply():
 
             if success:
                 consult_state.emit("fix_done", {"role": role})
+                _fix_elapsed = round(time.time() - fix_start_time, 1)
                 state.emit("log", {
-                    "message": f"[Consult] Fix generated for {role} ({len(accumulated)} chars)",
+                    "message": f"[Consult] Fix generated for {role} in {_fix_elapsed}s ({len(accumulated)} chars)",
                     "level": "info",
+                    "time": time.time(),
                 })
 
             state.emit("model_active", {"model": "idle", "name": ""})
 
         consult_state.emit("all_fixes_done", {})
+        state.emit("log", {
+            "message": f"[Consult] All fix generation complete ({len(fix_roles)} role(s))",
+            "level": "info",
+            "time": time.time(),
+        })
 
     with consult_state._lock:
         consult_state._fix_queue_roles = list(roles)
