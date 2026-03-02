@@ -1274,6 +1274,13 @@ def api_new_story():
             os.remove(path)
             removed.append(extra)
 
+    # Clear consult cache file and in-memory state
+    consult_cache_path = os.path.join(WORKSPACE_DIR, "consult_cache.json")
+    if os.path.exists(consult_cache_path):
+        os.remove(consult_cache_path)
+        removed.append("consult_cache.json")
+    consult_state.reset()
+
     state.reset()
 
     return jsonify({"ok": True, "removed": removed})
