@@ -154,9 +154,6 @@ header {
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
-  position: sticky;
-  top: 0;
-  z-index: 99;
 }
 .tab-btn {
   padding: .55rem 1.2rem;
@@ -553,8 +550,6 @@ textarea {
   </div>
 </header>
 <div class="progress-wrap"><div class="progress-fill" id="progress-fill"></div></div>
-
-<div class="page-body">
 <!-- ==================== TABS ==================== -->
 <div class="tabs">
   <button class="tab-btn active" data-tab="setup">Setup</button>
@@ -563,6 +558,8 @@ textarea {
   <button class="tab-btn" data-tab="memory">Memory</button>
   <button class="tab-btn" data-tab="output">Output</button>
 </div>
+
+<div class="page-body">
 
 <!-- ==================== SETUP TAB ==================== -->
 <div class="tab-panel active" id="panel-setup">
