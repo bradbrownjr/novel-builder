@@ -601,18 +601,53 @@ textarea {
     <button class="btn btn-sm" onclick="saveConfig()">Save Config</button>
   </div>
 
+  <!-- Style Presets card -->
   <div class="card" id="card-style">
-    <h3>🎨 Custom Style Prompt <span style="font-size:.7rem;color:var(--text-dim)">(optional)</span></h3>
-    <div class="drop-zone" id="drop-style">
-      <input type="file" accept=".txt,.yaml,.yml" onchange="handleFile(this,'style')">
-      <div class="icon">✍</div>
-      Upload, drag & drop, or <a href="#" onclick="showEditor('style');event.stopPropagation();return false;">paste/type</a> style directives
+    <h3>Style Presets <span style="font-size:.7rem;color:var(--text-dim)">(optional)</span></h3>
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-start;">
+      <div style="min-width:160px;flex:0 0 auto;">
+        <div style="font-size:.78rem;color:var(--text-dim);margin-bottom:.3rem;">Saved Presets</div>
+        <div id="preset-list" style="display:flex;flex-direction:column;gap:.25rem;min-height:40px;"></div>
+        <button class="btn btn-sm" style="margin-top:.5rem;width:100%;" onclick="newPreset()">+ New Preset</button>
+      </div>
+      <div id="preset-editor" style="flex:1;min-width:220px;display:none;">
+        <div style="display:flex;gap:.4rem;align-items:center;margin-bottom:.3rem;">
+          <input type="text" id="preset-name-input" placeholder="Preset name..." style="flex:1;font-size:.82rem;padding:.25rem .4rem;">
+          <button class="btn btn-sm btn-danger" onclick="deletePreset()">Delete</button>
+        </div>
+        <textarea id="preset-text-input" rows="7" style="width:100%;resize:vertical;box-sizing:border-box;" placeholder="Style directives for this preset..."></textarea>
+        <div style="display:flex;gap:.4rem;margin-top:.4rem;flex-wrap:wrap;align-items:center;">
+          <button class="btn btn-sm" onclick="savePreset()">Save</button>
+          <button class="btn btn-primary btn-sm" onclick="activatePreset()">Activate</button>
+          <span id="preset-active-note" style="font-size:.75rem;color:var(--text-dim);"></span>
+        </div>
+      </div>
     </div>
-    <div class="file-status empty" id="fstat-style">No file loaded</div>
-    <div class="file-actions" id="factions-style" style="display:none;">
-      <button class="btn btn-sm" onclick="downloadFile('style')">⬇ Export</button>
-      <button class="btn btn-sm" onclick="editFile('style')">✏ Edit</button>
-      <button class="btn btn-sm btn-danger" onclick="deleteFile('style')">✕</button>
+    <div style="font-size:.75rem;color:var(--text-dim);margin-top:.6rem;">Activating a preset writes it to <code>custom_style.txt</code> and applies it to every generation run.</div>
+  </div>
+
+  <!-- Prompt Overrides card -->
+  <div class="card" id="card-prompt-overrides">
+    <h3>Prompt Overrides <span style="font-size:.7rem;color:var(--text-dim)">(optional)</span></h3>
+    <p style="font-size:.8rem;color:var(--text-dim);margin:0 0 .6rem;">Override specific sections of the built-in prompts. Leave a field empty to use the built-in default.</p>
+    <div style="margin-bottom:.6rem;">
+      <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.2rem;">Author Instruction</label>
+      <div style="font-size:.75rem;color:var(--text-dim);margin-bottom:.25rem;">Default: "You are an expert fiction author writing a novel for adult readers..."</div>
+      <textarea id="po-system-opening" rows="4" style="width:100%;resize:vertical;box-sizing:border-box;" placeholder="Leave empty to use built-in default..."></textarea>
+    </div>
+    <div style="margin-bottom:.6rem;">
+      <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.2rem;">Scene Closing Instruction</label>
+      <div style="font-size:.75rem;color:var(--text-dim);margin-bottom:.25rem;">Default: "Write this scene now."</div>
+      <input type="text" id="po-scene-closing" placeholder="Leave empty to use built-in default..." style="width:100%;box-sizing:border-box;">
+    </div>
+    <div style="margin-bottom:.6rem;">
+      <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.2rem;">Extra Anti-Patterns (one per line)</label>
+      <div style="font-size:.75rem;color:var(--text-dim);margin-bottom:.25rem;">Appended to the built-in anti-patterns list. These phrases are suppressed in generated output.</div>
+      <textarea id="po-extra-anti-patterns" rows="4" style="width:100%;resize:vertical;box-sizing:border-box;" placeholder="phrase to avoid&#10;another phrase to avoid"></textarea>
+    </div>
+    <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
+      <button class="btn btn-sm" onclick="savePromptOverrides()">Save Overrides</button>
+      <button class="btn btn-sm btn-danger" onclick="resetPromptOverrides()">Reset All to Default</button>
     </div>
   </div>
 
@@ -1469,6 +1504,10 @@ async function init() {
   // Restore consult results from server cache
   restoreConsult();
 
+  // Load setup state
+  loadStylePresets();
+  loadPromptOverrides();
+
   // Start SSE
   connectSSE();
 }
@@ -2196,6 +2235,150 @@ async function saveCrossrefFixes() {
 /* ==========================================================
    Tab switch helper
    ========================================================== */
+/* ==========================================================
+   Style Presets
+   ========================================================== */
+let _stylePresets = {};
+let _activePreset = null;
+let _selectedPreset = null;
+
+async function loadStylePresets() {
+  const r = await api('/api/style-presets');
+  if (!r) return;
+  _stylePresets = r.presets || {};
+  _activePreset = r.active || null;
+  _renderPresetList();
+}
+
+function _renderPresetList() {
+  const list = document.getElementById('preset-list');
+  if (!list) return;
+  const names = Object.keys(_stylePresets);
+  if (!names.length) {
+    list.innerHTML = '<div style="font-size:.75rem;color:var(--text-dim);font-style:italic;">No presets yet</div>';
+    return;
+  }
+  list.innerHTML = names.map(name => {
+    const isActive = name === _activePreset;
+    const isSel = name === _selectedPreset;
+    const safeName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return `<button class="btn btn-sm${isSel ? ' btn-primary' : ''}" style="text-align:left;${isActive ? 'font-weight:600;' : ''}" onclick="selectPreset('${safeName}')">${escHtml(name)}${isActive ? ' (active)' : ''}</button>`;
+  }).join('');
+}
+
+function selectPreset(name) {
+  _selectedPreset = name;
+  const editor = document.getElementById('preset-editor');
+  if (editor) editor.style.display = '';
+  const ni = document.getElementById('preset-name-input');
+  const ti = document.getElementById('preset-text-input');
+  const note = document.getElementById('preset-active-note');
+  if (ni) ni.value = name;
+  if (ti) ti.value = _stylePresets[name] || '';
+  if (note) note.textContent = name === _activePreset ? 'This preset is currently active.' : '';
+  _renderPresetList();
+}
+
+function newPreset() {
+  _selectedPreset = null;
+  const editor = document.getElementById('preset-editor');
+  if (editor) editor.style.display = '';
+  const ni = document.getElementById('preset-name-input');
+  const ti = document.getElementById('preset-text-input');
+  const note = document.getElementById('preset-active-note');
+  if (ni) ni.value = '';
+  if (ti) ti.value = '';
+  if (note) note.textContent = '';
+  _renderPresetList();
+}
+
+async function savePreset() {
+  const name = (document.getElementById('preset-name-input')?.value || '').trim();
+  const text = document.getElementById('preset-text-input')?.value || '';
+  if (!name) { toast('Enter a preset name', 'warn'); return; }
+  const r = await apiPost('/api/style-presets', { name, text });
+  if (!r || !r.ok) { toast(r?.error || 'Save failed', 'error'); return; }
+  _stylePresets[name] = text;
+  _selectedPreset = name;
+  _renderPresetList();
+  toast(`Preset "${name}" saved`);
+}
+
+async function activatePreset() {
+  const name = (document.getElementById('preset-name-input')?.value || '').trim();
+  const text = document.getElementById('preset-text-input')?.value || '';
+  if (!name) { toast('Enter a preset name', 'warn'); return; }
+  const r = await apiPost('/api/style-presets', { name, text, activate: true });
+  if (!r || !r.ok) { toast(r?.error || 'Activate failed', 'error'); return; }
+  _stylePresets[name] = text;
+  _activePreset = name;
+  _selectedPreset = name;
+  const note = document.getElementById('preset-active-note');
+  if (note) note.textContent = 'This preset is currently active.';
+  _renderPresetList();
+  toast(`Preset "${name}" activated`);
+}
+
+async function deletePreset() {
+  const name = _selectedPreset;
+  if (!name) return;
+  if (!confirm(`Delete preset "${name}"?`)) return;
+  const r = await fetch(`/api/style-presets/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  const data = await r.json().catch(() => ({}));
+  if (!data.ok) { toast(data.error || 'Delete failed', 'error'); return; }
+  delete _stylePresets[name];
+  if (_activePreset === name) _activePreset = null;
+  _selectedPreset = null;
+  const editor = document.getElementById('preset-editor');
+  if (editor) editor.style.display = 'none';
+  _renderPresetList();
+  toast(`Preset "${name}" deleted`);
+}
+
+/* ==========================================================
+   Prompt Overrides
+   ========================================================== */
+
+async function loadPromptOverrides() {
+  const r = await api('/api/prompt-overrides');
+  if (!r || !r.ok) return;
+  const ov = r.overrides || {};
+  const sys = document.getElementById('po-system-opening');
+  const sc = document.getElementById('po-scene-closing');
+  const ap = document.getElementById('po-extra-anti-patterns');
+  if (sys) sys.value = ov.system_opening || '';
+  if (sc) sc.value = ov.scene_closing || '';
+  if (ap) {
+    const patterns = ov.extra_anti_patterns;
+    ap.value = Array.isArray(patterns) ? patterns.join('\n') : (patterns || '');
+  }
+}
+
+async function savePromptOverrides() {
+  const raw = document.getElementById('po-extra-anti-patterns')?.value || '';
+  const extra_anti_patterns = raw.split('\n').map(s => s.trim()).filter(Boolean);
+  const overrides = {};
+  const sys = (document.getElementById('po-system-opening')?.value || '').trim();
+  const sc = (document.getElementById('po-scene-closing')?.value || '').trim();
+  if (sys) overrides.system_opening = sys;
+  if (sc) overrides.scene_closing = sc;
+  if (extra_anti_patterns.length) overrides.extra_anti_patterns = extra_anti_patterns;
+  const r = await apiPost('/api/prompt-overrides', { overrides });
+  if (!r || !r.ok) { toast(r?.error || 'Save failed', 'error'); return; }
+  toast('Prompt overrides saved');
+}
+
+async function resetPromptOverrides() {
+  if (!confirm('Reset all prompt overrides to built-in defaults?')) return;
+  const r = await apiPost('/api/prompt-overrides', { overrides: {} });
+  if (!r || !r.ok) { toast('Reset failed', 'error'); return; }
+  ['po-system-opening', 'po-scene-closing', 'po-extra-anti-patterns'].forEach(id => {
+    const e = document.getElementById(id);
+    if (e) e.value = '';
+  });
+  toast('Prompt overrides cleared -- built-in defaults will be used');
+}
+
 function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
