@@ -1367,7 +1367,8 @@ function confirmNewStory() {
         document.getElementById('output-viewer').textContent = '(No output yet)';
         document.getElementById('log-viewer').innerHTML = '';
         updateUIForStatus('idle');
-        // Reset Consult tab UI
+        // Reset Consult tab UI (server state already cleared by /api/new-story)
+        _stopFixPolling();
         document.getElementById('consult-passes-container').innerHTML = '';
         document.getElementById('consult-status-label').textContent = '';
         document.getElementById('btn-consult-start').disabled = false;
@@ -1375,7 +1376,6 @@ function confirmNewStory() {
         if (retryBtn) retryBtn.style.display = 'none';
         const genAllBtn = document.getElementById('btn-consult-genall');
         if (genAllBtn) genAllBtn.style.display = 'none';
-        _stopFixPolling();
       } else {
         toast(r?.error || 'Reset failed', 'error');
       }
