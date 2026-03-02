@@ -2287,6 +2287,8 @@ async function loadPromptPresets() {
   if (_activePreset && _stylePresets[_activePreset]) {
     _selectedPreset = _activePreset;
     _showPresetEditorView(_activePreset);
+    _populatePresetEditor(_stylePresets[_activePreset]);
+    _renderPresetList();
   } else {
     _showDefaultView();
   }
