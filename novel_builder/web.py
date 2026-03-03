@@ -246,6 +246,7 @@ class ConsultState:
         self._fix_queue_roles = []  # ordered list of roles queued for fix generation
         self._fix_current = None    # role currently being generated
         self._event_queues = []
+        self._stop_requested = False  # set by /api/consult-stop
         self._load_from_disk()
 
     def emit(self, event_type, data):
@@ -277,8 +278,11 @@ class ConsultState:
                     self.passes[name]["error"] = data.get("message", "")
             elif event_type == "consult_start":
                 self.status = "running"
+                self._stop_requested = False
             elif event_type == "consult_done":
                 self.status = "completed"
+            elif event_type == "consult_stopped":
+                self.status = "stopped"
             elif event_type == "consult_error":
                 self.status = "error"
                 self.error = data.get("message", "")
@@ -312,7 +316,7 @@ class ConsultState:
 
             # Persist to disk after meaningful state changes
             if event_type in ("pass_done", "pass_error",
-                               "consult_done", "consult_error",
+                               "consult_done", "consult_error", "consult_stopped",
                                "fix_start", "fix_done", "fix_error",
                                "all_fixes_done"):
                 self._persist()
@@ -394,7 +398,13 @@ class ConsultState:
             self.error = None
             self._fix_queue_roles = []
             self._fix_current = None
+            self._stop_requested = False
         self._delete_cache()
+
+    def request_stop(self):
+        """Signal the analysis worker to stop after the current pass."""
+        with self._lock:
+            self._stop_requested = True
 
     def _persist(self):
         """Save current passes to disk for restart survival."""
@@ -420,6 +430,10 @@ class ConsultState:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             self.status = data.get("status", "idle")
+            # A "running" status on disk means the server restarted while the
+            # worker was active.  Treat it as stopped so the user can resume.
+            if self.status == "running":
+                self.status = "stopped"
             self.passes = data.get("passes", {})
             self.fixes = data.get("fixes", {})
             self.error = data.get("error")
@@ -1467,7 +1481,31 @@ def api_stop():
         return jsonify({"ok": False, "message": "Not currently running"})
 
     _story_stopper()
-    state.emit("log", {"message": "Stop requested by user", "level": "warn"})
+    state.emit("log", {"message": "Stop requested by user", "level": "warn", "time": time.time()})
+    return jsonify({"ok": True, "message": "Stop requested"})
+
+
+@app.route("/api/consult-stop", methods=["POST"])
+def api_consult_stop():
+    """Request graceful stop of the running consultation analysis.
+
+    The worker checks the stop flag between passes.  The current pass
+    will complete before stopping, so the response may take a moment
+    to appear in the UI.
+    """
+    is_running = (
+        consult_state._thread is not None
+        and consult_state._thread.is_alive()
+    )
+    if not is_running:
+        return jsonify({"ok": False, "message": "Consult is not running"})
+
+    consult_state.request_stop()
+    state.emit("log", {
+        "message": "[Consult] Stop requested by user -- will pause after current pass",
+        "level": "warn",
+        "time": time.time(),
+    })
     return jsonify({"ok": True, "message": "Stop requested"})
 
 
@@ -1588,23 +1626,36 @@ def api_consult():
     if consult_state._thread is None or not consult_state._thread.is_alive():
         body = request.get_json(silent=True) or {}
         requested_passes = body.get("passes")  # None = run all
+        resume = body.get("resume", False)
 
-        # Full run clears everything; selective retry preserves completed passes
-        if requested_passes is None:
-            consult_state.reset()
-        else:
+        # Full run clears everything; selective retry preserves completed passes;
+        # resume continues from where a stopped analysis left off.
+        if requested_passes is not None:
             # Clear only the passes being retried
             with consult_state._lock:
                 for pname in requested_passes:
                     consult_state.passes.pop(pname, None)
                 consult_state.status = "running"
                 consult_state.error = None
+                consult_state._stop_requested = False
+        elif resume and consult_state.status in ("stopped", "error"):
+            # Resume: keep completed passes intact, run only incomplete ones
+            with consult_state._lock:
+                consult_state.status = "running"
+                consult_state.error = None
+                consult_state._stop_requested = False
+        else:
+            consult_state.reset()
+
+        _resume_mode = resume and requested_passes is None
 
         # Log the moment the analysis was requested so the user has a timestamp.
-        _req_label = (
-            "retrying: " + ", ".join(requested_passes)
-            if requested_passes else "full analysis"
-        )
+        if _resume_mode:
+            _req_label = "resuming from stopped"
+        elif requested_passes:
+            _req_label = "retrying: " + ", ".join(requested_passes)
+        else:
+            _req_label = "full analysis"
         state.emit("log", {
             "message": f"[Consult] Analysis requested ({_req_label})",
             "level": "info",
@@ -1656,11 +1707,18 @@ def api_consult():
                     pass
             story_ctx = build_story_context(_outline_data, _po_data)
 
-            passes = get_analysis_passes(files)
-            # Filter to only requested passes when doing a selective retry
+            all_passes = get_analysis_passes(files)
+
+            # Determine which passes to run based on mode
             if requested_passes is not None:
-                passes = [(n, c) for n, c in passes
-                          if n in requested_passes]
+                passes = [(n, c) for n, c in all_passes if n in requested_passes]
+            elif _resume_mode:
+                # Resume: skip passes that are already completed
+                with consult_state._lock:
+                    done = {n for n, p in consult_state.passes.items() if p.get("status") == "done"}
+                passes = [(n, c) for n, c in all_passes if n not in done]
+            else:
+                passes = all_passes
             if not passes:
                 consult_state.emit("consult_error", {
                     "message": (
@@ -1690,6 +1748,15 @@ def api_consult():
             for idx, (pass_name, pass_cfg) in enumerate(passes, 1):
                 label = pass_cfg["label"]
                 emoji = pass_cfg["emoji"]
+
+                # Check stop flag before starting this pass
+                if consult_state._stop_requested:
+                    state.emit("log", {
+                        "message": f"[Consult] Stop acknowledged -- {len(passes) - idx + 1} pass(es) skipped",
+                        "level": "warn",
+                        "time": time.time(),
+                    })
+                    break
 
                 consult_state.emit("pass_start", {
                     "pass": pass_name,
@@ -1826,13 +1893,22 @@ def api_consult():
                     "time": time.time(),
                 })
 
-            total_elapsed = round(time.time() - worker_start, 1)
-            consult_state.emit("consult_done", {})
-            state.emit("log", {
-                "message": f"[Consult] Analysis complete -- {total_elapsed}s total",
-                "level": "info",
-                "time": time.time(),
-            })
+            # If loop exited due to stop request, emit stopped rather than done
+            if consult_state._stop_requested:
+                consult_state.emit("consult_stopped", {})
+                state.emit("log", {
+                    "message": "[Consult] Analysis paused -- Resume Analysis to continue remaining passes",
+                    "level": "warn",
+                    "time": time.time(),
+                })
+            else:
+                total_elapsed = round(time.time() - worker_start, 1)
+                consult_state.emit("consult_done", {})
+                state.emit("log", {
+                    "message": f"[Consult] Analysis complete -- {total_elapsed}s total",
+                    "level": "info",
+                    "time": time.time(),
+                })
 
         t = threading.Thread(target=worker, daemon=True, name="novel-consult")
         t.start()
@@ -1861,13 +1937,16 @@ def api_consult():
             if snap["status"] == "error":
                 yield f"data: {json.dumps({'type': 'consult_error', 'message': snap.get('error', '')})}\n\n"
                 return
+            if snap["status"] == "stopped":
+                yield f"data: {json.dumps({'type': 'consult_stopped'})}\n\n"
+                return
 
             # Stream live events from background thread
             while True:
                 try:
                     event = q.get(timeout=15)
                     yield f"data: {json.dumps(event, default=str)}\n\n"
-                    if event["type"] in ("consult_done", "consult_error"):
+                    if event["type"] in ("consult_done", "consult_error", "consult_stopped"):
                         break
                 except queue.Empty:
                     yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
