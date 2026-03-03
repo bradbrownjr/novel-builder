@@ -1839,8 +1839,9 @@ async function startConsult() {
   document.getElementById('btn-consult-start').style.display = 'none';
   document.getElementById('btn-consult-stop').style.display = '';
   document.getElementById('btn-consult-resume').style.display = 'none';
-  document.getElementById('consult-status-label').textContent = 'Starting...';
+  document.getElementById('consult-status-label').textContent = '';
   document.getElementById('consult-passes-container').innerHTML = '';
+  _disableGenAllForAnalysis();
   consultRunning = true;
   updateGlobalStop();
 
@@ -1890,12 +1891,13 @@ async function restoreConsult() {
     label.textContent = 'Analysis complete';
     _updateGenAllBtn();
   } else if (r.status === 'running' || r.is_alive) {
-    label.textContent = 'Analysis in progress -- connecting...';
+    label.textContent = '';
     consultRunning = true;
     updateGlobalStop();
     document.getElementById('btn-consult-start').style.display = 'none';
     document.getElementById('btn-consult-stop').style.display = '';
     document.getElementById('btn-consult-resume').style.display = 'none';
+    _disableGenAllForAnalysis();
     const resp = await fetch('/api/consult', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1966,12 +1968,13 @@ function _handleConsultEvent(ev, container) {
 
   switch (ev.type) {
     case 'consult_start':
-      statusLbl.textContent = `Running ${ev.data.total_passes} passes...`;
+      statusLbl.textContent = '';
       consultRunning = true;
       updateGlobalStop();
       document.getElementById('btn-consult-start').style.display = 'none';
       document.getElementById('btn-consult-stop').style.display = '';
       document.getElementById('btn-consult-resume').style.display = 'none';
+      _disableGenAllForAnalysis();
       break;
 
     case 'pass_restore': {
@@ -2060,6 +2063,7 @@ function _handleConsultEvent(ev, container) {
       consultRunning = false;
       updateGlobalStop();
       _updateRetryFailedBtn();
+      _updateGenAllBtn();
       break;
 
     case 'consult_stopped':
@@ -2071,6 +2075,7 @@ function _handleConsultEvent(ev, container) {
       consultRunning = false;
       updateGlobalStop();
       _updateRetryFailedBtn();
+      _updateGenAllBtn();
       break;
   }
 }
@@ -2111,6 +2116,15 @@ function _updateRetryFailedBtn() {
   if (!btn) return;
   const failed = _getFailedPasses();
   btn.style.display = failed.length > 0 ? '' : 'none';
+}
+
+function _disableGenAllForAnalysis() {
+  const btn = document.getElementById('btn-consult-genall');
+  if (!btn) return;
+  btn.style.display = '';
+  btn.disabled = true;
+  btn.textContent = 'Analysis Running...';
+  btn.onclick = null;
 }
 
 function _updateGenAllBtn() {
@@ -2167,7 +2181,8 @@ async function _startConsultWithPasses(passList) {
   if (_consultSource) { _consultSource.close(); _consultSource = null; }
   document.getElementById('btn-consult-start').disabled = true;
   document.getElementById('btn-consult-retry').style.display = 'none';
-  document.getElementById('consult-status-label').textContent = 'Retrying...';
+  document.getElementById('consult-status-label').textContent = '';
+  _disableGenAllForAnalysis();
 
   for (const name of passList) {
     const card = document.getElementById('cpass-' + name);
