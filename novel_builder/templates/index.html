@@ -601,6 +601,7 @@ textarea {
     </div>
   </div>
   <div class="header-actions">
+    <button id="btn-global-stop" onclick="stopActiveJob()" class="btn-danger btn-sm" style="display:none;" title="Stop active job">Stop</button>
     <button onclick="toggleTheme()" title="Toggle light/dark">🌓</button>
     <button onclick="confirmNewStory()" title="New Story" class="btn-danger btn-sm">New Story</button>
   </div>
@@ -820,6 +821,8 @@ textarea {
     <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
       <button class="btn" onclick="switchTab('plan')">‹ Back: Plan</button>
       <button class="btn btn-primary" id="btn-consult-start" onclick="startConsult()">&#9654; Start Analysis</button>
+      <button class="btn btn-danger" id="btn-consult-stop" onclick="stopConsult()" style="display:none;">Stop</button>
+      <button class="btn" id="btn-consult-resume" onclick="resumeConsult()" style="display:none;">Resume Analysis</button>
       <button class="btn" id="btn-consult-genall" onclick="generateAllFixes()" style="display:none;">Generate All Fixes</button>
       <button class="btn" id="btn-consult-retry" onclick="retryFailed()" style="display:none;">Retry Failed</button>
       <button class="btn" onclick="clearConsult()">&#10005; Clear</button>
@@ -950,6 +953,8 @@ textarea {
 let currentEditorRole = null;
 let eventSource = null;
 let reconnectTimer = null;
+let currentStatus = 'idle';   // tracks story generation status
+let consultRunning = false;   // true while consult worker is active
 
 /* ==========================================================
    Tabs — handled via switchTab() defined later in this file
@@ -1383,10 +1388,64 @@ function confirmNewStory() {
   );
 }
 
+function updateGlobalStop() {
+  const btn = document.getElementById('btn-global-stop');
+  if (btn) btn.style.display = (currentStatus === 'running' || consultRunning) ? '' : 'none';
+}
+
+async function stopActiveJob() {
+  if (currentStatus === 'running') {
+    const r = await apiPost('/api/stop');
+    if (r && r.ok) toast('Stop requested -- finishing current scene...', 'warn');
+  }
+  if (consultRunning) {
+    const r = await apiPost('/api/consult-stop');
+    if (r && r.ok) toast('Consult stop requested -- will pause after current pass', 'warn');
+  }
+}
+
+async function stopConsult() {
+  const r = await apiPost('/api/consult-stop');
+  if (r && r.ok) toast('Consult stop requested -- will pause after current pass', 'warn');
+  else toast(r?.message || 'Stop failed', 'error');
+}
+
+async function resumeConsult() {
+  if (_consultSource) { _consultSource.close(); _consultSource = null; }
+  const label = document.getElementById('consult-status-label');
+  if (label) label.textContent = 'Resuming...';
+  document.getElementById('btn-consult-start').disabled = true;
+  document.getElementById('btn-consult-resume').style.display = 'none';
+  document.getElementById('btn-consult-stop').style.display = '';
+  consultRunning = true;
+  updateGlobalStop();
+
+  const resp = await fetch('/api/consult', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resume: true }),
+  });
+
+  if (!resp.ok) {
+    const d = await resp.json().catch(() => ({}));
+    toast(d.message || 'Failed to resume consult', 'error');
+    document.getElementById('btn-consult-start').disabled = false;
+    document.getElementById('btn-consult-resume').style.display = '';
+    document.getElementById('btn-consult-stop').style.display = 'none';
+    consultRunning = false;
+    updateGlobalStop();
+    return;
+  }
+
+  _streamConsultResponse(resp);
+}
+
 /* ==========================================================
    UI status updates
    ========================================================== */
 function updateUIForStatus(status) {
+  currentStatus = status;
+  updateGlobalStop();
   const dotS = document.getElementById('dot-status');
   const lblS = document.getElementById('lbl-status');
   const indP = document.getElementById('ind-progress');
@@ -1775,8 +1834,13 @@ function _getOrCreatePassCard(container, name, label, emoji) {
 async function startConsult() {
   if (_consultSource) { _consultSource.close(); _consultSource = null; }
   document.getElementById('btn-consult-start').disabled = true;
+  document.getElementById('btn-consult-start').style.display = 'none';
+  document.getElementById('btn-consult-stop').style.display = '';
+  document.getElementById('btn-consult-resume').style.display = 'none';
   document.getElementById('consult-status-label').textContent = 'Starting...';
   document.getElementById('consult-passes-container').innerHTML = '';
+  consultRunning = true;
+  updateGlobalStop();
 
   const resp = await fetch('/api/consult', {
     method: 'POST',
@@ -1788,6 +1852,10 @@ async function startConsult() {
     const d = await resp.json().catch(() => ({}));
     toast(d.message || 'Failed to start consult', 'error');
     document.getElementById('btn-consult-start').disabled = false;
+    document.getElementById('btn-consult-start').style.display = '';
+    document.getElementById('btn-consult-stop').style.display = 'none';
+    consultRunning = false;
+    updateGlobalStop();
     return;
   }
 
@@ -1821,6 +1889,11 @@ async function restoreConsult() {
     _updateGenAllBtn();
   } else if (r.status === 'running' || r.is_alive) {
     label.textContent = 'Analysis in progress -- connecting...';
+    consultRunning = true;
+    updateGlobalStop();
+    document.getElementById('btn-consult-start').style.display = 'none';
+    document.getElementById('btn-consult-stop').style.display = '';
+    document.getElementById('btn-consult-resume').style.display = 'none';
     const resp = await fetch('/api/consult', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1830,6 +1903,10 @@ async function restoreConsult() {
       document.getElementById('btn-consult-start').disabled = true;
       _streamConsultResponse(resp);
     }
+  } else if (r.status === 'stopped') {
+    label.textContent = 'Analysis paused -- Resume Analysis to continue';
+    document.getElementById('btn-consult-resume').style.display = '';
+    document.getElementById('btn-consult-start').style.display = '';
   } else if (r.status === 'error') {
     label.textContent = 'Previous analysis had an error: ' + (r.error || '');
   }
@@ -1850,7 +1927,13 @@ function _streamConsultResponse(resp) {
   function read() {
     reader.read().then(({ done, value }) => {
       if (done) {
+        // Stream ended -- terminal event should have already updated the UI;
+        // this is a safety reset in case of unexpected disconnection.
         document.getElementById('btn-consult-start').disabled = false;
+        document.getElementById('btn-consult-start').style.display = '';
+        document.getElementById('btn-consult-stop').style.display = 'none';
+        consultRunning = false;
+        updateGlobalStop();
         return;
       }
       buf += decoder.decode(value, { stream: true });
@@ -1865,6 +1948,10 @@ function _streamConsultResponse(resp) {
       read();
     }).catch(() => {
       document.getElementById('btn-consult-start').disabled = false;
+      document.getElementById('btn-consult-start').style.display = '';
+      document.getElementById('btn-consult-stop').style.display = 'none';
+      consultRunning = false;
+      updateGlobalStop();
     });
   }
   read();
@@ -1876,6 +1963,11 @@ function _handleConsultEvent(ev, container) {
   switch (ev.type) {
     case 'consult_start':
       statusLbl.textContent = `Running ${ev.data.total_passes} passes...`;
+      consultRunning = true;
+      updateGlobalStop();
+      document.getElementById('btn-consult-start').style.display = 'none';
+      document.getElementById('btn-consult-stop').style.display = '';
+      document.getElementById('btn-consult-resume').style.display = 'none';
       break;
 
     case 'pass_restore': {
@@ -1946,6 +2038,11 @@ function _handleConsultEvent(ev, container) {
     case 'consult_done':
       statusLbl.textContent = 'Analysis complete';
       document.getElementById('btn-consult-start').disabled = false;
+      document.getElementById('btn-consult-start').style.display = '';
+      document.getElementById('btn-consult-stop').style.display = 'none';
+      document.getElementById('btn-consult-resume').style.display = 'none';
+      consultRunning = false;
+      updateGlobalStop();
       _updateRetryFailedBtn();
       _updateGenAllBtn();
       break;
@@ -1954,6 +2051,21 @@ function _handleConsultEvent(ev, container) {
       statusLbl.textContent = 'Error: ' + (ev.data.message || ev.message || '');
       toast(ev.data.message || ev.message || 'Consult error', 'error');
       document.getElementById('btn-consult-start').disabled = false;
+      document.getElementById('btn-consult-start').style.display = '';
+      document.getElementById('btn-consult-stop').style.display = 'none';
+      consultRunning = false;
+      updateGlobalStop();
+      _updateRetryFailedBtn();
+      break;
+
+    case 'consult_stopped':
+      statusLbl.textContent = 'Analysis paused';
+      document.getElementById('btn-consult-start').disabled = false;
+      document.getElementById('btn-consult-start').style.display = '';
+      document.getElementById('btn-consult-stop').style.display = 'none';
+      document.getElementById('btn-consult-resume').style.display = '';
+      consultRunning = false;
+      updateGlobalStop();
       _updateRetryFailedBtn();
       break;
   }
@@ -1965,6 +2077,11 @@ async function clearConsult() {
     document.getElementById('consult-passes-container').innerHTML = '';
     document.getElementById('consult-status-label').textContent = '';
     document.getElementById('btn-consult-start').disabled = false;
+    document.getElementById('btn-consult-start').style.display = '';
+    document.getElementById('btn-consult-stop').style.display = 'none';
+    document.getElementById('btn-consult-resume').style.display = 'none';
+    consultRunning = false;
+    updateGlobalStop();
     document.getElementById('btn-consult-retry').style.display = 'none';
     document.getElementById('btn-consult-genall').style.display = 'none';
   } else {
