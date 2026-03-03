@@ -739,24 +739,7 @@ textarea {
 <!-- ==================== PLAN TAB ==================== -->
 <div class="tab-panel" id="panel-plan">
 
-  <!-- File upload cards — one per role -->
-  <div class="card" id="card-outline">
-    <h3>📘 Story Outline</h3>
-    <div class="drop-zone" id="drop-outline">
-      <input type="file" accept=".yaml,.yml" onchange="handleFile(this,'outline')">
-      <div class="icon">📄</div>
-      Upload, drag & drop, or <a href="#" onclick="showEditor('outline');event.stopPropagation();return false;">paste/type</a> your story_outline.yaml
-    </div>
-    <div class="file-status empty" id="fstat-outline">No file loaded</div>
-    <div class="file-actions" id="factions-outline" style="display:none;">
-      <button class="btn btn-sm" onclick="downloadFile('outline')">⬇ Export</button>
-      <button class="btn btn-sm" onclick="editFile('outline')">✏ Edit</button>
-      <button class="btn btn-sm btn-danger" onclick="deleteFile('outline')">✕</button>
-    </div>
-    <div class="data-summary" id="summary-outline"></div>
-    <div class="validation-results" id="vresults-outline"></div>
-  </div>
-
+  <!-- File upload cards — alphabetical order matching File Explorer -->
   <div class="card" id="card-characters">
     <h3>👤 Characters</h3>
     <div class="drop-zone" id="drop-characters">
@@ -789,6 +772,23 @@ textarea {
     </div>
     <div class="data-summary" id="summary-locations"></div>
     <div class="validation-results" id="vresults-locations"></div>
+  </div>
+
+  <div class="card" id="card-outline">
+    <h3>📘 Story Outline</h3>
+    <div class="drop-zone" id="drop-outline">
+      <input type="file" accept=".yaml,.yml" onchange="handleFile(this,'outline')">
+      <div class="icon">📄</div>
+      Upload, drag & drop, or <a href="#" onclick="showEditor('outline');event.stopPropagation();return false;">paste/type</a> your story_outline.yaml
+    </div>
+    <div class="file-status empty" id="fstat-outline">No file loaded</div>
+    <div class="file-actions" id="factions-outline" style="display:none;">
+      <button class="btn btn-sm" onclick="downloadFile('outline')">⬇ Export</button>
+      <button class="btn btn-sm" onclick="editFile('outline')">✏ Edit</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteFile('outline')">✕</button>
+    </div>
+    <div class="data-summary" id="summary-outline"></div>
+    <div class="validation-results" id="vresults-outline"></div>
   </div>
 
   <!-- Loaded data overview -->
