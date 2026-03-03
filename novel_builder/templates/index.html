@@ -1888,8 +1888,7 @@ async function restoreConsult() {
   }
 
   if (r.status === 'completed') {
-    label.textContent = 'Analysis complete';
-    _updateGenAllBtn();
+    label.textContent = '';
   } else if (r.status === 'running' || r.is_alive) {
     label.textContent = '';
     consultRunning = true;
@@ -1916,11 +1915,11 @@ async function restoreConsult() {
   }
   _updateRetryFailedBtn();
 
-  // If fix generation is in progress, start polling to track it; otherwise set button state from stored fixes
+  // Always let _refreshGenAllBtn drive button state (handles generating/done/idle correctly).
+  // If fixes are actively running, also kick off polling to track completion.
+  _refreshGenAllBtn(r.fixes || {});
   if (anyFixActive || r.fix_alive) {
     _startFixPolling();
-  } else {
-    _refreshGenAllBtn(r.fixes || {});
   }
 }
 
@@ -2043,7 +2042,7 @@ function _handleConsultEvent(ev, container) {
     }
 
     case 'consult_done':
-      statusLbl.textContent = 'Analysis complete';
+      statusLbl.textContent = '';
       document.getElementById('btn-consult-start').disabled = false;
       document.getElementById('btn-consult-start').style.display = '';
       document.getElementById('btn-consult-stop').style.display = 'none';
