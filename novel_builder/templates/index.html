@@ -1912,9 +1912,11 @@ async function restoreConsult() {
   }
   _updateRetryFailedBtn();
 
-  // If fix generation is in progress, start polling to track it
+  // If fix generation is in progress, start polling to track it; otherwise set button state from stored fixes
   if (anyFixActive || r.fix_alive) {
     _startFixPolling();
+  } else {
+    _refreshGenAllBtn(r.fixes || {});
   }
 }
 
@@ -2083,7 +2085,11 @@ async function clearConsult() {
     consultRunning = false;
     updateGlobalStop();
     document.getElementById('btn-consult-retry').style.display = 'none';
-    document.getElementById('btn-consult-genall').style.display = 'none';
+    const _gab2 = document.getElementById('btn-consult-genall');
+    _gab2.style.display = 'none';
+    _gab2.textContent = 'Generate All Fixes';
+    _gab2.onclick = generateAllFixes;
+    _gab2.disabled = false;
   } else {
     toast(r?.error || 'Cannot clear while analysis is running', 'warn');
   }
@@ -2108,9 +2114,41 @@ function _updateRetryFailedBtn() {
 function _updateGenAllBtn() {
   const btn = document.getElementById('btn-consult-genall');
   if (!btn) return;
-  // Show if at least one pass is done
+  // Show if at least one pass is done; always reset to Generate mode (called at analysis completion)
   const donePasses = document.querySelectorAll('.cbadge.done');
-  btn.style.display = donePasses.length > 0 ? '' : 'none';
+  if (donePasses.length > 0) {
+    btn.style.display = '';
+    btn.textContent = 'Generate All Fixes';
+    btn.onclick = generateAllFixes;
+    btn.disabled = false;
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+function _refreshGenAllBtn(fixes) {
+  const btn = document.getElementById('btn-consult-genall');
+  if (!btn) return;
+  const fixList = fixes ? Object.values(fixes) : [];
+  const anyActive = fixList.some(f => f.status === 'generating' || f.status === 'queued');
+  const hasDone   = fixList.some(f => f.status === 'done');
+  if (anyActive) {
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+    btn.onclick = null;
+    btn.style.display = '';
+  } else if (hasDone) {
+    btn.textContent = 'Apply All Fixes';
+    btn.onclick = applyAllFixes;
+    btn.disabled = false;
+    btn.style.display = '';
+  } else {
+    // No done fixes -- revert to Generate mode (visibility driven by analysis passes)
+    btn.textContent = 'Generate All Fixes';
+    btn.onclick = generateAllFixes;
+    btn.disabled = false;
+    _updateGenAllBtn();
+  }
 }
 
 async function retryPass(name) {
@@ -2198,6 +2236,9 @@ async function _requestFixGeneration(roles) {
   }
 
   toast(`Fix generation started for ${roles.length} pass(es) -- runs sequentially on server`, 'ok');
+  // Disable the button during generation
+  const _gab = document.getElementById('btn-consult-genall');
+  if (_gab) { _gab.disabled = true; _gab.textContent = 'Generating...'; _gab.onclick = null; _gab.style.display = ''; }
   _startFixPolling();
 }
 
@@ -2294,7 +2335,43 @@ async function _pollFixProgress() {
 
   if (!anyActive) {
     _stopFixPolling();
+    _refreshGenAllBtn(r.fixes);
   }
+}
+
+async function applyAllFixes() {
+  const btn = document.getElementById('btn-consult-genall');
+  if (btn) { btn.disabled = true; btn.textContent = 'Applying...'; }
+  let saved = 0;
+  const errors = [];
+  for (const role of _PASS_ORDER) {
+    const fixSection = document.getElementById('cfix-' + role);
+    const fixYaml    = document.getElementById('cfix-yaml-' + role);
+    const fixBtns    = document.getElementById('cfix-btns-' + role);
+    // Only apply fixes whose action buttons are visible (status = done)
+    if (!fixSection || fixSection.style.display === 'none') continue;
+    if (!fixYaml || !fixYaml.value.trim()) continue;
+    if (!fixBtns || fixBtns.style.display === 'none') continue;
+    if (role === 'crossref') {
+      const content = fixYaml.value;
+      const subRoles = ['characters', 'outline', 'locations'];
+      for (const r of subRoles) {
+        const parsed = _parseCrossrefFile(content, r);
+        if (!parsed) continue;
+        const res = await apiPost('/api/consult-save', { role: r, content: parsed });
+        if (res && res.ok) saved++;
+        else errors.push(`${_fileLabel(r)}: ${res?.error || 'failed'}`);
+      }
+    } else {
+      const res = await apiPost('/api/consult-save', { role, content: fixYaml.value });
+      if (res && res.ok) saved++;
+      else errors.push(`${_fileLabel(role)}: ${res?.error || 'failed'}`);
+    }
+  }
+  if (saved > 0) { toast(`${saved} file(s) saved to workspace`, 'ok'); refreshFiles(); refreshParsed(); }
+  if (errors.length) toast('Errors: ' + errors.join('; '), 'error');
+  if (saved === 0 && !errors.length) toast('No completed fixes found to apply', 'warn');
+  if (btn) { btn.disabled = false; btn.textContent = 'Apply All Fixes'; }
 }
 
 async function showDiff(role) {
