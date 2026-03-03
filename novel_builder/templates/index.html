@@ -2857,7 +2857,17 @@ function switchTab(name) {
   if (panel) panel.classList.add('active');
   // Lazy-load memory when switching to that tab
   if (name === 'memory') refreshMemory();
+  // Re-sync consult state when switching to the consult tab (stream may have
+  // finished while the user was on another tab)
+  if (name === 'consult' && !consultRunning) restoreConsult();
 }
+
+// Re-sync consult state when the browser tab regains visibility
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  const active = document.querySelector('.tab-btn.active');
+  if (active && active.dataset.tab === 'consult' && !consultRunning) restoreConsult();
+});
 
 // Also hook existing tab buttons through switchTab so memory lazy-loads
 document.querySelectorAll('.tab-btn').forEach(btn => {
