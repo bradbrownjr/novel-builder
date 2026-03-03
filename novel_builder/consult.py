@@ -222,29 +222,50 @@ Locations YAML:
 ```"""
 
     return f"""\
-Analyze the cross-references and continuity across these story files.
+Analyze the cross-references, continuity, and story architecture across these \
+story files. Think like a director reviewing a screenplay before production -- \
+you are looking at the whole story, not just individual scenes.
 
 Evaluate:
 1. **Character introduction timing** — Are characters assigned to scenes \
-before they should appear in the story? Early appearances spoil surprises.
+before they should appear? Early appearances spoil surprises.
 2. **Character coverage** — Are any defined characters never used in scenes? \
 Are scenes referencing characters not in the character file?
 3. **Setting references** — Do scene setting IDs match defined locations? \
 Are locations defined but never used?
-4. **Relationship activation** — When two characters with defined relationships \
-share a scene, their dynamic should be leverageable. Are relationship-heavy \
-characters actually placed in scenes together?
+4. **Relationship activation** — Are relationship-heavy characters actually placed \
+in scenes together where their dynamic creates tension, subtext, or payoff? \
+Identify specific missed pairing opportunities.
 5. **Emotional continuity** — Do emotional arcs across successive scenes flow \
 naturally? Does a character go from "devastated" to "joking" without transition?
-6. **Narrative hook coverage** — Are all hooks mapped to at least one scene?
-7. **Pacing distribution** — Is there good variety in pacing tags across the story?
-8. **Evolution timing** — Do character evolution notes align with story events?
+6. **Narrative hook coverage** — Are all hooks mapped to at least one scene? \
+Identify the optimal scene for each unplaced hook.
+7. **Scene density and chapter weight** — Are any chapters too thin \
+(1-2 scenes) to carry their narrative weight? Which chapters need more scenes, \
+and what should those scenes accomplish?
+8. **Pacing distribution** — Is there deliberate variety in pacing tags across \
+scenes and chapters? Map out the rhythm and identify monotonous stretches.
+9. **Story weight distribution** — Is dramatic weight distributed across the \
+story, or is it front/back loaded? Where does tension need to build or release?
+10. **Character interweaving** — Could any two character arcs be more tightly \
+interwoven to make the story feel more interconnected?
+11. **Evolution timing** — Do character evolution notes align with the story \
+events that would plausibly cause that evolution?
 
 Format your response as:
 ## Cross-Reference Analysis
 
-### Character Timing
+### Story Architecture Assessment
+(overall scene density, chapter weight distribution, dramatic arc assessment)
+
+### Character Timing and Coverage
 ...
+
+### Relationship Activation Opportunities
+(specific missed pairings with scene placement suggestions)
+
+### Pacing and Rhythm
+(current distribution, monotonous stretches, recommended changes)
 
 ### Unused / Missing References
 ...
@@ -252,11 +273,12 @@ Format your response as:
 ### Continuity Risks
 ...
 
-### Relationship Opportunities
+### Narrative Hook Placement
 ...
 
-## Recommended Fixes
-(numbered list of specific, actionable fixes)
+## Recommended Structural Changes
+(numbered list -- bold, specific, actionable. Add scenes, move characters, \
+rewire pacing. These feed directly into a structural fix pass.)
 
 Outline YAML:
 ```yaml
@@ -380,6 +402,51 @@ _FIX_LABELS = {
     "locations": "locations.yaml",
 }
 
+# Separate system prompt for crossref -- structural lead role, not copy-editor.
+_CROSSREF_FIX_SYSTEM = (
+    "You are a structural story architect and YAML editor for Novel Builder. "
+    "Your job is to produce corrected versions of the story's YAML files that "
+    "establish a strong story architecture before the individual file passes "
+    "refine each component.\n\n"
+    "STORY-FIRST MANDATE:\n"
+    "The story context at the top of this prompt defines the world, tone, arc, "
+    "and style the author has declared. Every structural decision you make must "
+    "serve that vision. This is not generic story advice -- you are architecting "
+    "THIS story. When in doubt, let the declared tone, genre, and style "
+    "directives be your north star.\n\n"
+    "YOUR ROLE -- STRUCTURE LEADS:\n"
+    "This is the architectural pass. You are the director, not the copy editor. "
+    "You are empowered and expected to:\n"
+    "- Add scenes to chapters that are too thin to carry their emotional weight\n"
+    "- Redistribute characters into scenes where their defined relationships "
+    "can create tension, subtext, or payoff\n"
+    "- Vary pacing tags (slow-burn, action, dialogue-heavy, introspective) "
+    "deliberately across scenes and chapters to create rhythm\n"
+    "- Map narrative hooks to scenes where they will land with maximum impact\n"
+    "- Adjust character evolution timing to align with story events\n"
+    "- Ensure every defined location is used where it fits the story\n"
+    "- Strengthen character vibes, voices, and relationships where the analysis "
+    "identified gaps -- these carry forward into every scene they appear in\n"
+    "- Interweave character arcs so the story feels tightly interconnected\n\n"
+    "RULES:\n"
+    "- Output ONLY valid YAML -- no explanatory text before or after.\n"
+    "- Preserve all existing IDs, character names, chapter numbers. You may add "
+    "new scenes (use the next available scene number) but never renumber or "
+    "delete existing ones.\n"
+    "- Do NOT sanitize, censor, or tone down any content. This tool is "
+    "used by adult authors writing fiction for adult readers. Dark themes, "
+    "morally complex characters, erotic material, and violence are valid "
+    "creative choices. Preserve and enhance them.\n"
+    "- Do NOT change character names, IDs, chapter numbers, or existing scene "
+    "numbers -- these are structural anchors.\n"
+    "- Use proper YAML formatting: consistent indentation (2 spaces), "
+    "quoted strings with special characters, folded blocks (>) for "
+    "multi-line text.\n"
+    "- Your output will be used as-is to replace the original files. "
+    "The individual file passes (characters, outline, locations) apply after "
+    "your structural foundation -- they refine, you define.\n"
+)
+
 
 def build_fix_prompt(role, original_yaml, analysis_text, story_context=""):
     """Build a prompt to produce a corrected YAML file.
@@ -411,36 +478,40 @@ def build_fix_prompt(role, original_yaml, analysis_text, story_context=""):
 
 
 def build_crossref_fix_prompt(files, analysis_text, story_context=""):
-    """Build a prompt to produce corrected YAML files from cross-ref analysis.
+    """Build a prompt to produce structurally improved YAML files from cross-ref analysis.
 
-    The cross-reference pass analyzes all files together, so the fix must
-    output all files in a single response separated by file markers.
+    This is the architectural pass -- it runs first so the individual file
+    passes (characters, outline, locations) can refine the improved structure.
+    The fix is guided by the story's declared world, arc, tone, and style.
 
     Args:
         files: Dict with keys "outline", "characters", "locations" mapping
                to their YAML content strings (or None).
         analysis_text: The cross-reference analysis text.
-        story_context: Optional story-specific context preamble from
-            build_story_context().
+        story_context: Story-specific context from build_story_context() --
+            includes author_instruction, world, overall_arc, style_directives.
+            Prepended to the system prompt as the north star for all decisions.
 
     Returns:
         Tuple of (system_prompt, user_prompt).
     """
-    system = (
-        _FIX_SYSTEM +
-        "\nSPECIAL OUTPUT FORMAT for multi-file fix:\n"
-        "Output each corrected file separated by a file marker line.\n"
-        "The marker format is: --- FILE: filename.yaml ---\n"
+    multi_file_format = (
+        "\nOUTPUT FORMAT -- multi-file:\n"
+        "Output each file that needs changes separated by a marker line.\n"
+        "Marker format: --- FILE: filename.yaml ---\n"
         "Example:\n"
         "--- FILE: characters.yaml ---\n"
-        "(corrected characters YAML)\n"
+        "(complete corrected characters YAML)\n"
         "--- FILE: story_outline.yaml ---\n"
-        "(corrected outline YAML)\n"
+        "(complete corrected outline YAML)\n"
         "--- FILE: locations.yaml ---\n"
-        "(corrected locations YAML)\n\n"
-        "Include ALL files that need changes. If a file needs no changes, "
-        "you may omit it.\n"
+        "(complete corrected locations YAML)\n\n"
+        "Include every file you changed. Omit files that need no changes.\n"
     )
+
+    system = _CROSSREF_FIX_SYSTEM + multi_file_format
+    if story_context:
+        system = story_context + system
 
     yaml_sections = []
     for role in ("characters", "outline", "locations"):
@@ -452,20 +523,24 @@ def build_crossref_fix_prompt(files, analysis_text, story_context=""):
             )
 
     user = (
-        f"Based on the cross-reference analysis below, produce corrected "
-        f"versions of the YAML files. Fix character-scene alignment issues, "
-        f"continuity risks, timing problems, and missing references.\n\n"
-        f"Be thorough but conservative -- enhance, don't restructure.\n\n"
+        f"Based on the cross-reference analysis below, produce structurally "
+        f"improved versions of the story's YAML files.\n\n"
+        f"Your mandate: establish the story's architecture using the world, "
+        f"arc, tone, and style declared in the system prompt as your north star. "
+        f"Add scenes where chapters are thin. Redistribute characters so their "
+        f"relationships activate in scenes together. Vary pacing across the story. "
+        f"Map hooks to their highest-impact scenes. Strengthen character vibes "
+        f"and voices where the analysis identified gaps. Be bold -- "
+        f"the individual file passes will refine each component after "
+        f"your structural foundation is applied.\n\n"
         f"## Cross-Reference Analysis\n\n{analysis_text}\n\n"
-        f"## Original YAML Files\n\n"
+        f"## Current YAML Files\n\n"
         + "\n\n".join(yaml_sections)
-        + "\n\nNow output the corrected YAML files using the "
+        + "\n\nNow output the structurally improved YAML files using the "
         f"--- FILE: filename.yaml --- marker format (no markdown fences, "
         f"no explanatory text -- YAML only):"
     )
 
-    if story_context:
-        system = story_context + system
     return system, user
 
 
