@@ -1757,8 +1757,9 @@ function _consultPassHtml(name, label, emoji, text, status, stats, err, fixConte
     actionsHtml = `<button class="btn btn-sm" onclick="startFix('${name}')">Generate Fix</button>`;
     if (name === 'crossref') {
       actionsHtml += `<p style="font-size:.8rem;color:var(--text-dim);margin:.4rem 0 0;">
-        Tip: Apply the Characters, Outline, and Locations fixes to your workspace first,
-        then generate this fix -- it reads the files from disk and will build on those improvements.
+        This is the structural pass -- it sets story architecture (scene density, character placement,
+        pacing, hooks). Apply All Fixes applies crossref first, then individual file fixes refine
+        each component on top. If generating fixes manually, generate and apply crossref before the others.
       </p>`;
     }
   } else if (status === 'error') {
@@ -1801,10 +1802,11 @@ function _consultPassHtml(name, label, emoji, text, status, stats, err, fixConte
         </h4>
         <div class="diff-container" id="cdiff-${name}" style="display:none;"></div>
         ${name === 'crossref' ? `<p style="font-size:.8rem;color:var(--text-dim);margin:0 0 .4rem;">
-          This fix may update any or all three YAML files (outline, characters, locations) to resolve
-          cross-file alignment issues. Each file section is separated by a <code>--- FILE: ---</code> marker.
-          Only files that need changes will be included. "Apply All to Workspace" writes each section
-          to its respective file on disk.
+          Structural fix -- may update all three YAML files (characters, outline, locations) to establish
+          story architecture: scene density, character placement, pacing variety, hook mapping.
+          Each file section is separated by a <code>--- FILE: ---</code> marker.
+          "Apply All to Workspace" writes each section to its respective file on disk.
+          Individual file fixes applied after this will refine each component.
         </p>` : ''}
         <textarea class="consult-fix-yaml" id="cfix-yaml-${name}" rows="22" spellcheck="false"
           oninput="_debounceSaveFix('${name}')">${escHtml(fixContent || '')}</textarea>
@@ -2344,7 +2346,9 @@ async function applyAllFixes() {
   if (btn) { btn.disabled = true; btn.textContent = 'Applying...'; }
   let saved = 0;
   const errors = [];
-  for (const role of _PASS_ORDER) {
+  // Apply crossref first (structural foundation), then individual files (refinement)
+  const applyOrder = ['crossref', 'characters', 'outline', 'locations'];
+  for (const role of applyOrder) {
     const fixSection = document.getElementById('cfix-' + role);
     const fixYaml    = document.getElementById('cfix-yaml-' + role);
     const fixBtns    = document.getElementById('cfix-btns-' + role);
