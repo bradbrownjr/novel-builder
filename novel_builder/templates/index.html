@@ -830,7 +830,8 @@ textarea {
   </div>
   <datalist id="tts-voices-list"></datalist>
 
-  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
+  <div class="tts-toolbar">
+    <span class="spacer"></span>
     <button class="btn" onclick="switchTab('plan')">Next: Plan ›</button>
   </div>
 
@@ -838,6 +839,23 @@ textarea {
 
 <!-- ==================== PLAN TAB ==================== -->
 <div class="tab-panel" id="panel-plan">
+
+  <!-- Tab toolbar -->
+  <div class="tts-toolbar">
+    <button class="btn" onclick="switchTab('setup')">&#8249; Back: Setup</button>
+    <button class="btn btn-primary gen-btn-start" id="btn-start" onclick="startGeneration(false)">&#9654; Start Generation</button>
+    <button class="btn gen-btn-resume" id="btn-resume" onclick="startGeneration(true)" style="display:none;">&#9193; Resume</button>
+    <button class="btn btn-danger gen-btn-stop" id="btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
+    <button class="btn" onclick="refreshParsed()">&#8635; Refresh Preview</button>
+    <span class="spacer"></span>
+    <button class="btn" onclick="switchTab('consult')">Next: Consult &#8250;</button>
+  </div>
+  <!-- Error notice (shown when generation stopped with an error) -->
+  <div id="plan-error-notice" style="display:none;" class="error-notice">
+    <strong>Generation stopped with an error:</strong> <span id="plan-error-msg"></span><br>
+    <small>Click Resume above to retry from the last completed scene, or check the Logs tab for details.</small><br>
+    <small>If Ollama appears hung, click <a href="#" onclick="ollamaUnloadModel();return false;">Unload model from Ollama</a> before resuming to clear stuck GPU state.</small>
+  </div>
 
   <!-- File upload cards — alphabetical order matching File Explorer -->
   <div class="card" id="card-characters">
@@ -898,22 +916,6 @@ textarea {
     <div class="validation-results" id="vresults-cross"></div>
   </div>
 
-  <!-- Error notice (shown when generation stopped with an error) -->
-  <div id="plan-error-notice" style="display:none;" class="error-notice">
-    <strong>Generation stopped with an error:</strong> <span id="plan-error-msg"></span><br>
-    <small>Click Resume below to retry from the last completed scene, or check the Logs tab for details.</small><br>
-    <small>If Ollama appears hung, click <a href="#" onclick="ollamaUnloadModel();return false;">Unload model from Ollama</a> before resuming to clear stuck GPU state.</small>
-  </div>
-
-  <!-- Action buttons -->
-  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
-    <button class="btn btn-primary" id="btn-start" onclick="startGeneration(false)">▶ Start Generation</button>
-    <button class="btn" id="btn-resume" onclick="startGeneration(true)" style="display:none;">⏩ Resume</button>
-    <button class="btn btn-danger" id="btn-stop" onclick="stopGeneration()" style="display:none;">⏹ Stop</button>
-    <button class="btn" onclick="refreshParsed()">🔄 Refresh Preview</button>
-    <button class="btn" onclick="switchTab('setup')">‹ Back: Setup</button>
-    <button class="btn" onclick="switchTab('consult')">Next: Consult ›</button>
-  </div>
 
 </div>
 
@@ -925,7 +927,7 @@ textarea {
       Multi-pass AI analysis of your YAML files. Results are cached on the server
       — safe to refresh or open on another device.
     </p>
-    <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+    <div class="tts-toolbar">
       <button class="btn" onclick="switchTab('plan')">‹ Back: Plan</button>
       <button class="btn" id="btn-consult-start" onclick="startConsult()">&#9654; Start Analysis</button>
       <button class="btn btn-danger" id="btn-consult-stop" onclick="stopConsult()" style="display:none;">Stop</button>
@@ -933,8 +935,8 @@ textarea {
       <button class="btn" id="btn-consult-genall" onclick="generateAllFixes()" style="display:none;">Generate All Fixes</button>
       <button class="btn" id="btn-consult-retry" onclick="retryFailed()" style="display:none;">Retry Failed</button>
       <button class="btn" onclick="confirmClearConsult()">&#10005; Clear</button>
-      <span id="consult-status-label" style="font-size:.8rem;color:var(--text-dim);"></span>
-      <button class="btn" onclick="switchTab('logs')">Next: Logs &#8250;</button>
+      <span id="consult-status-label" style="font-size:.8rem;color:var(--text-dim);flex:1;"></span>
+      <button class="btn" onclick="switchTab('logs')">Next: Logs ›</button>
     </div>
   </div>
   <div id="consult-passes-container"></div>
@@ -944,9 +946,10 @@ textarea {
 <!-- ==================== OUTPUT TAB ==================== -->
 <!-- ==================== LOGS TAB ==================== -->
 <div class="tab-panel" id="panel-logs">
-  <div style="display:flex; gap:.5rem; margin-bottom:.75rem;">
+  <div class="tts-toolbar">
     <button class="btn" onclick="switchTab('consult')">‹ Back: Consult</button>
     <button class="btn" onclick="clearLogs()">🗑 Clear</button>
+    <span class="spacer"></span>
     <button class="btn" onclick="switchTab('memory')">Next: Memory ›</button>
   </div>
   <div class="log-viewer" id="log-viewer"></div>
@@ -955,6 +958,18 @@ textarea {
 
 <!-- ==================== MEMORY TAB ==================== -->
 <div class="tab-panel" id="panel-memory">
+
+  <!-- Tab toolbar -->
+  <div class="tts-toolbar">
+    <button class="btn" onclick="switchTab('logs')">&#8249; Back: Logs</button>
+    <button class="btn gen-btn-resume" onclick="startGeneration(true)" style="display:none;">&#9193; Resume</button>
+    <button class="btn btn-danger gen-btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
+    <button class="btn btn-primary" onclick="saveMemory()">Save Memory</button>
+    <button class="btn" onclick="refreshMemory()">Reload</button>
+    <span class="spacer"></span>
+    <button class="btn" onclick="switchTab('output')">Next: Output &#8250;</button>
+  </div>
+
   <div class="card" id="memory-progress-card" style="display:none;">
     <h3>Progress</h3>
     <div id="memory-progress-info" style="font-size:.82rem;color:var(--text-dim);"></div>
@@ -1002,12 +1017,6 @@ textarea {
       <button class="btn btn-sm" style="margin-top:.5rem;" onclick="memAddImagery()">+ Add imagery</button>
     </div>
 
-    <div style="display:flex;gap:.5rem;margin-top:.25rem;flex-wrap:wrap;">
-      <button class="btn" onclick="switchTab('logs')">‹ Back: Logs</button>
-      <button class="btn btn-primary" onclick="saveMemory()">Save Memory</button>
-      <button class="btn" onclick="refreshMemory()">Reload from Checkpoint</button>
-      <button class="btn" onclick="switchTab('output')">Next: Output ›</button>
-    </div>
   </div>
 
 </div>
@@ -1015,11 +1024,14 @@ textarea {
 <!-- ==================== OUTPUT TAB ==================== -->
 <div class="tab-panel" id="panel-output">
   <div class="tts-toolbar">
+    <button class="btn btn-sm" onclick="switchTab('memory')">&#8249; Back: Memory</button>
     <button class="btn btn-sm" onclick="refreshOutput()">Refresh</button>
     <button class="btn btn-sm" onclick="location.href='/api/download'">Download .md</button>
     <label style="display:flex; align-items:center; gap:.3rem; font-size:.78rem; color:var(--text-dim);">
       <input type="checkbox" id="chk-autoscroll" checked> Auto-scroll
     </label>
+    <button class="btn btn-sm gen-btn-resume" onclick="startGeneration(true)" style="display:none;">&#9193; Resume</button>
+    <button class="btn btn-sm btn-danger gen-btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
     <span class="spacer"></span>
     <button class="btn btn-sm" id="btn-tts-download" onclick="downloadAudiobook()">Download MP3</button>
     <button class="btn btn-sm btn-danger" id="btn-tts-download-cancel" onclick="cancelDownload()" style="display:none;">Cancel</button>
@@ -1603,50 +1615,51 @@ function updateUIForStatus(status, errorMsg) {
   const dotS = document.getElementById('dot-status');
   const lblS = document.getElementById('lbl-status');
   const indP = document.getElementById('ind-progress');
-  const btnStart = document.getElementById('btn-start');
-  const btnResume = document.getElementById('btn-resume');
-  const btnStop = document.getElementById('btn-stop');
-
   dotS.className = 'dot';
+
+  // Show/hide all buttons that share a generation-state class (Plan, Memory, Output tabs)
+  const showGenBtns = (cls, show) =>
+    document.querySelectorAll('.' + cls).forEach(b => { b.style.display = show ? '' : 'none'; });
+
   switch (status) {
     case 'running':
       dotS.classList.add('green', 'pulse');
       lblS.textContent = 'Running';
-      btnStart.style.display = 'none';
-      btnResume.style.display = 'none';
-      btnStop.style.display = '';
+      showGenBtns('gen-btn-start', false);
+      showGenBtns('gen-btn-resume', false);
+      showGenBtns('gen-btn-stop', true);
       indP.style.display = '';
       showGenerationError(null);
       break;
     case 'completed':
       dotS.classList.add('green');
       lblS.textContent = 'Completed';
-      btnStart.style.display = '';
-      btnResume.style.display = 'none';
-      btnStop.style.display = 'none';
+      showGenBtns('gen-btn-start', true);
+      showGenBtns('gen-btn-resume', false);
+      showGenBtns('gen-btn-stop', false);
       showGenerationError(null);
       break;
     case 'stopped':
       dotS.classList.add('yellow');
       lblS.textContent = 'Paused';
-      btnStart.style.display = '';
-      btnResume.style.display = '';
-      btnStop.style.display = 'none';
+      showGenBtns('gen-btn-start', true);
+      showGenBtns('gen-btn-resume', true);
+      showGenBtns('gen-btn-stop', false);
       showGenerationError(null);
       break;
     case 'error':
       dotS.classList.add('red');
       lblS.textContent = 'Error';
-      btnStart.style.display = '';
-      btnResume.style.display = '';
-      btnStop.style.display = 'none';
+      showGenBtns('gen-btn-start', true);
+      showGenBtns('gen-btn-resume', true);
+      showGenBtns('gen-btn-stop', false);
       showGenerationError(errorMsg || 'See the Logs tab for details.');
       break;
     default:
       lblS.textContent = 'Idle';
-      btnStart.style.display = '';
-      btnResume.style.display = 'none';
-      btnStop.style.display = 'none';
+      showGenBtns('gen-btn-start', true);
+      showGenBtns('gen-btn-resume', false);
+      showGenBtns('gen-btn-stop', false);
       indP.style.display = 'none';
       showGenerationError(null);
   }
