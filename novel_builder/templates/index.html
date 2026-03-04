@@ -1950,6 +1950,32 @@ function parseOutputIntoScenes(text) {
   return text.split(SCENE_SPLIT).map(p => p.trim()).filter(p => p.length > 0);
 }
 
+function parseOutputIntoChaptersForAudio(text) {
+  // Split on <!-- chapter:N --> markers and group scenes per chapter.
+  // Returns [{title, scenes: [rawSceneText, ...]}]
+  const blocks = text.split(/<!--\s*chapter:\d+\s*-->/);
+  const chapters = [];
+  for (const block of blocks) {
+    if (!block.trim()) continue;
+    const titleMatch = block.match(/^#+\s+(.+)/m);
+    const title = titleMatch ? titleMatch[1].trim() : 'Chapter';
+    const sceneParts = [...block.matchAll(/<!--\s*scene:[\d.]+\s*-->([\s\S]*?)<!--\s*\/scene:[\d.]+\s*-->/g)];
+    const scenes = sceneParts.map(m => m[1].trim()).filter(s => s.length > 0);
+    // Fallback: no scene markers -- treat whole block minus heading as one scene
+    if (!scenes.length) {
+      const fallback = block.replace(/^#+\s+.+$/m, '').trim();
+      if (fallback) scenes.push(fallback);
+    }
+    if (scenes.length) chapters.push({ title, scenes });
+  }
+  // No chapter markers found -- wrap everything as a single chapter
+  if (!chapters.length) {
+    const scenes = parseOutputIntoScenes(text);
+    return scenes.length ? [{ title: 'Story', scenes }] : [];
+  }
+  return chapters;
+}
+
 function getVoiceForSegment(seg) {
   if (seg.character) {
     if (tts.yamlVoiceMap[seg.character]) return tts.yamlVoiceMap[seg.character];
@@ -2081,8 +2107,8 @@ async function downloadAudiobook() {
     return;
   }
 
-  const scenes = parseOutputIntoScenes(text);
-  if (!scenes.length) { toast('No scenes found in output', 'warn'); return; }
+  const chapters = parseOutputIntoChaptersForAudio(text);
+  if (!chapters.length) { toast('No scenes found in output', 'warn'); return; }
 
   const parsed = await api('/api/parse-yaml');
   const characters = parsed?.characters?.characters || [];
@@ -2094,13 +2120,16 @@ async function downloadAudiobook() {
   }
 
   toast('Building segment list...', 'info');
+  // allSegments tracks which chapter each segment belongs to for byte-offset accounting
   const allSegments = [];
-  for (const scene of scenes) {
-    const segResp = await apiPost('/api/tts/segments', { text: scene, characters: charNames, pov_character: povCharacter });
-    const segs = segResp?.ok
-      ? segResp.segments
-      : [{ type: 'narration', text: scene, character: null }];
-    allSegments.push(...segs);
+  for (let ci = 0; ci < chapters.length; ci++) {
+    for (const scene of chapters[ci].scenes) {
+      const segResp = await apiPost('/api/tts/segments', { text: scene, characters: charNames, pov_character: povCharacter });
+      const segs = segResp?.ok
+        ? segResp.segments
+        : [{ type: 'narration', text: scene, character: null }];
+      for (const seg of segs) allSegments.push({ seg, chapterIdx: ci });
+    }
   }
 
   const total = allSegments.length;
@@ -2109,14 +2138,23 @@ async function downloadAudiobook() {
   updateDownloadControls(0, total);
 
   const buffers = [];
+  const chapterByteOffsets = new Array(chapters.length).fill(null);
+  let cumulativeBytes = 0;
+
   for (let i = 0; i < allSegments.length; i++) {
     if (tts.downloadCancelled) break;
     updateDownloadControls(i, total);
-    const seg = allSegments[i];
+    const { seg, chapterIdx } = allSegments[i];
+    // Record the byte offset at the first segment of each chapter
+    if (chapterByteOffsets[chapterIdx] === null) {
+      chapterByteOffsets[chapterIdx] = cumulativeBytes;
+    }
     const voice = getVoiceForSegment(seg);
     try {
       const blob = await fetchTTSAudio(seg.text, voice);
-      buffers.push(await blob.arrayBuffer());
+      const buf = await blob.arrayBuffer();
+      buffers.push(buf);
+      cumulativeBytes += buf.byteLength;
     } catch (e) {
       console.warn('Segment', i, 'failed:', e.message);
     }
@@ -2130,6 +2168,7 @@ async function downloadAudiobook() {
     return;
   }
 
+  // Concatenate all audio buffers
   const totalBytes = buffers.reduce((s, b) => s + b.byteLength, 0);
   const combined = new Uint8Array(totalBytes);
   let offset = 0;
@@ -2138,17 +2177,47 @@ async function downloadAudiobook() {
     offset += buf.byteLength;
   }
 
-  const blob = new Blob([combined], { type: 'audio/mpeg' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
   const title = (snap?.config?.story_title || 'audiobook').replace(/[^a-zA-Z0-9_-]/g, '_');
+
+  // Build chapter list for ID3 tagging (only chapters that produced audio)
+  const chapterList = chapters
+    .map((ch, i) => ({ title: ch.title, byte_offset: chapterByteOffsets[i] ?? 0 }))
+    .filter((_, i) => chapterByteOffsets[i] !== null);
+
+  let finalBlob;
+  if (chapterList.length > 1) {
+    toast('Adding chapter markers...', 'info');
+    try {
+      const formData = new FormData();
+      formData.append('chapters', JSON.stringify(chapterList));
+      formData.append('mp3', new Blob([combined], { type: 'audio/mpeg' }), 'audio.mp3');
+      const resp = await fetch('/api/tts/add-chapters', { method: 'POST', body: formData });
+      if (resp.ok) {
+        finalBlob = await resp.blob();
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        console.warn('Chapter tagging failed:', err.error || resp.status);
+        finalBlob = new Blob([combined], { type: 'audio/mpeg' });
+        toast('Chapter tagging failed, downloading without chapters', 'warn');
+      }
+    } catch (e) {
+      console.warn('Chapter tagging error:', e.message);
+      finalBlob = new Blob([combined], { type: 'audio/mpeg' });
+    }
+  } else {
+    finalBlob = new Blob([combined], { type: 'audio/mpeg' });
+  }
+
+  const url = URL.createObjectURL(finalBlob);
+  const a = document.createElement('a');
   a.href = url;
   a.download = title + '.mp3';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 10000);
-  toast('Audiobook download started -- ' + (totalBytes / 1024 / 1024).toFixed(1) + ' MB', 'ok');
+  const chapterNote = chapterList.length > 1 ? ' with ' + chapterList.length + ' chapters' : '';
+  toast('Audiobook download started -- ' + (finalBlob.size / 1024 / 1024).toFixed(1) + ' MB' + chapterNote, 'ok');
 }
 
 function cancelDownload() {

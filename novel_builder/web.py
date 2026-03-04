@@ -2579,6 +2579,101 @@ def api_tts_segments():
     return jsonify({"ok": True, "segments": segments})
 
 
+@app.route("/api/tts/add-chapters", methods=["POST"])
+def api_tts_add_chapters():
+    """Tag an MP3 with ID3v2 chapter markers (CHAP/CTOC frames).
+
+    Accepts multipart/form-data:
+      - mp3: binary MP3 file
+      - chapters: JSON string [{title, byte_offset}, ...]
+
+    Returns the ID3-tagged MP3 as audio/mpeg. Falls back to the
+    unmodified MP3 if fewer than two chapters are provided.
+    """
+    import io
+    import json as _json
+
+    try:
+        from mutagen.mp3 import MP3
+        from mutagen.id3 import ID3, CHAP, CTOC, TIT2, ID3NoHeaderError
+    except ImportError:
+        return jsonify({"ok": False, "error": "mutagen not installed -- run pip install mutagen"}), 500
+
+    if "mp3" not in request.files:
+        return jsonify({"ok": False, "error": "No mp3 file provided"}), 400
+
+    try:
+        mp3_bytes = request.files["mp3"].read()
+        chapters = _json.loads(request.form.get("chapters", "[]"))
+
+        if not chapters or len(chapters) < 2:
+            return Response(
+                mp3_bytes,
+                mimetype="audio/mpeg",
+                headers={"Content-Disposition": "attachment; filename=audiobook.mp3"},
+            )
+
+        total_bytes = len(mp3_bytes)
+        chapters = sorted(chapters, key=lambda c: c["byte_offset"])
+
+        # Get total duration (TTS output is typically CBR, so this is accurate)
+        bio = io.BytesIO(mp3_bytes)
+        mp3_info = MP3(bio)
+        total_ms = int((mp3_info.info.length or 0) * 1000)
+
+        # Load or create ID3 tag, note where the old header ends
+        bio.seek(0)
+        try:
+            tags = ID3(bio)
+            audio_start = tags._size
+        except ID3NoHeaderError:
+            tags = ID3()
+            audio_start = 0
+
+        # Build CHAP frames
+        chap_ids = []
+        for i, chap in enumerate(chapters):
+            start_off = chap["byte_offset"]
+            end_off = (
+                chapters[i + 1]["byte_offset"] if i + 1 < len(chapters) else total_bytes
+            )
+            # Linear interpolation: safe for CBR output from TTS engines
+            start_ms = int(start_off / total_bytes * total_ms) if total_bytes else 0
+            end_ms = int(end_off / total_bytes * total_ms) if total_bytes else total_ms
+            chap_id = f"ch{i}"
+            chap_ids.append(chap_id)
+            tags.add(CHAP(
+                element_id=chap_id,
+                start_time=start_ms,
+                end_time=end_ms,
+                start_offset=start_off,
+                end_offset=end_off,
+                sub_frames=[TIT2(encoding=3, text=chap["title"])],
+            ))
+
+        # CTOC table of contents -- flags=3 means TOP_LEVEL | ORDERED
+        tags.add(CTOC(
+            element_id="toc",
+            flags=3,
+            child_element_ids=chap_ids,
+            sub_frames=[TIT2(encoding=3, text="Contents")],
+        ))
+
+        # Write new ID3 header into a fresh buffer, then append raw audio body
+        tag_out = io.BytesIO()
+        tags.save(tag_out, v2_version=3)
+        result_bytes = tag_out.getvalue() + mp3_bytes[audio_start:]
+
+        return Response(
+            result_bytes,
+            mimetype="audio/mpeg",
+            headers={"Content-Disposition": "attachment; filename=audiobook.mp3"},
+        )
+
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 # ---------------------------------------------------------------------------
 # Server launcher
 # ---------------------------------------------------------------------------
