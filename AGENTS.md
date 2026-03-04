@@ -125,6 +125,7 @@ _(Track fixes here for reference.)_
 - Web UI model selectors with recommended models, RAM estimates, install status, and auto-pull from Ollama.
 - AI Consult tab — multi-pass YAML audit with streaming analysis, per-file fix generation, and side-by-side diff review.
 - Used Imagery tracking -- summary model extracts distinctive descriptive phrases; stored per-location and per-character in checkpoint; injected as suppression context to prevent repetitive descriptions across scenes.\n- Consult Generate Fix errors and crossref fix support -- fixed fix generation errors, added crossref multi-file fix support, diff view, download, fix persistence across page refresh, and \"Generate All Fixes\" button.\n- Content policy -- anti-censorship directives in all prompts (consult analysis, fix generation, story generation).
+- TTS Read Aloud and MP3 download restored -- lost in the fcafc95 UI rewrite, fully restored. Four API routes (/api/tts/health, /api/tts/voices, /api/tts/speak, /api/tts/segments), TTS config card in Setup tab, Read Aloud/Pause/Stop controls and Download MP3 button in Output tab, header status indicators.
 
 ## Scene Marker Format
 
