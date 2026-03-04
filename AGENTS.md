@@ -40,6 +40,7 @@ Before any large file rewrite, verify every row in the affected file column is p
 | Used imagery suppression | state.py, prompt_builder.py | `get_used_imagery()`, `story_memory.used_imagery` |
 | Prompt presets | web.py, templates/index.html | `/api/style-presets`, `style_presets.yaml` |
 | Ollama model pull | web.py, templates/index.html | `/api/ollama-pull` |
+| Ollama model unload | web.py, templates/index.html | `/api/ollama-unload`, `ollamaUnloadModel()` |
 | YAML validator | validator.py, web.py | `validate_all()`, `/api/validate` |
 | Scene markers in output | story_processor.py, web.py | `<!-- scene:X.Y -->`, `/api/download` (strips markers) |
 | Character appearance tracking | characters.py, state.py | `character_appearances`, tiered context logic |

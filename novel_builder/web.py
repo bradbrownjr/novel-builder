@@ -589,6 +589,8 @@ def _start_generation(web_config):
         dry_run=False,
         chapter=None,
         scene=None,
+        # Always pin checkpoint to workspace so save and load agree
+        checkpoint_path=os.path.join(WORKSPACE_DIR, "checkpoint.yaml"),
         # File paths  --  point to workspace
         outline=os.path.join(WORKSPACE_DIR, FILE_ROLES["outline"]),
         characters=os.path.join(WORKSPACE_DIR, FILE_ROLES["characters"]),
@@ -1564,6 +1566,44 @@ def api_ollama_health():
         return jsonify({"ok": False, "error": "Timeout"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/api/ollama-unload", methods=["POST"])
+def api_ollama_unload():
+    """Unload the active model from Ollama VRAM by setting keep_alive=0.
+
+    Sends a minimal generate request with keep_alive=0, which signals
+    Ollama to evict the model from GPU memory after the current request
+    completes. Use this to recover from a hung or stalled generation.
+    """
+    cfg = _load_web_config()
+    host = _normalize_host(cfg.get("host", ""))
+    model = (request.get_json(force=True) or {}).get("model") or cfg.get("model", "")
+
+    if not host:
+        return jsonify({"ok": False, "error": "No Ollama host configured"}), 400
+    if not model:
+        return jsonify({"ok": False, "error": "No model name provided"}), 400
+
+    try:
+        resp = _requests.post(
+            f"{host}/api/generate",
+            json={"model": model, "prompt": "", "keep_alive": 0},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        state.emit("log", {
+            "message": f"Unloaded model '{model}' from Ollama VRAM",
+            "level": "warn",
+            "time": __import__('time').time(),
+        })
+        return jsonify({"ok": True, "message": f"Model '{model}' unloaded from Ollama"})
+    except _requests.ConnectionError:
+        return jsonify({"ok": False, "error": "Ollama connection refused"}), 502
+    except _requests.Timeout:
+        return jsonify({"ok": False, "error": "Ollama did not respond in time"}), 504
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route("/api/events")
