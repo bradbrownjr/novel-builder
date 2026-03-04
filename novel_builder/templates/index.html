@@ -901,7 +901,8 @@ textarea {
   <!-- Error notice (shown when generation stopped with an error) -->
   <div id="plan-error-notice" style="display:none;" class="error-notice">
     <strong>Generation stopped with an error:</strong> <span id="plan-error-msg"></span><br>
-    <small>Click Resume below to retry from the last completed scene, or check the Logs tab for details.</small>
+    <small>Click Resume below to retry from the last completed scene, or check the Logs tab for details.</small><br>
+    <small>If Ollama appears hung, click <a href="#" onclick="ollamaUnloadModel();return false;">Unload model from Ollama</a> before resuming to clear stuck GPU state.</small>
   </div>
 
   <!-- Action buttons -->
@@ -1584,6 +1585,15 @@ function showGenerationError(msg) {
     notice.style.display = '';
   } else {
     notice.style.display = 'none';
+  }
+}
+
+async function ollamaUnloadModel() {
+  const r = await apiPost('/api/ollama-unload', {});
+  if (r && r.ok) {
+    toast(r.message || 'Model unloaded from Ollama', 'ok');
+  } else {
+    toast('Unload failed: ' + (r?.error || 'Unknown error'), 'warn');
   }
 }
 
