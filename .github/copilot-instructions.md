@@ -31,6 +31,7 @@ Novel Builder is a **Python tool** (CLI + web UI) for **authors and storytellers
 - **KISS:** Favor straightforward, readable Python. Avoid unnecessary abstractions. Each module should have a clear, single responsibility.
 - **Extensibility:** Design data structures and prompt templates so new features (e.g., new YAML fields, new generation modes) can be added without rewriting existing logic.
 - **Graceful Degradation:** The tool should never crash silently. All errors must be reported clearly. Network failures trigger retries, not exits.
+- **Regression Guard:** Before any large rewrite of `web.py` or `templates/index.html`, list every named feature, API route, and JS function present and confirm each will be preserved. Consult the Feature Registry in `AGENTS.md`. Any commit removing 200+ lines from an existing file requires an explicit feature audit before committing.
 
 ## Root-Cause Policy
 
