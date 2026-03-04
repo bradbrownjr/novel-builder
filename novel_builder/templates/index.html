@@ -578,6 +578,40 @@ textarea {
   .logo { font-size: 1rem; }
   .header-actions button { padding: .25rem .45rem; font-size: .72rem; }
 }
+
+/* =========================================================
+   TTS voice mapping
+   ========================================================= */
+.voice-map-row {
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+  margin-bottom: .35rem;
+  padding: .25rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.voice-map-row:last-child { border-bottom: none; }
+.voice-map-name { min-width: 110px; font-size: .82rem; font-weight: 500; }
+.voice-map-role { min-width: 80px; font-size: .72rem; color: var(--text-dim); }
+.voice-map-input {
+  flex: 1;
+  padding: .3rem .5rem;
+  font-size: .8rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+}
+.voice-map-input:focus { border-color: var(--accent); outline: none; }
+
+.tts-toolbar {
+  display: flex;
+  gap: .5rem;
+  margin-bottom: .75rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.tts-toolbar .spacer { flex: 1; }
 </style>
 </head>
 <body>
@@ -605,6 +639,14 @@ textarea {
     <div class="indicator" id="ind-model">
       <span class="dot" id="dot-model"></span>
       <span id="lbl-model">No model active</span>
+    </div>
+    <div class="indicator" id="ind-tts" style="display:none;">
+      <span class="dot" id="dot-tts"></span>
+      <span id="lbl-tts">TTS: ?</span>
+    </div>
+    <div class="indicator" id="ind-tts-playback" style="display:none;">
+      <span class="dot blue pulse" id="dot-tts-play"></span>
+      <span id="lbl-tts-play"></span>
     </div>
     <div class="indicator" id="ind-progress" style="display:none;">
       <span id="lbl-progress">0%</span>
@@ -738,6 +780,41 @@ textarea {
       <span style="font-size:.75rem;color:var(--text-dim);margin-left:.5rem;">Clears active prompt customizations so built-in defaults are used.</span>
     </div>
   </div>
+
+  <!-- TTS config card -->
+  <div class="card" id="card-tts">
+    <h3>Text-to-Speech</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="cfg-tts-host">TTS Server URL (Speaches)</label>
+        <input type="url" id="cfg-tts-host" placeholder="http://192.168.1.x:8001">
+      </div>
+      <div class="form-group">
+        <label for="cfg-tts-model">TTS Model</label>
+        <select id="cfg-tts-model" onchange="onTTSModelChange()">
+          <option value="">-- check connection first --</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label for="cfg-tts-narrator-voice">Narrator Voice</label>
+      <div style="display:flex; gap:.5rem; align-items:center;">
+        <input type="text" id="cfg-tts-narrator-voice" list="tts-voices-list"
+               placeholder="e.g., af_heart" style="flex:1;">
+        <button class="btn btn-sm" onclick="testVoice('narrator')" title="Preview narrator voice">Test</button>
+      </div>
+    </div>
+    <div id="tts-voice-map" style="display:none;">
+      <label style="margin-top:.5rem;">Character Voices</label>
+      <div id="tts-voice-map-entries"></div>
+    </div>
+    <div style="display:flex; gap:.5rem; margin-top:.75rem;">
+      <button class="btn btn-sm" onclick="checkTTSHealth()">Check Connection</button>
+      <button class="btn btn-sm" onclick="saveTTSConfig()">Save TTS Config</button>
+    </div>
+    <div id="tts-status" style="font-size:.78rem; margin-top:.5rem; color:var(--text-dim);"></div>
+  </div>
+  <datalist id="tts-voices-list"></datalist>
 
   <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
     <button class="btn" onclick="switchTab('plan')">Next: Plan ›</button>
@@ -916,12 +993,19 @@ textarea {
 
 <!-- ==================== OUTPUT TAB ==================== -->
 <div class="tab-panel" id="panel-output">
-  <div style="display:flex; gap:.5rem; margin-bottom:.75rem; flex-wrap:wrap;">
-    <button class="btn" onclick="refreshOutput()">🔄 Refresh</button>
-    <button class="btn" onclick="location.href='/api/download'">⬇ Download .md</button>
+  <div class="tts-toolbar">
+    <button class="btn btn-sm" onclick="refreshOutput()">Refresh</button>
+    <button class="btn btn-sm" onclick="location.href='/api/download'">Download .md</button>
     <label style="display:flex; align-items:center; gap:.3rem; font-size:.78rem; color:var(--text-dim);">
       <input type="checkbox" id="chk-autoscroll" checked> Auto-scroll
     </label>
+    <span class="spacer"></span>
+    <button class="btn btn-sm" id="btn-tts-download" onclick="downloadAudiobook()">Download MP3</button>
+    <button class="btn btn-sm btn-danger" id="btn-tts-download-cancel" onclick="cancelDownload()" style="display:none;">Cancel</button>
+    <span id="tts-download-progress" style="display:none; font-size:.78rem; color:var(--text-dim); white-space:nowrap;"></span>
+    <button class="btn btn-sm" id="btn-tts-play" onclick="playAllScenes()">Read Aloud</button>
+    <button class="btn btn-sm" id="btn-tts-pause" onclick="pauseTTS()" style="display:none;">Pause</button>
+    <button class="btn btn-sm btn-danger" id="btn-tts-stop" onclick="stopTTS()" style="display:none;">Stop</button>
   </div>
   <div class="output-viewer" id="output-viewer">(No output yet — start generation to see scenes here.)</div>
 </div>
@@ -1043,6 +1127,13 @@ function loadConfigIntoForm(cfg) {
   document.getElementById('cfg-retries').value = cfg.retries || 3;
   document.getElementById('cfg-timeout').value = cfg.timeout || 900;
   document.getElementById('cfg-consult-ctx').value = cfg.consult_num_ctx || 32768;
+  // TTS fields
+  document.getElementById('cfg-tts-host').value = cfg.tts_host || '';
+  document.getElementById('cfg-tts-narrator-voice').value = cfg.tts_narrator_voice || '';
+  tts.host = cfg.tts_host || '';
+  tts.model = cfg.tts_model || '';
+  tts.narratorVoice = cfg.tts_narrator_voice || '';
+  tts.voiceMap = cfg.tts_voice_map || {};
 }
 async function saveConfig() {
   const cfg = {
@@ -1300,6 +1391,11 @@ async function refreshParsed() {
     overviewCard.style.display = 'none';
   }
 
+  // Update TTS voice map UI with loaded character names
+  if (r.characters && !r.characters.error && r.characters.characters) {
+    updateVoiceMapUI(r.characters.characters);
+  }
+
   // Validation results
   renderValidation(r.validation || []);
 }
@@ -1390,6 +1486,13 @@ function confirmNewStory() {
         if (retryBtn) retryBtn.style.display = 'none';
         const genAllBtn = document.getElementById('btn-consult-genall');
         if (genAllBtn) genAllBtn.style.display = 'none';
+        // Clear TTS character voice map -- voices belong to the story
+        const vme = document.getElementById('tts-voice-map-entries');
+        const vmw = document.getElementById('tts-voice-map');
+        if (vme) vme.innerHTML = '';
+        if (vmw) vmw.style.display = 'none';
+        tts.voiceMap = {};
+        tts.yamlVoiceMap = {};
       } else {
         toast(r?.error || 'Reset failed', 'error');
       }
@@ -1621,7 +1724,508 @@ function connectSSE() {
 }
 
 /* ==========================================================
-   Initial load — reconnection-safe
+   Output helpers
+   ========================================================== */
+function getOutputText() {
+  const viewer = document.getElementById('output-viewer');
+  const blocks = viewer.querySelectorAll('.scene-block');
+  if (!blocks.length) return viewer.textContent;
+  return Array.from(blocks).map(b => b.textContent).join('\n');
+}
+
+function getFirstVisibleSceneIdx() {
+  const viewer = document.getElementById('output-viewer');
+  const viewerTop = viewer.getBoundingClientRect().top;
+  const blocks = viewer.querySelectorAll('.scene-block');
+  for (const block of blocks) {
+    if (block.getBoundingClientRect().bottom > viewerTop) {
+      return parseInt(block.dataset.sceneIdx, 10) || 0;
+    }
+  }
+  return 0;
+}
+
+/* ==========================================================
+   Text-to-Speech (TTS) -- Speaches / Kokoro / Piper
+   ========================================================== */
+const tts = {
+  playing: false,
+  paused: false,
+  stopped: false,
+  currentAudio: null,
+  currentSceneIdx: 0,
+  scenes: [],
+  host: '',
+  voiceMap: {},       // manually saved via web UI
+  yamlVoiceMap: {},   // sourced from characters.yaml tts_voice field (takes precedence)
+  narratorVoice: '',
+  model: '',
+  availableModels: [],
+  availableVoices: [],
+  downloading: false,
+  downloadCancelled: false,
+};
+
+/* --- TTS health & model/voice discovery --- */
+async function checkTTSHealth() {
+  const host = document.getElementById('cfg-tts-host').value.trim();
+  const statusEl = document.getElementById('tts-status');
+  const dotTTS = document.getElementById('dot-tts');
+  const lblTTS = document.getElementById('lbl-tts');
+
+  if (!host) {
+    statusEl.textContent = 'Enter a TTS server URL first.';
+    statusEl.style.color = 'var(--text-dim)';
+    document.getElementById('ind-tts').style.display = 'none';
+    return;
+  }
+
+  statusEl.textContent = 'Checking connection...';
+  statusEl.style.color = 'var(--text-dim)';
+
+  const r = await api('/api/tts/health?host=' + encodeURIComponent(host));
+  if (r && r.ok) {
+    tts.host = host;
+    tts.availableModels = r.models || [];
+    statusEl.innerHTML = 'Connected -- ' + tts.availableModels.length + ' model(s) available';
+    statusEl.style.color = 'var(--green)';
+
+    const sel = document.getElementById('cfg-tts-model');
+    const saved = tts.model;
+    sel.innerHTML = '<option value="">-- select model --</option>';
+    for (const m of tts.availableModels) {
+      const o = document.createElement('option');
+      o.value = m; o.textContent = m;
+      if (m === saved) o.selected = true;
+      sel.appendChild(o);
+    }
+
+    document.getElementById('ind-tts').style.display = '';
+    dotTTS.className = 'dot green';
+    lblTTS.textContent = 'TTS: connected (' + tts.availableModels.length + ' models)';
+
+    if (sel.value) await discoverVoices(sel.value);
+  } else {
+    statusEl.textContent = (r?.error || 'Connection failed');
+    statusEl.style.color = 'var(--red)';
+    document.getElementById('ind-tts').style.display = '';
+    dotTTS.className = 'dot red';
+    lblTTS.textContent = 'TTS: unreachable';
+  }
+}
+
+async function discoverVoices(model) {
+  if (!model) return;
+  const host = document.getElementById('cfg-tts-host').value.trim();
+  const r = await api('/api/tts/voices?model=' + encodeURIComponent(model)
+    + '&host=' + encodeURIComponent(host));
+
+  const dl = document.getElementById('tts-voices-list');
+  dl.innerHTML = '';
+  tts.availableVoices = [];
+
+  if (r && r.ok && r.voices?.length) {
+    tts.availableVoices = r.voices;
+    for (const v of r.voices) {
+      const o = document.createElement('option');
+      o.value = typeof v === 'string' ? v : (v.id || v.name || String(v));
+      dl.appendChild(o);
+    }
+  }
+}
+
+function onTTSModelChange() {
+  const m = document.getElementById('cfg-tts-model').value;
+  if (m) discoverVoices(m);
+}
+
+/* --- Character voice map UI --- */
+function updateVoiceMapUI(characters) {
+  const container = document.getElementById('tts-voice-map-entries');
+  const wrapper = document.getElementById('tts-voice-map');
+  if (!characters?.length) { wrapper.style.display = 'none'; return; }
+  wrapper.style.display = '';
+
+  tts.yamlVoiceMap = {};
+  for (const ch of characters) {
+    if (ch.tts_voice) tts.yamlVoiceMap[ch.name] = ch.tts_voice;
+  }
+
+  let html = '';
+  for (const ch of characters) {
+    const yamlVoice = ch.tts_voice || '';
+    const saved = tts.voiceMap[ch.name] || '';
+    const displayVoice = yamlVoice || saved;
+    const fromYaml = !!yamlVoice;
+    html += '<div class="voice-map-row">'
+      + '<span class="voice-map-name">' + escHtml(ch.name) + '</span>'
+      + '<span class="voice-map-role">' + escHtml(ch.role || '') + '</span>';
+    if (fromYaml) {
+      html += '<span style="display:flex;align-items:center;gap:.35rem;flex:1;">'
+        + '<input type="text" list="tts-voices-list" class="voice-map-input tts-char-voice"'
+        + ' data-character="' + escHtml(ch.name) + '"'
+        + ' value="' + escHtml(displayVoice) + '"'
+        + ' readonly title="Defined in characters.yaml -- edit tts_voice to change"'
+        + ' style="flex:1;opacity:.75;cursor:default;">'
+        + '<span title="Voice defined in characters.yaml" style="font-size:.7rem;color:var(--text-dim);white-space:nowrap;">yaml</span>'
+        + '</span>';
+    } else {
+      html += '<input type="text" list="tts-voices-list" class="voice-map-input tts-char-voice"'
+        + ' data-character="' + escHtml(ch.name) + '"'
+        + ' value="' + escHtml(displayVoice) + '"'
+        + ' placeholder="voice name">';
+    }
+    html += '<button class="btn btn-sm" onclick="testVoice(\'' + escHtml(ch.name).replace(/'/g, "\\'") + '\')" title="Test">Test</button>'
+      + '</div>';
+  }
+  container.innerHTML = html;
+}
+
+/* --- Save / test --- */
+async function saveTTSConfig() {
+  const vm = {};
+  document.querySelectorAll('.tts-char-voice').forEach(el => {
+    const name = el.dataset.character;
+    const voice = el.value.trim();
+    if (name && voice) vm[name] = voice;
+  });
+  const cfg = {
+    tts_host: document.getElementById('cfg-tts-host').value.trim(),
+    tts_model: document.getElementById('cfg-tts-model').value.trim(),
+    tts_narrator_voice: document.getElementById('cfg-tts-narrator-voice').value.trim(),
+    tts_voice_map: vm,
+  };
+  const r = await apiPost('/api/config', cfg);
+  if (r && r.ok) {
+    toast('TTS config saved', 'ok');
+    tts.host = cfg.tts_host;
+    tts.voiceMap = vm;
+    tts.narratorVoice = cfg.tts_narrator_voice;
+    tts.model = cfg.tts_model;
+  } else {
+    toast('Failed to save TTS config', 'error');
+  }
+}
+
+async function testVoice(nameOrNarrator) {
+  let voice, label;
+  if (nameOrNarrator === 'narrator') {
+    voice = document.getElementById('cfg-tts-narrator-voice').value.trim();
+    label = 'Narrator';
+  } else {
+    const el = document.querySelector('.tts-char-voice[data-character="' + nameOrNarrator + '"]');
+    voice = el?.value.trim() || '';
+    label = nameOrNarrator;
+  }
+  const host = document.getElementById('cfg-tts-host').value.trim();
+  const model = document.getElementById('cfg-tts-model').value.trim();
+  if (!voice || !model || !host) { toast('Set host, model and voice first', 'warn'); return; }
+
+  toast('Testing voice for ' + label + '...', 'info');
+  try {
+    const resp = await fetch('/api/tts/speak', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        text: 'Hello, my name is ' + label + '. This is a voice test for the novel builder.',
+        host, model, voice,
+      }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      toast('Test failed: ' + (err.error || resp.statusText), 'error');
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = new Audio(url);
+    a.onended = () => URL.revokeObjectURL(url);
+    a.play();
+  } catch (e) { toast('Test error: ' + e.message, 'error'); }
+}
+
+/* --- Playback engine --- */
+function parseOutputIntoScenes(text) {
+  const SCENE_SPLIT = /(?=\n#{2,3} (?:Chapter|Scene) |^#{2,3} (?:Chapter|Scene) )/m;
+  return text.split(SCENE_SPLIT).map(p => p.trim()).filter(p => p.length > 0);
+}
+
+function getVoiceForSegment(seg) {
+  if (seg.character) {
+    if (tts.yamlVoiceMap[seg.character]) return tts.yamlVoiceMap[seg.character];
+    if (tts.voiceMap[seg.character]) return tts.voiceMap[seg.character];
+  }
+  return tts.narratorVoice;
+}
+
+async function fetchTTSAudio(text, voice) {
+  const resp = await fetch('/api/tts/speak', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ text, host: tts.host, model: tts.model, voice }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({error: 'Unknown error'}));
+    throw new Error(err.error || 'HTTP ' + resp.status);
+  }
+  return await resp.blob();
+}
+
+function playAudioBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    tts.currentAudio = audio;
+    audio.onended = () => { URL.revokeObjectURL(url); tts.currentAudio = null; resolve(); };
+    audio.onerror = () => { URL.revokeObjectURL(url); tts.currentAudio = null; reject(new Error('Playback error')); };
+    audio.play().catch(reject);
+  });
+}
+
+function waitWhilePaused() {
+  return new Promise(resolve => {
+    const tick = () => (!tts.paused || tts.stopped) ? resolve() : setTimeout(tick, 200);
+    tick();
+  });
+}
+
+async function playAllScenes() {
+  const startAtIdx = getFirstVisibleSceneIdx();
+
+  const text = getOutputText();
+  if (!text || text.startsWith('(No output')) {
+    toast('No output to read aloud', 'warn'); return;
+  }
+
+  const snap = await api('/api/status');
+  const cfg = snap?.config || {};
+  tts.host = tts.host || cfg.tts_host || '';
+  tts.model = cfg.tts_model || '';
+  tts.narratorVoice = cfg.tts_narrator_voice || '';
+  tts.voiceMap = cfg.tts_voice_map || {};
+
+  if (!tts.model || !tts.narratorVoice) {
+    toast('Configure TTS model and narrator voice in the Setup tab first', 'warn');
+    document.querySelector('[data-tab="setup"]').click();
+    return;
+  }
+
+  tts.scenes = parseOutputIntoScenes(text);
+  if (!tts.scenes.length) { toast('No scenes found in output', 'warn'); return; }
+
+  tts.currentSceneIdx = Math.min(startAtIdx, tts.scenes.length - 1);
+  tts.playing = true; tts.paused = false; tts.stopped = false;
+  if (startAtIdx > 0) toast('Starting from scene ' + (startAtIdx + 1), 'info');
+  updateTTSControls(); updateTTSProgress();
+
+  const parsed = await api('/api/parse-yaml');
+  const _playChars = parsed?.characters?.characters || [];
+  const charNames = _playChars.map(c => c.name);
+  const povCharacter = parsed?.outline?.pov_character || '';
+  tts.yamlVoiceMap = {};
+  for (const ch of _playChars) {
+    if (ch.tts_voice) tts.yamlVoiceMap[ch.name] = ch.tts_voice;
+  }
+
+  for (let i = tts.currentSceneIdx; i < tts.scenes.length; i++) {
+    if (tts.stopped) break;
+    tts.currentSceneIdx = i;
+    updateTTSProgress();
+    scrollToScene(i);
+
+    const segResp = await apiPost('/api/tts/segments', {
+      text: tts.scenes[i], characters: charNames, pov_character: povCharacter,
+    });
+    const segments = segResp?.ok
+      ? segResp.segments
+      : [{ type: 'narration', text: tts.scenes[i], character: null }];
+
+    for (const seg of segments) {
+      if (tts.stopped) break;
+      if (tts.paused) await waitWhilePaused();
+      if (tts.stopped) break;
+
+      const voice = getVoiceForSegment(seg);
+      try {
+        const blob = await fetchTTSAudio(seg.text, voice);
+        await playAudioBlob(blob);
+      } catch (e) {
+        console.error('TTS segment error:', e);
+      }
+    }
+  }
+
+  const wasStopped = tts.stopped;
+  tts.playing = false; tts.stopped = false; tts.currentSceneIdx = 0;
+  updateTTSControls(); updateTTSProgress();
+  if (!wasStopped) toast('Read aloud complete', 'ok');
+}
+
+/* --- Audiobook download --- */
+async function downloadAudiobook() {
+  const text = getOutputText();
+  if (!text || text.startsWith('(No output')) {
+    toast('No output to compile', 'warn'); return;
+  }
+
+  const snap = await api('/api/status');
+  const cfg = snap?.config || {};
+  tts.host = tts.host || cfg.tts_host || '';
+  tts.model = cfg.tts_model || '';
+  tts.narratorVoice = cfg.tts_narrator_voice || '';
+  tts.voiceMap = cfg.tts_voice_map || {};
+
+  if (!tts.host || !tts.model || !tts.narratorVoice) {
+    toast('Configure TTS host, model and narrator voice in the Setup tab first', 'warn');
+    document.querySelector('[data-tab="setup"]').click();
+    return;
+  }
+
+  const scenes = parseOutputIntoScenes(text);
+  if (!scenes.length) { toast('No scenes found in output', 'warn'); return; }
+
+  const parsed = await api('/api/parse-yaml');
+  const characters = parsed?.characters?.characters || [];
+  const charNames = characters.map(c => c.name);
+  const povCharacter = parsed?.outline?.pov_character || '';
+  tts.yamlVoiceMap = {};
+  for (const ch of characters) {
+    if (ch.tts_voice) tts.yamlVoiceMap[ch.name] = ch.tts_voice;
+  }
+
+  toast('Building segment list...', 'info');
+  const allSegments = [];
+  for (const scene of scenes) {
+    const segResp = await apiPost('/api/tts/segments', { text: scene, characters: charNames, pov_character: povCharacter });
+    const segs = segResp?.ok
+      ? segResp.segments
+      : [{ type: 'narration', text: scene, character: null }];
+    allSegments.push(...segs);
+  }
+
+  const total = allSegments.length;
+  tts.downloading = true;
+  tts.downloadCancelled = false;
+  updateDownloadControls(0, total);
+
+  const buffers = [];
+  for (let i = 0; i < allSegments.length; i++) {
+    if (tts.downloadCancelled) break;
+    updateDownloadControls(i, total);
+    const seg = allSegments[i];
+    const voice = getVoiceForSegment(seg);
+    try {
+      const blob = await fetchTTSAudio(seg.text, voice);
+      buffers.push(await blob.arrayBuffer());
+    } catch (e) {
+      console.warn('Segment', i, 'failed:', e.message);
+    }
+  }
+
+  tts.downloading = false;
+  updateDownloadControls(total, total, true);
+
+  if (tts.downloadCancelled) {
+    toast('Audiobook download cancelled', 'warn');
+    return;
+  }
+
+  const totalBytes = buffers.reduce((s, b) => s + b.byteLength, 0);
+  const combined = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const buf of buffers) {
+    combined.set(new Uint8Array(buf), offset);
+    offset += buf.byteLength;
+  }
+
+  const blob = new Blob([combined], { type: 'audio/mpeg' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const title = (snap?.config?.story_title || 'audiobook').replace(/[^a-zA-Z0-9_-]/g, '_');
+  a.href = url;
+  a.download = title + '.mp3';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  toast('Audiobook download started -- ' + (totalBytes / 1024 / 1024).toFixed(1) + ' MB', 'ok');
+}
+
+function cancelDownload() {
+  tts.downloadCancelled = true;
+}
+
+function updateDownloadControls(done, total, finished = false) {
+  const btnDl = document.getElementById('btn-tts-download');
+  const btnCancel = document.getElementById('btn-tts-download-cancel');
+  const prog = document.getElementById('tts-download-progress');
+  if (!btnDl) return;
+  if (finished || !tts.downloading) {
+    btnDl.style.display = '';
+    btnCancel.style.display = 'none';
+    prog.style.display = 'none';
+    prog.textContent = '';
+  } else {
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    btnDl.style.display = 'none';
+    btnCancel.style.display = '';
+    prog.style.display = '';
+    prog.textContent = 'Compiling... ' + done + '/' + total + ' (' + pct + '%)';
+  }
+}
+
+function pauseTTS() {
+  if (!tts.playing) return;
+  tts.paused = !tts.paused;
+  if (tts.currentAudio) {
+    if (tts.paused) tts.currentAudio.pause();
+    else tts.currentAudio.play();
+  }
+  updateTTSControls();
+}
+
+function stopTTS() {
+  tts.stopped = true; tts.paused = false;
+  if (tts.currentAudio) { tts.currentAudio.pause(); tts.currentAudio = null; }
+  tts.playing = false; tts.currentSceneIdx = 0;
+  updateTTSControls(); updateTTSProgress();
+}
+
+function updateTTSControls() {
+  const play = document.getElementById('btn-tts-play');
+  const pause = document.getElementById('btn-tts-pause');
+  const stop = document.getElementById('btn-tts-stop');
+  const dl = document.getElementById('btn-tts-download');
+  if (play) play.style.display = tts.playing ? 'none' : '';
+  if (pause) {
+    pause.style.display = tts.playing ? '' : 'none';
+    pause.textContent = tts.paused ? 'Resume' : 'Pause';
+  }
+  if (stop) stop.style.display = tts.playing ? '' : 'none';
+  if (dl) dl.disabled = tts.playing;
+  if (play) play.disabled = tts.downloading;
+}
+
+function updateTTSProgress() {
+  const ind = document.getElementById('ind-tts-playback');
+  const lbl = document.getElementById('lbl-tts-play');
+  if (!ind || !lbl) return;
+  if (tts.playing) {
+    ind.style.display = '';
+    lbl.textContent = 'Scene ' + (tts.currentSceneIdx + 1) + '/' + tts.scenes.length;
+  } else {
+    ind.style.display = 'none';
+  }
+}
+
+function scrollToScene(idx) {
+  const viewer = document.getElementById('output-viewer');
+  const block = viewer.querySelector(`.scene-block[data-scene-idx="${idx}"]`);
+  if (block) block.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ==========================================================
+   Initial load -- reconnection-safe
    ========================================================== */
 async function init() {
   const snap = await api('/api/status');
@@ -1662,6 +2266,11 @@ async function init() {
 
   // Load setup state
   loadPromptPresets();
+
+  // TTS -- if a host is configured, auto-check connectivity and populate dropdowns
+  if (snap.config?.tts_host) {
+    checkTTSHealth();
+  }
 
   // Start SSE
   connectSSE();
