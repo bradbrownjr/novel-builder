@@ -3722,7 +3722,7 @@ function _renderMemorySection(type, items) {
   container.innerHTML = items.map((item, idx) => `
     <div style="display:flex;align-items:flex-start;gap:.4rem;margin:.25rem 0;" id="memrow-${type}-${idx}">
       <textarea rows="2" style="flex:1;min-height:2.4rem;font-size:.78rem;resize:vertical;"
-        oninput="_memoryData.${type}[${idx}].text=this.value">${escHtml(item.text||'')}</textarea>
+        oninput="_memoryData.${type}[${idx}].detail=this.value">${escHtml(item.detail||item.text||'')}</textarea>
       <span style="font-size:.7rem;color:var(--text-dim);white-space:nowrap;padding-top:.35rem;">sc ${escHtml(String(item.scene||''))}</span>
       <button class="btn btn-sm btn-danger" style="padding:.2rem .4rem;" onclick="memDeleteItem('${type}',${idx})">✕</button>
     </div>`).join('');
@@ -3762,7 +3762,7 @@ function memDeleteCharacter(id) {
 
 function memAddItem(type) {
   if (!_memoryData[type]) _memoryData[type] = [];
-  _memoryData[type].push({ text: '', scene: '' });
+  _memoryData[type].push({ detail: '', scene: '' });
   _renderMemorySection(type, _memoryData[type]);
   // Focus the new textarea
   const rows = document.querySelectorAll(`#mem-list-${type} textarea`);
