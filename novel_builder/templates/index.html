@@ -688,6 +688,12 @@ textarea {
 <!-- ==================== SETUP TAB ==================== -->
 <div class="tab-panel active" id="panel-setup">
 
+  <!-- Tab toolbar -->
+  <div class="tts-toolbar">
+    <span class="spacer"></span>
+    <button class="btn" onclick="switchTab('plan')">Next: Plan &#8250;</button>
+  </div>
+
   <!-- Config card -->
   <div class="card">
     <h3>⚙ Connection & Models</h3>
@@ -829,11 +835,6 @@ textarea {
     <div id="tts-status" style="font-size:.78rem; margin-top:.5rem; color:var(--text-dim);"></div>
   </div>
   <datalist id="tts-voices-list"></datalist>
-
-  <div class="tts-toolbar">
-    <span class="spacer"></span>
-    <button class="btn" onclick="switchTab('plan')">Next: Plan ›</button>
-  </div>
 
 </div>
 
