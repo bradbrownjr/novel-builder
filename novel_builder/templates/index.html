@@ -612,6 +612,20 @@ textarea {
   align-items: center;
 }
 .tts-toolbar .spacer { flex: 1; }
+
+/* Generation error notice in Plan tab */
+.error-notice {
+  background: rgba(233,69,96,0.1);
+  border: 1px solid var(--red);
+  border-radius: var(--radius);
+  padding: .6rem .9rem;
+  font-size: .84rem;
+  color: var(--text);
+  margin-bottom: .5rem;
+  line-height: 1.5;
+}
+.error-notice strong { color: var(--red); }
+.error-notice small { color: var(--text-dim); }
 </style>
 </head>
 <body>
@@ -882,6 +896,12 @@ textarea {
     <h3>📊 Loaded Data Overview</h3>
     <div id="loaded-overview"></div>
     <div class="validation-results" id="vresults-cross"></div>
+  </div>
+
+  <!-- Error notice (shown when generation stopped with an error) -->
+  <div id="plan-error-notice" style="display:none;" class="error-notice">
+    <strong>Generation stopped with an error:</strong> <span id="plan-error-msg"></span><br>
+    <small>Click Resume below to retry from the last completed scene, or check the Logs tab for details.</small>
   </div>
 
   <!-- Action buttons -->
@@ -1555,7 +1575,19 @@ async function resumeConsult() {
 /* ==========================================================
    UI status updates
    ========================================================== */
-function updateUIForStatus(status) {
+function showGenerationError(msg) {
+  const notice = document.getElementById('plan-error-notice');
+  const msgEl = document.getElementById('plan-error-msg');
+  if (!notice) return;
+  if (msg) {
+    msgEl.textContent = msg;
+    notice.style.display = '';
+  } else {
+    notice.style.display = 'none';
+  }
+}
+
+function updateUIForStatus(status, errorMsg) {
   currentStatus = status;
   updateGlobalStop();
   const dotS = document.getElementById('dot-status');
@@ -1574,6 +1606,7 @@ function updateUIForStatus(status) {
       btnResume.style.display = 'none';
       btnStop.style.display = '';
       indP.style.display = '';
+      showGenerationError(null);
       break;
     case 'completed':
       dotS.classList.add('green');
@@ -1581,6 +1614,7 @@ function updateUIForStatus(status) {
       btnStart.style.display = '';
       btnResume.style.display = 'none';
       btnStop.style.display = 'none';
+      showGenerationError(null);
       break;
     case 'stopped':
       dotS.classList.add('yellow');
@@ -1588,6 +1622,7 @@ function updateUIForStatus(status) {
       btnStart.style.display = '';
       btnResume.style.display = '';
       btnStop.style.display = 'none';
+      showGenerationError(null);
       break;
     case 'error':
       dotS.classList.add('red');
@@ -1595,6 +1630,7 @@ function updateUIForStatus(status) {
       btnStart.style.display = '';
       btnResume.style.display = '';
       btnStop.style.display = 'none';
+      showGenerationError(errorMsg || 'See the Logs tab for details.');
       break;
     default:
       lblS.textContent = 'Idle';
@@ -1602,6 +1638,7 @@ function updateUIForStatus(status) {
       btnResume.style.display = 'none';
       btnStop.style.display = 'none';
       indP.style.display = 'none';
+      showGenerationError(null);
   }
 }
 
@@ -1695,7 +1732,7 @@ function connectSSE() {
         updateModelIndicator(event.data);
         break;
       case 'status_change':
-        updateUIForStatus(event.data.status);
+        updateUIForStatus(event.data.status, event.data.message);
         if (event.data.status === 'completed') {
           toast('Generation complete!', 'ok');
         } else if (event.data.status === 'error') {
@@ -2307,7 +2344,7 @@ async function init() {
   if (snap.files) updateFileStatus(snap.files);
 
   // Status
-  updateUIForStatus(snap.status);
+  updateUIForStatus(snap.status, snap.status === 'error' ? snap.error : null);
   if (snap.active_model) updateModelIndicator(snap.active_model);
   if (snap.progress) updateProgress(snap.progress);
 
