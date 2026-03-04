@@ -688,10 +688,15 @@ textarea {
 <!-- ==================== SETUP TAB ==================== -->
 <div class="tab-panel active" id="panel-setup">
 
-  <!-- Tab toolbar -->
-  <div class="tts-toolbar">
-    <span class="spacer"></span>
-    <button class="btn" onclick="switchTab('plan')">Next: Plan &#8250;</button>
+  <div class="card">
+    <h3>&#9881; Story Setup</h3>
+    <p style="font-size:.82rem;color:var(--text-dim);margin-bottom:.75rem;">
+      Configure your Ollama connection, upload your YAML story files, and tune generation settings.
+    </p>
+    <div class="tts-toolbar">
+      <span class="spacer"></span>
+      <button class="btn" onclick="switchTab('plan')">Next: Plan &#8250;</button>
+    </div>
   </div>
 
   <!-- Config card -->
@@ -841,15 +846,20 @@ textarea {
 <!-- ==================== PLAN TAB ==================== -->
 <div class="tab-panel" id="panel-plan">
 
-  <!-- Tab toolbar -->
-  <div class="tts-toolbar">
-    <button class="btn" onclick="switchTab('setup')">&#8249; Back: Setup</button>
-    <button class="btn btn-primary gen-btn-start" id="btn-start" onclick="startGeneration(false)">&#9654; Start Generation</button>
-    <button class="btn gen-btn-resume" id="btn-resume" onclick="startGeneration(true)" style="display:none;">&#9654; Resume</button>
-    <button class="btn btn-danger gen-btn-stop" id="btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
-    <button class="btn" onclick="refreshParsed()">&#8635; Refresh Preview</button>
-    <span class="spacer"></span>
-    <button class="btn" onclick="switchTab('consult')">Next: Consult &#8250;</button>
+  <div class="card">
+    <h3>&#9654; Story Generation</h3>
+    <p style="font-size:.82rem;color:var(--text-dim);margin-bottom:.75rem;">
+      Review your loaded story files, then generate your novel scene by scene. Resume picks up from the last completed scene.
+    </p>
+    <div class="tts-toolbar">
+      <button class="btn" onclick="switchTab('setup')">&#8249; Back: Setup</button>
+      <button class="btn btn-primary gen-btn-start" id="btn-start" onclick="startGeneration(false)">&#9654; Start Generation</button>
+      <button class="btn gen-btn-resume" id="btn-resume" onclick="startGeneration(true)" style="display:none;">&#9654; Resume</button>
+      <button class="btn btn-danger gen-btn-stop" id="btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
+      <button class="btn" onclick="refreshParsed()">&#8635; Refresh Preview</button>
+      <span class="spacer"></span>
+      <button class="btn" onclick="switchTab('consult')">Next: Consult &#8250;</button>
+    </div>
   </div>
   <!-- Error notice (shown when generation stopped with an error) -->
   <div id="plan-error-notice" style="display:none;" class="error-notice">
@@ -947,14 +957,20 @@ textarea {
 <!-- ==================== OUTPUT TAB ==================== -->
 <!-- ==================== LOGS TAB ==================== -->
 <div class="tab-panel" id="panel-logs">
-  <div class="tts-toolbar">
-    <button class="btn" onclick="switchTab('consult')">&#8249; Back: Consult</button>
-    <button class="btn btn-primary gen-btn-start" onclick="startGeneration(false)" style="display:none;">&#9654; Start Generation</button>
-    <button class="btn gen-btn-resume" onclick="startGeneration(true)" style="display:none;">&#9654; Resume</button>
-    <button class="btn btn-danger gen-btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
-    <button class="btn" onclick="clearLogs()">&#128465; Clear</button>
-    <span class="spacer"></span>
-    <button class="btn" onclick="switchTab('memory')">Next: Memory &#8250;</button>
+  <div class="card">
+    <h3>&#128196; Generation Log</h3>
+    <p style="font-size:.82rem;color:var(--text-dim);margin-bottom:.75rem;">
+      Live output from the generation process -- scene progress, retries, memory extractions, and errors.
+    </p>
+    <div class="tts-toolbar">
+      <button class="btn" onclick="switchTab('consult')">&#8249; Back: Consult</button>
+      <button class="btn btn-primary gen-btn-start" onclick="startGeneration(false)" style="display:none;">&#9654; Start Generation</button>
+      <button class="btn gen-btn-resume" onclick="startGeneration(true)" style="display:none;">&#9654; Resume</button>
+      <button class="btn btn-danger gen-btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
+      <button class="btn" onclick="clearLogs()">&#128465; Clear</button>
+      <span class="spacer"></span>
+      <button class="btn" onclick="switchTab('memory')">Next: Memory &#8250;</button>
+    </div>
   </div>
   <div class="log-viewer" id="log-viewer"></div>
 
@@ -963,15 +979,20 @@ textarea {
 <!-- ==================== MEMORY TAB ==================== -->
 <div class="tab-panel" id="panel-memory">
 
-  <!-- Tab toolbar -->
-  <div class="tts-toolbar">
-    <button class="btn" onclick="switchTab('logs')">&#8249; Back: Logs</button>
-    <button class="btn gen-btn-resume" onclick="startGeneration(true)" style="display:none;">&#9654; Resume</button>
-    <button class="btn btn-danger gen-btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
-    <button class="btn btn-primary" onclick="saveMemory()">Save Memory</button>
-    <button class="btn" onclick="refreshMemory()">Reload</button>
-    <span class="spacer"></span>
-    <button class="btn" onclick="switchTab('output')">Next: Output &#8250;</button>
+  <div class="card">
+    <h3>&#129504; Checkpoint &amp; Memory</h3>
+    <p style="font-size:.82rem;color:var(--text-dim);margin-bottom:.75rem;">
+      Facts, actions, and character notes extracted from generated scenes. Edit and save to influence future generations.
+    </p>
+    <div class="tts-toolbar">
+      <button class="btn" onclick="switchTab('logs')">&#8249; Back: Logs</button>
+      <button class="btn gen-btn-resume" onclick="startGeneration(true)" style="display:none;">&#9654; Resume</button>
+      <button class="btn btn-danger gen-btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
+      <button class="btn btn-primary" onclick="saveMemory()">Save Memory</button>
+      <button class="btn" onclick="refreshMemory()">Reload</button>
+      <span class="spacer"></span>
+      <button class="btn" onclick="switchTab('output')">Next: Output &#8250;</button>
+    </div>
   </div>
 
   <div class="card" id="memory-progress-card" style="display:none;">
@@ -1027,10 +1048,15 @@ textarea {
 
 <!-- ==================== OUTPUT TAB ==================== -->
 <div class="tab-panel" id="panel-output">
-  <div class="tts-toolbar">
-    <button class="btn btn-sm" onclick="switchTab('memory')">&#8249; Back: Memory</button>
-    <button class="btn btn-sm" onclick="refreshOutput()">Refresh</button>
-    <button class="btn btn-sm" onclick="location.href='/api/download'">Download .md</button>
+  <div class="card">
+    <h3>&#128218; Story Output</h3>
+    <p style="font-size:.82rem;color:var(--text-dim);margin-bottom:.75rem;">
+      Your generated novel, scene by scene. Resume generation, download the manuscript, or listen with Read Aloud.
+    </p>
+    <div class="tts-toolbar">
+      <button class="btn btn-sm" onclick="switchTab('memory')">&#8249; Back: Memory</button>
+      <button class="btn btn-sm" onclick="refreshOutput()">Refresh</button>
+      <button class="btn btn-sm" onclick="location.href='/api/download'">Download .md</button>
     <label style="display:flex; align-items:center; gap:.3rem; font-size:.78rem; color:var(--text-dim);">
       <input type="checkbox" id="chk-autoscroll" checked> Auto-scroll
     </label>
@@ -1043,6 +1069,7 @@ textarea {
     <button class="btn btn-sm" id="btn-tts-play" onclick="playAllScenes()">Read Aloud</button>
     <button class="btn btn-sm" id="btn-tts-pause" onclick="pauseTTS()" style="display:none;">Pause</button>
     <button class="btn btn-sm btn-danger" id="btn-tts-stop" onclick="stopTTS()" style="display:none;">Stop</button>
+  </div>
   </div>
   <div class="output-viewer" id="output-viewer">(No output yet — start generation to see scenes here.)</div>
 </div>
