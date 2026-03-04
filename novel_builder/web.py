@@ -582,6 +582,7 @@ def _start_generation(web_config):
         summary_model=web_config.get("summary_model", "gemma3:1b"),
         retries=int(web_config.get("retries", 3)),
         timeout=int(web_config.get("timeout", 900)),
+        num_ctx=int(web_config.get("generation_num_ctx", 8192)),
         output=os.path.join(WORKSPACE_DIR, "full_story.md"),
         quiet=True,  # Web UI handles display
         resume=web_config.get("resume", False),
@@ -710,7 +711,7 @@ def api_config():
     data = request.get_json(force=True)
     # Sanitize  --  only accept known keys
     allowed = {"host", "model", "summary_model", "retries", "timeout",
-               "consult_num_ctx",
+               "generation_num_ctx", "consult_num_ctx",
                "tts_host", "tts_model", "tts_narrator_voice", "tts_voice_map"}
     cfg = _load_web_config()
     for key in allowed:
