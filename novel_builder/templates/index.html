@@ -2677,6 +2677,14 @@ async function restoreConsult() {
   }
   _updateRetryFailedBtn();
 
+  // Relabel Start button to 'Redo Analysis' if prior results exist
+  if (Object.keys(r.passes || {}).length > 0) {
+    const startBtn = document.getElementById('btn-consult-start');
+    if (startBtn && startBtn.style.display !== 'none') {
+      startBtn.textContent = 'Redo Analysis';
+    }
+  }
+
   // Always let _refreshGenAllBtn drive button state (handles generating/done/idle correctly).
   // If fixes are actively running, also kick off polling to track completion.
   _refreshGenAllBtn(r.fixes || {});
@@ -2807,6 +2815,7 @@ function _handleConsultEvent(ev, container) {
       statusLbl.textContent = '';
       document.getElementById('btn-consult-start').disabled = false;
       document.getElementById('btn-consult-start').style.display = '';
+      document.getElementById('btn-consult-start').textContent = 'Redo Analysis';
       document.getElementById('btn-consult-stop').style.display = 'none';
       document.getElementById('btn-consult-resume').style.display = 'none';
       consultRunning = false;
@@ -2863,12 +2872,8 @@ async function _doClearConsult() {
     document.getElementById('consult-status-label').textContent = '';
     document.getElementById('btn-consult-start').disabled = false;
     document.getElementById('btn-consult-start').style.display = '';
+    document.getElementById('btn-consult-start').textContent = 'Start Analysis';
     document.getElementById('btn-consult-stop').style.display = 'none';
-    document.getElementById('btn-consult-resume').style.display = 'none';
-    consultRunning = false;
-    updateGlobalStop();
-    document.getElementById('btn-consult-retry').style.display = 'none';
-    const _gab2 = document.getElementById('btn-consult-genall');
     _gab2.style.display = 'none';
     _gab2.textContent = 'Generate All Fixes';
     _gab2.onclick = generateAllFixes;
@@ -3143,6 +3148,7 @@ async function applyAllFixes() {
   if (btn) { btn.disabled = true; btn.textContent = 'Applying...'; }
   let saved = 0;
   const errors = [];
+  const appliedRoles = [];
   // Apply crossref first (structural foundation), then individual files (refinement)
   const applyOrder = ['crossref', 'characters', 'outline', 'locations'];
   for (const role of applyOrder) {
@@ -3156,23 +3162,31 @@ async function applyAllFixes() {
     if (role === 'crossref') {
       const content = fixYaml.value;
       const subRoles = ['characters', 'outline', 'locations'];
+      let anySaved = false;
       for (const r of subRoles) {
         const parsed = _parseCrossrefFile(content, r);
         if (!parsed) continue;
         const res = await apiPost('/api/consult-save', { role: r, content: parsed });
-        if (res && res.ok) saved++;
+        if (res && res.ok) { saved++; anySaved = true; }
         else errors.push(`${_fileLabel(r)}: ${res?.error || 'failed'}`);
       }
+      if (anySaved) appliedRoles.push('crossref');
     } else {
       const res = await apiPost('/api/consult-save', { role, content: fixYaml.value });
-      if (res && res.ok) saved++;
+      if (res && res.ok) { saved++; appliedRoles.push(role); }
       else errors.push(`${_fileLabel(role)}: ${res?.error || 'failed'}`);
     }
   }
   if (saved > 0) { toast(`${saved} file(s) saved to workspace`, 'ok'); refreshFiles(); refreshParsed(); }
   if (errors.length) toast('Errors: ' + errors.join('; '), 'error');
   if (saved === 0 && !errors.length) toast('No completed fixes found to apply', 'warn');
-  if (btn) { btn.disabled = false; btn.textContent = 'Apply All Fixes'; }
+  // Mark applied roles on server so button stays hidden after page refresh
+  if (appliedRoles.length) {
+    await apiPost('/api/consult-mark-applied', { roles: appliedRoles });
+  }
+  // Refresh button state to reflect new statuses
+  const updated = await api('/api/consult-results');
+  if (updated) _refreshGenAllBtn(updated.fixes || {});
 }
 
 async function showDiff(role) {

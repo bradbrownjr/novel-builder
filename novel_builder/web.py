@@ -2305,6 +2305,23 @@ def api_consult_save():
     })
 
 
+@app.route("/api/consult-mark-applied", methods=["POST"])
+def api_consult_mark_applied():
+    """Mark one or more fix roles as applied so the UI stops prompting to apply.
+
+    Called by the client after applyAllFixes() successfully saves each file.
+    Sets fix status to 'applied' so _refreshGenAllBtn no longer shows the button.
+    """
+    data = request.get_json(force=True)
+    roles = data.get("roles", [])
+    valid = ("outline", "characters", "locations", "crossref")
+    for role in roles:
+        if role in valid:
+            existing = consult_state.get_fix(role)
+            consult_state.set_fix(role, existing, status="applied")
+    return jsonify({"ok": True})
+
+
 @app.route("/api/consult-save-fix", methods=["POST"])
 def api_consult_save_fix():
     """Persist the user-edited fix content back to consult cache.
