@@ -865,7 +865,7 @@ textarea {
   <div id="plan-error-notice" style="display:none;" class="error-notice">
     <strong>Generation stopped with an error:</strong> <span id="plan-error-msg"></span><br>
     <small>Click Resume above to retry from the last completed scene, or check the Logs tab for details.</small><br>
-    <small>If Ollama appears hung, click <a href="#" onclick="ollamaUnloadModel();return false;">Unload model from Ollama</a> before resuming to clear stuck GPU state.</small>
+    <small>If Ollama appears hung, click <a href="#" onclick="ollamaUnloadModel();return false;">Unload model from Ollama</a> before resuming to kill any in-flight inference and give the retry a clean start.</small>
   </div>
 
   <!-- File upload cards — alphabetical order matching File Explorer -->
