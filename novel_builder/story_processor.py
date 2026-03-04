@@ -231,6 +231,7 @@ def _run_generation(config, args, event_callback=None):
                     user_prompt,
                     timeout=args.timeout,
                     retries=args.retries,
+                    num_ctx=getattr(args, 'num_ctx', 8192),
                     emit_callback=emit,
                 )
             except OllamaError as e:
@@ -621,6 +622,7 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
         raw_text = call_ollama_with_retry(
             args.host, args.model, system_prompt, user_prompt,
             timeout=args.timeout, retries=args.retries,
+            num_ctx=getattr(args, 'num_ctx', 8192),
             emit_callback=emit if event_callback else None,
         )
     except OllamaError as e:
