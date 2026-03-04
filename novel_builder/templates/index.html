@@ -845,7 +845,7 @@ textarea {
   <div class="tts-toolbar">
     <button class="btn" onclick="switchTab('setup')">&#8249; Back: Setup</button>
     <button class="btn btn-primary gen-btn-start" id="btn-start" onclick="startGeneration(false)">&#9654; Start Generation</button>
-    <button class="btn gen-btn-resume" id="btn-resume" onclick="startGeneration(true)" style="display:none;">&#9193; Resume</button>
+    <button class="btn gen-btn-resume" id="btn-resume" onclick="startGeneration(true)" style="display:none;">&#9654; Resume</button>
     <button class="btn btn-danger gen-btn-stop" id="btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
     <button class="btn" onclick="refreshParsed()">&#8635; Refresh Preview</button>
     <span class="spacer"></span>
@@ -948,10 +948,13 @@ textarea {
 <!-- ==================== LOGS TAB ==================== -->
 <div class="tab-panel" id="panel-logs">
   <div class="tts-toolbar">
-    <button class="btn" onclick="switchTab('consult')">‹ Back: Consult</button>
-    <button class="btn" onclick="clearLogs()">🗑 Clear</button>
+    <button class="btn" onclick="switchTab('consult')">&#8249; Back: Consult</button>
+    <button class="btn btn-primary gen-btn-start" onclick="startGeneration(false)" style="display:none;">&#9654; Start Generation</button>
+    <button class="btn gen-btn-resume" onclick="startGeneration(true)" style="display:none;">&#9654; Resume</button>
+    <button class="btn btn-danger gen-btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
+    <button class="btn" onclick="clearLogs()">&#128465; Clear</button>
     <span class="spacer"></span>
-    <button class="btn" onclick="switchTab('memory')">Next: Memory ›</button>
+    <button class="btn" onclick="switchTab('memory')">Next: Memory &#8250;</button>
   </div>
   <div class="log-viewer" id="log-viewer"></div>
 
@@ -963,7 +966,7 @@ textarea {
   <!-- Tab toolbar -->
   <div class="tts-toolbar">
     <button class="btn" onclick="switchTab('logs')">&#8249; Back: Logs</button>
-    <button class="btn gen-btn-resume" onclick="startGeneration(true)" style="display:none;">&#9193; Resume</button>
+    <button class="btn gen-btn-resume" onclick="startGeneration(true)" style="display:none;">&#9654; Resume</button>
     <button class="btn btn-danger gen-btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
     <button class="btn btn-primary" onclick="saveMemory()">Save Memory</button>
     <button class="btn" onclick="refreshMemory()">Reload</button>
@@ -1031,7 +1034,7 @@ textarea {
     <label style="display:flex; align-items:center; gap:.3rem; font-size:.78rem; color:var(--text-dim);">
       <input type="checkbox" id="chk-autoscroll" checked> Auto-scroll
     </label>
-    <button class="btn btn-sm gen-btn-resume" onclick="startGeneration(true)" style="display:none;">&#9193; Resume</button>
+    <button class="btn btn-sm gen-btn-resume" onclick="startGeneration(true)" style="display:none;">&#9654; Resume</button>
     <button class="btn btn-sm btn-danger gen-btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
     <span class="spacer"></span>
     <button class="btn btn-sm" id="btn-tts-download" onclick="downloadAudiobook()">Download MP3</button>
@@ -1629,6 +1632,8 @@ function updateUIForStatus(status, errorMsg) {
       showGenBtns('gen-btn-start', false);
       showGenBtns('gen-btn-resume', false);
       showGenBtns('gen-btn-stop', true);
+      document.querySelectorAll('.gen-btn-start').forEach(b => { b.classList.add('btn-primary'); b.classList.remove('btn-danger'); if (b.id === 'btn-start') b.innerHTML = '&#9654; Start Generation'; });
+      document.querySelectorAll('.gen-btn-resume').forEach(b => b.classList.remove('btn-success'));
       indP.style.display = '';
       showGenerationError(null);
       break;
@@ -1638,6 +1643,8 @@ function updateUIForStatus(status, errorMsg) {
       showGenBtns('gen-btn-start', true);
       showGenBtns('gen-btn-resume', false);
       showGenBtns('gen-btn-stop', false);
+      document.querySelectorAll('.gen-btn-start').forEach(b => { b.classList.add('btn-primary'); b.classList.remove('btn-danger'); if (b.id === 'btn-start') b.innerHTML = '&#9654; Start Generation'; });
+      document.querySelectorAll('.gen-btn-resume').forEach(b => b.classList.remove('btn-success'));
       showGenerationError(null);
       break;
     case 'stopped':
@@ -1646,6 +1653,8 @@ function updateUIForStatus(status, errorMsg) {
       showGenBtns('gen-btn-start', true);
       showGenBtns('gen-btn-resume', true);
       showGenBtns('gen-btn-stop', false);
+      document.querySelectorAll('.gen-btn-start').forEach(b => { b.classList.remove('btn-primary'); b.classList.add('btn-danger'); if (b.id === 'btn-start') b.innerHTML = '&#9654; Restart Generation'; });
+      document.querySelectorAll('.gen-btn-resume').forEach(b => b.classList.add('btn-success'));
       showGenerationError(null);
       break;
     case 'error':
@@ -1654,6 +1663,8 @@ function updateUIForStatus(status, errorMsg) {
       showGenBtns('gen-btn-start', true);
       showGenBtns('gen-btn-resume', true);
       showGenBtns('gen-btn-stop', false);
+      document.querySelectorAll('.gen-btn-start').forEach(b => { b.classList.remove('btn-primary'); b.classList.add('btn-danger'); if (b.id === 'btn-start') b.innerHTML = '&#9654; Restart Generation'; });
+      document.querySelectorAll('.gen-btn-resume').forEach(b => b.classList.add('btn-success'));
       showGenerationError(errorMsg || 'See the Logs tab for details.');
       break;
     default:
@@ -1661,6 +1672,8 @@ function updateUIForStatus(status, errorMsg) {
       showGenBtns('gen-btn-start', true);
       showGenBtns('gen-btn-resume', false);
       showGenBtns('gen-btn-stop', false);
+      document.querySelectorAll('.gen-btn-start').forEach(b => { b.classList.add('btn-primary'); b.classList.remove('btn-danger'); if (b.id === 'btn-start') b.innerHTML = '&#9654; Start Generation'; });
+      document.querySelectorAll('.gen-btn-resume').forEach(b => b.classList.remove('btn-success'));
       indP.style.display = 'none';
       showGenerationError(null);
   }
@@ -2931,6 +2944,7 @@ function _refreshGenAllBtn(fixes) {
   const fixList = fixes ? Object.values(fixes) : [];
   const anyActive = fixList.some(f => f.status === 'generating' || f.status === 'queued');
   const hasDone   = fixList.some(f => f.status === 'done');
+  const anyApplied = fixList.some(f => f.status === 'applied');
   if (anyActive) {
     btn.disabled = true;
     btn.textContent = 'Generating...';
@@ -2942,6 +2956,14 @@ function _refreshGenAllBtn(fixes) {
     btn.disabled = false;
     btn.style.display = '';
     btn.classList.add('btn-success');
+    btn.classList.remove('btn-primary');
+  } else if (anyApplied) {
+    // All generated fixes already applied -- show dimmed/disabled button
+    btn.textContent = 'Apply All Fixes';
+    btn.onclick = null;
+    btn.disabled = true;
+    btn.style.display = '';
+    btn.classList.remove('btn-success');
     btn.classList.remove('btn-primary');
   } else {
     // No done fixes -- revert to Generate mode (visibility driven by analysis passes)
