@@ -676,8 +676,26 @@ def index():
 
 @app.route("/api/status")
 def api_status():
-    """Full state snapshot for page load / reconnection."""
+    """Full state snapshot for page load / reconnection.
+
+    If the server was restarted while a checkpoint exists the in-memory
+    status will be 'idle', but the user still needs to Resume rather than
+    Start Over.  Elevate 'idle' to 'stopped' when a checkpoint with
+    completed scenes is detected so the UI renders Resume correctly.
+    """
     snap = state.snapshot()
+
+    if snap.get("status") == "idle":
+        cp_path = os.path.join(WORKSPACE_DIR, "checkpoint.yaml")
+        if os.path.exists(cp_path):
+            try:
+                with open(cp_path, "r", encoding="utf-8") as _f:
+                    _cp = _yaml.safe_load(_f) or {}
+                if _cp.get("last_completed_scene"):
+                    snap["status"] = "stopped"
+            except Exception:
+                pass
+
     snap["config"] = _load_web_config()
     snap["files"] = _list_workspace_files()
     return jsonify(snap)
