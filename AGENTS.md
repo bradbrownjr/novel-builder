@@ -147,6 +147,31 @@ Scene text here...
 - `/api/download` strips all markers and collapses excess blank lines for a clean book file.
 - `renderScenes()` in the UI parses these markers to create per-scene blocks with Regen buttons.
 
+## Tab Persistence Design
+
+All data-heavy tabs refresh their content automatically so the UI stays current when the user backgrounds the browser or switches browser tabs.
+
+**Design decision:** Use the `visibilitychange` browser event and the `switchTab()` function as the two refresh trigger points. No polling is needed -- a single fetch on return is sufficient.
+
+| Trigger | Tabs refreshed |
+|---|---|
+| `visibilitychange` (page becomes visible) | Consult (if not running), Output, Memory |
+| `switchTab(name)` | Consult (if not running), Output, Memory |
+
+- Consult uses `restoreConsult()` to replay SSE-derived state from server cache.
+- Output uses `refreshOutput()` to re-fetch the current Markdown from `/api/output`.
+- Memory uses `refreshMemory()` to re-fetch checkpoint state.
+- Logs tab is driven by the persistent SSE connection and does not need manual refresh.
+- **Always** extend this pattern to new data-heavy tabs -- add the tab name to both `switchTab` and the `visibilitychange` handler.
+
+## Mobile Header Layout
+
+The header uses a two-row column layout so status chips do not compete for space with the logo and action buttons on small screens.
+
+- **Row 1** (`.header-top`): logo + header action buttons (right-aligned, `justify-content: space-between`)
+- **Row 2** (`.status-bar`): status indicator chips, full-width, wrapping
+- The `header` element is `flex-direction: column` -- do not revert to a single-row flex.
+
 ## Character Roster Scoping
 
 The system prompt's character roster is **scoped per scene** to prevent the generation model from introducing characters before their intended appearance:

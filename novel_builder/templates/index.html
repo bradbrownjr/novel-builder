@@ -66,23 +66,28 @@ a { color: var(--blue); }
 header {
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
-  padding: .6rem 1rem;
+  padding: .5rem 1rem .45rem;
   display: flex;
-  align-items: center;
-  gap: .75rem;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: .3rem;
 }
 .logo { font-size: 1.2rem; font-weight: 700; white-space: nowrap; }
 .logo span { color: var(--accent); }
 
-/* Status indicators row */
+/* Top row: logo + actions side by side */
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
+/* Status indicators row — full width below the top row */
 .status-bar {
   display: flex;
   align-items: center;
-  gap: .7rem;
-  flex: 1;
+  gap: .5rem;
   flex-wrap: wrap;
-  min-width: 0;
 }
 .indicator {
   display: inline-flex;
@@ -249,6 +254,8 @@ textarea {
 .btn-primary:hover { background: #d13350; }
 .btn-danger { background: transparent; border-color: var(--red); color: var(--red); }
 .btn-danger:hover { background: rgba(233,69,96,0.15); }
+.btn-success { background: #27ae60; border-color: #27ae60; color: #fff; }
+.btn-success:hover { background: #219a52; }
 .btn-sm { padding: .3rem .6rem; font-size: .75rem; }
 
 /* =========================================================
@@ -578,7 +585,14 @@ textarea {
 <!-- ==================== HEADER ==================== -->
 <div id="sticky-chrome">
 <header>
-  <div class="logo">Novel<span>Builder</span></div>
+  <div class="header-top">
+    <div class="logo">Novel<span>Builder</span></div>
+    <div class="header-actions">
+      <button id="btn-global-stop" onclick="stopActiveJob()" class="btn-danger btn-sm" style="display:none;" title="Stop active job">Stop</button>
+      <button onclick="toggleTheme()" title="Toggle light/dark">&#x263D;</button>
+      <button onclick="confirmNewStory()" title="New Story" class="btn-danger btn-sm">New Story</button>
+    </div>
+  </div>
   <div class="status-bar">
     <div class="indicator" id="ind-status">
       <span class="dot" id="dot-status"></span>
@@ -599,11 +613,6 @@ textarea {
       <span style="font-size:.72rem;color:var(--text-dim)">Preset:</span>
       <span id="lbl-preset" style="font-size:.72rem;font-weight:600;"></span>
     </div>
-  </div>
-  <div class="header-actions">
-    <button id="btn-global-stop" onclick="stopActiveJob()" class="btn-danger btn-sm" style="display:none;" title="Stop active job">Stop</button>
-    <button onclick="toggleTheme()" title="Toggle light/dark">🌓</button>
-    <button onclick="confirmNewStory()" title="New Story" class="btn-danger btn-sm">New Story</button>
   </div>
 </header>
 <div class="progress-wrap"><div class="progress-fill" id="progress-fill"></div></div>
@@ -820,12 +829,12 @@ textarea {
     </p>
     <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
       <button class="btn" onclick="switchTab('plan')">‹ Back: Plan</button>
-      <button class="btn btn-primary" id="btn-consult-start" onclick="startConsult()">&#9654; Start Analysis</button>
+      <button class="btn" id="btn-consult-start" onclick="startConsult()">&#9654; Start Analysis</button>
       <button class="btn btn-danger" id="btn-consult-stop" onclick="stopConsult()" style="display:none;">Stop</button>
       <button class="btn" id="btn-consult-resume" onclick="resumeConsult()" style="display:none;">Resume Analysis</button>
       <button class="btn" id="btn-consult-genall" onclick="generateAllFixes()" style="display:none;">Generate All Fixes</button>
       <button class="btn" id="btn-consult-retry" onclick="retryFailed()" style="display:none;">Retry Failed</button>
-      <button class="btn" onclick="clearConsult()">&#10005; Clear</button>
+      <button class="btn" onclick="confirmClearConsult()">&#10005; Clear</button>
       <span id="consult-status-label" style="font-size:.8rem;color:var(--text-dim);"></span>
       <button class="btn" onclick="switchTab('logs')">Next: Logs &#8250;</button>
     </div>
@@ -1834,6 +1843,20 @@ function _getOrCreatePassCard(container, name, label, emoji) {
 }
 
 async function startConsult() {
+  // Confirm if existing results would be lost
+  const container = document.getElementById('consult-passes-container');
+  if (container && container.children.length > 0) {
+    showConfirm(
+      'Restart Analysis',
+      'Restarting will erase all current analysis results and generated fixes. This cannot be undone. Continue?',
+      () => _doStartConsult()
+    );
+    return;
+  }
+  _doStartConsult();
+}
+
+async function _doStartConsult() {
   if (_consultSource) { _consultSource.close(); _consultSource = null; }
   document.getElementById('btn-consult-start').disabled = true;
   document.getElementById('btn-consult-start').style.display = 'none';
@@ -2079,7 +2102,22 @@ function _handleConsultEvent(ev, container) {
   }
 }
 
-async function clearConsult() {
+function confirmClearConsult() {
+  const container = document.getElementById('consult-passes-container');
+  if (container && container.children.length > 0) {
+    showConfirm(
+      'Clear Analysis',
+      'This will permanently delete all analysis results and generated fixes. Continue?',
+      () => _doClearConsult()
+    );
+  } else {
+    _doClearConsult();
+  }
+}
+
+async function clearConsult() { _doClearConsult(); }
+
+async function _doClearConsult() {
   const r = await apiPost('/api/consult-clear');
   if (r && r.ok) {
     document.getElementById('consult-passes-container').innerHTML = '';
@@ -2096,6 +2134,7 @@ async function clearConsult() {
     _gab2.textContent = 'Generate All Fixes';
     _gab2.onclick = generateAllFixes;
     _gab2.disabled = false;
+    _gab2.classList.remove('btn-success');
   } else {
     toast(r?.error || 'Cannot clear while analysis is running', 'warn');
   }
@@ -2136,6 +2175,7 @@ function _updateGenAllBtn() {
     btn.textContent = 'Generate All Fixes';
     btn.onclick = generateAllFixes;
     btn.disabled = false;
+    btn.classList.remove('btn-success');
   } else {
     btn.style.display = 'none';
   }
@@ -2157,11 +2197,15 @@ function _refreshGenAllBtn(fixes) {
     btn.onclick = applyAllFixes;
     btn.disabled = false;
     btn.style.display = '';
+    btn.classList.add('btn-success');
+    btn.classList.remove('btn-primary');
   } else {
     // No done fixes -- revert to Generate mode (visibility driven by analysis passes)
     btn.textContent = 'Generate All Fixes';
     btn.onclick = generateAllFixes;
     btn.disabled = false;
+    btn.classList.remove('btn-success');
+    btn.classList.remove('btn-primary');
     _updateGenAllBtn();
   }
 }
@@ -2859,13 +2903,21 @@ function switchTab(name) {
   // Re-sync consult state when switching to the consult tab (stream may have
   // finished while the user was on another tab)
   if (name === 'consult' && !consultRunning) restoreConsult();
+  // Refresh output when switching to the output tab so content stays current
+  // after the browser was in the background or the user was on another tab
+  if (name === 'output') refreshOutput();
 }
 
-// Re-sync consult state when the browser tab regains visibility
+// Re-sync all data-heavy tabs when the browser tab regains visibility.
+// This keeps content current when the user backgrounds the app or switches
+// browser tabs for a while -- the same pattern used for the Consult tab.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   const active = document.querySelector('.tab-btn.active');
-  if (active && active.dataset.tab === 'consult' && !consultRunning) restoreConsult();
+  const tab = active ? active.dataset.tab : '';
+  if (tab === 'consult' && !consultRunning) restoreConsult();
+  if (tab === 'output') refreshOutput();
+  if (tab === 'memory') refreshMemory();
 });
 
 // Also hook existing tab buttons through switchTab so memory lazy-loads
