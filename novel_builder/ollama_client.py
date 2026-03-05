@@ -15,20 +15,31 @@ class _OllamaWatchdog:
     """Monitor Ollama model liveness during generation via /api/ps polling.
 
     Runs in a daemon thread.  If the model disappears from /api/ps (or the
-    server becomes unreachable) for several consecutive checks, closes the
-    HTTP response to unblock the streaming read.
+    server becomes unreachable) for several consecutive checks AND no tokens
+    have arrived recently, closes the HTTP response to unblock the streaming
+    read.
+
+    When tokens are actively flowing the watchdog treats the model as alive
+    regardless of what /api/ps reports -- the API may use a different name
+    format or lag behind the actual state.
     """
 
     POLL_INTERVAL = 30   # seconds between /api/ps checks
-    MISS_THRESHOLD = 3   # consecutive misses before aborting
+    MISS_THRESHOLD = 3   # consecutive misses (with no tokens) before aborting
+    TOKEN_ACTIVE_WINDOW = 60  # seconds -- tokens within this window = alive
 
-    def __init__(self, host, model, response, emit_callback=None):
+    def __init__(self, host, model, response, emit_callback=None,
+                 request_start_time=None):
         self._host = host
         self._model = model
         self._response = response
         self._emit = emit_callback
         self._abort = threading.Event()
         self._model_gone = False
+        # request_start_time captures wall-clock before requests.post() so
+        # the "first token" elapsed message reflects model load + prompt eval
+        # time, not just time since the watchdog was created.
+        self._request_start = request_start_time or time.time()
         self._start_time = time.time()
         self._last_token_time = time.time()
         self._token_count = 0
@@ -50,7 +61,7 @@ class _OllamaWatchdog:
         self._token_count += 1
         if not self._first_token:
             self._first_token = True
-            elapsed = self._fmt(time.time() - self._start_time)
+            elapsed = self._fmt(time.time() - self._request_start)
             self._log(
                 f"First token after {elapsed} (model load + prompt eval)",
             )
@@ -73,6 +84,27 @@ class _OllamaWatchdog:
         m, s = divmod(int(seconds), 60)
         return f"{m}m {s}s" if m else f"{s}s"
 
+    def _model_name_matches(self, reported):
+        """Fuzzy model-name comparison to handle Ollama tag normalization.
+
+        Ollama may report 'gemma3:12b' as 'gemma3:12b', 'gemma3:12b-it',
+        or add a ':latest' suffix.  We match if:
+        - Exact match, OR
+        - Normalized (append :latest if no tag) match, OR
+        - Either name starts with the other (covers tag suffixes).
+        """
+        if reported == self._model:
+            return True
+        # Normalize: bare name -> name:latest
+        def _norm(n):
+            return n if ":" in n else n + ":latest"
+        if _norm(reported) == _norm(self._model):
+            return True
+        # Prefix match: 'gemma3:12b' matches 'gemma3:12b-it'
+        if reported.startswith(self._model) or self._model.startswith(reported):
+            return True
+        return False
+
     def _is_model_active(self):
         """Poll /api/ps.  Returns True / False / None (unknown)."""
         try:
@@ -81,7 +113,7 @@ class _OllamaWatchdog:
                 return None
             for m in resp.json().get("models", []):
                 name = m.get("model", "") or m.get("name", "")
-                if name == self._model:
+                if self._model_name_matches(name):
                     return True
             return False
         except Exception:
@@ -90,8 +122,26 @@ class _OllamaWatchdog:
     def _run(self):
         misses = 0
         while not self._abort.wait(self.POLL_INTERVAL):
-            elapsed = self._fmt(time.time() - self._start_time)
+            elapsed = self._fmt(time.time() - self._request_start)
             idle = time.time() - self._last_token_time
+
+            # If tokens arrived recently, the model is definitely alive
+            # regardless of what /api/ps reports (name format may differ,
+            # endpoint may lag, etc.).
+            if idle < self.TOKEN_ACTIVE_WINDOW:
+                misses = 0
+                if self._first_token:
+                    self._log(
+                        f"Generating -- {self._token_count} tokens, "
+                        f"{elapsed} elapsed",
+                    )
+                else:
+                    # Pre-first-token but idle < 60s means we just started;
+                    # fall through to /api/ps check for a proper heartbeat.
+                    pass
+
+                if self._first_token:
+                    continue
 
             status = self._is_model_active()
 
@@ -119,7 +169,7 @@ class _OllamaWatchdog:
                 "warn",
             )
 
-            if misses >= self.MISS_THRESHOLD and idle > 60:
+            if misses >= self.MISS_THRESHOLD and idle > self.TOKEN_ACTIVE_WINDOW:
                 self._log(
                     f"Aborting request: {reason} for "
                     f"{misses} consecutive checks, no tokens for "
@@ -183,13 +233,19 @@ def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
         # Connection timeout only; read timeout unlimited (watchdog
         # monitors model liveness via /api/ps instead).
         connect_timeout = min(timeout, 60)
+        # Capture wall-clock before POST so the watchdog can report
+        # accurate elapsed time including model load + prompt eval.
+        request_start = time.time()
         response = requests.post(
             url, json=payload, timeout=(connect_timeout, None), stream=True,
         )
         response.raise_for_status()
 
         # Start watchdog to monitor model via /api/ps
-        watchdog = _OllamaWatchdog(host, model, response, emit_callback)
+        watchdog = _OllamaWatchdog(
+            host, model, response, emit_callback,
+            request_start_time=request_start,
+        )
         watchdog.start()
 
         chunks = []
