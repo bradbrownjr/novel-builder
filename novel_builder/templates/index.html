@@ -332,6 +332,92 @@ textarea {
   max-height: 70vh;
   overflow-y: auto;
 }
+.scene-header {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .3rem .6rem;
+  margin: .5rem 0 .25rem 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: .78rem;
+  white-space: normal;
+}
+.scene-header .scene-label { font-weight: 600; color: var(--accent); }
+.scene-header .scene-title { color: var(--text-dim); flex: 1; }
+.scene-header .btn-regen {
+  padding: .15rem .45rem; font-size: .7rem;
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text-dim); cursor: pointer; white-space: nowrap;
+}
+.scene-header .btn-regen:hover { color: var(--accent); border-color: var(--accent); }
+.chapter-header {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .4rem .6rem;
+  margin: 1rem 0 .25rem 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: .82rem;
+  white-space: normal;
+}
+.chapter-header .chapter-label { font-weight: 700; color: var(--text); flex: 1; }
+.chapter-header .btn-regen {
+  padding: .15rem .45rem; font-size: .7rem;
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text-dim); cursor: pointer; white-space: nowrap;
+}
+.chapter-header .btn-regen:hover { color: var(--accent); border-color: var(--accent); }
+
+/* =========================================================
+   Output Table of Contents
+   ========================================================= */
+#output-toc-wrap {
+  margin-bottom: .5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+#output-toc-bar {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .3rem .7rem;
+  font-size: .78rem;
+  font-family: var(--font);
+  cursor: pointer;
+  user-select: none;
+}
+#output-toc-bar:hover { background: var(--bg-input); }
+#output-toc-bar .toc-bar-label { font-weight: 600; flex: 1; color: var(--text); }
+#output-toc-bar .toc-toggle-icon { color: var(--text-dim); font-size: .7rem; }
+#output-toc {
+  display: none;
+  padding: .3rem .6rem .6rem .6rem;
+  max-height: 200px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+.toc-chapter-item {
+  font-weight: 600; font-family: var(--font); font-size: .8rem;
+  color: var(--text); cursor: pointer;
+  padding: .22rem .4rem; border-radius: 3px; margin-top: .3rem;
+}
+.toc-chapter-item:first-child { margin-top: 0; }
+.toc-chapter-item:hover { background: var(--bg-input); color: var(--accent); }
+.toc-scene-item {
+  font-family: var(--font); font-size: .76rem;
+  color: var(--text-dim); cursor: pointer;
+  padding: .15rem .4rem .15rem 1.4rem; border-radius: 3px;
+}
+.toc-scene-item:hover { background: var(--bg-input); color: var(--text); }
 
 /* =========================================================
    Log viewer
@@ -1055,6 +1141,13 @@ textarea {
 
 <!-- ==================== OUTPUT TAB ==================== -->
 <div class="tab-panel" id="panel-output">
+  <div id="output-toc-wrap" style="display:none;">
+    <div id="output-toc-bar" onclick="toggleToc()">
+      <span class="toc-bar-label">Table of Contents</span>
+      <span class="toc-toggle-icon" id="toc-toggle-icon">&#9660;</span>
+    </div>
+    <div id="output-toc"></div>
+  </div>
   <div class="card">
     <h3>&#128218; Story Output</h3>
     <p style="font-size:.82rem;color:var(--text-dim);margin-bottom:.75rem;">
@@ -1773,9 +1866,27 @@ function clearLogs() {
    ========================================================== */
 function appendSceneToOutput(data) {
   const viewer = document.getElementById('output-viewer');
-  if (viewer.textContent.startsWith('(No output')) viewer.textContent = '';
-  const heading = `\n\n### Scene ${data.scene_num}${data.title ? ': ' + data.title : ''}\n\n`;
-  viewer.textContent += heading + data.text + '\n\n---\n';
+  // Clear placeholder text on first real scene
+  if (!viewer.querySelector('.scene-block')) viewer.innerHTML = '';
+
+  const sceneId = data.scene_num || '';
+  const title = data.title || '';
+
+  const hdr = document.createElement('div');
+  hdr.className = 'scene-header';
+  hdr.innerHTML = `<span class="scene-label">Scene ${escHtml(String(sceneId))}</span>`
+    + (title ? `<span class="scene-title">${escHtml(title)}</span>` : '<span class="scene-title"></span>')
+    + `<button class="btn-regen" onclick="regenerateScene('${escHtml(String(sceneId))}')" title="Regenerate this scene">Regen</button>`;
+  viewer.appendChild(hdr);
+
+  const idx = viewer.querySelectorAll('.scene-block').length;
+  const block = document.createElement('div');
+  block.className = 'scene-block';
+  block.dataset.sceneIdx = String(idx);
+  block.dataset.sceneId = String(sceneId);
+  block.textContent = '\n' + data.text + '\n\n';
+  viewer.appendChild(block);
+
   if (document.getElementById('chk-autoscroll').checked) {
     viewer.scrollTop = viewer.scrollHeight;
   }
@@ -1783,9 +1894,161 @@ function appendSceneToOutput(data) {
 
 async function refreshOutput() {
   const r = await api('/api/output');
-  if (r && r.exists) {
-    document.getElementById('output-viewer').textContent = r.text;
+  if (r && r.exists) renderScenes(r.text);
+}
+
+function renderScenes(text) {
+  const viewer = document.getElementById('output-viewer');
+  if (!text || !text.trim()) {
+    viewer.innerHTML = '(No output yet -- start generation to see scenes here.)';
+    document.getElementById('output-toc-wrap').style.display = 'none';
+    return;
   }
+  viewer.innerHTML = '';
+
+  const lines = text.split('\n');
+  let currentSceneId = null;
+  let currentSceneTitle = '';
+  let buf = [];
+  let blockIdx = 0;
+  const tocEntries = [];
+
+  function flushScene() {
+    const raw = buf.join('\n').trim();
+    buf = [];
+    if (!raw) return;
+
+    if (currentSceneId || currentSceneTitle) {
+      const anchorId = currentSceneId ? `scene-${currentSceneId}` : `scene-idx-${blockIdx}`;
+      const hdr = document.createElement('div');
+      hdr.className = 'scene-header';
+      hdr.id = anchorId;
+      if (currentSceneId) {
+        hdr.innerHTML = `<span class="scene-label">Scene ${escHtml(String(currentSceneId))}</span>`
+          + `<span class="scene-title">${escHtml(currentSceneTitle)}</span>`
+          + `<button class="btn-regen" onclick="regenerateScene('${escHtml(String(currentSceneId))}')" title="Regenerate this scene">Regen</button>`;
+      } else {
+        hdr.innerHTML = `<span class="scene-label">Scene</span>`
+          + `<span class="scene-title">${escHtml(currentSceneTitle)}</span>`;
+      }
+      viewer.appendChild(hdr);
+      tocEntries.push({ id: anchorId, label: currentSceneTitle || `Scene ${currentSceneId || blockIdx + 1}`, type: 'scene' });
+    }
+
+    const block = document.createElement('div');
+    block.className = 'scene-block';
+    block.dataset.sceneIdx = String(blockIdx);
+    if (currentSceneId) block.dataset.sceneId = String(currentSceneId);
+    block.textContent = '\n' + raw + '\n\n';
+    viewer.appendChild(block);
+    blockIdx++;
+  }
+
+  for (const line of lines) {
+    // Chapter marker: <!-- chapter:N -->
+    const chM = line.match(/^<!--\s*chapter:(\d+)\s*-->/);
+    if (chM) { flushScene(); currentSceneId = null; currentSceneTitle = ''; continue; }
+    // Chapter heading: ## Chapter N: Title or ## Chapter N -- Title
+    const chH = line.match(/^##\s+Chapter\s+(\d+)[:\s\u2014\u2013-]+(.+)/);
+    if (chH) {
+      flushScene();
+      const chapterTitle = `Chapter ${chH[1]}: ${chH[2].trim()}`;
+      const anchorId = `chapter-${chH[1]}`;
+      const chHdr = document.createElement('div');
+      chHdr.className = 'chapter-header';
+      chHdr.id = anchorId;
+      chHdr.innerHTML = `<span class="chapter-label">${escHtml(chapterTitle)}</span>`
+        + `<button class="btn-regen" onclick="regenerateChapter(${parseInt(chH[1], 10)})" title="Regenerate entire chapter">Regen Chapter</button>`;
+      viewer.appendChild(chHdr);
+      tocEntries.push({ id: anchorId, label: chapterTitle, type: 'chapter' });
+      currentSceneId = null; currentSceneTitle = '';
+      continue;
+    }
+    // Scene open marker: <!-- scene:X.Y -->
+    const soM = line.match(/^<!--\s*scene:([\w.]+)\s*-->/);
+    if (soM) { flushScene(); currentSceneId = soM[1]; currentSceneTitle = ''; continue; }
+    // Scene close marker: <!-- /scene:X.Y -->
+    if (line.match(/^<!--\s*\/scene:[\w.]+\s*-->/)) { flushScene(); currentSceneId = null; currentSceneTitle = ''; continue; }
+    // ### heading outside scene markers -- pseudo-scene boundary (legacy files)
+    const titleM = line.match(/^###\s+(.+)/);
+    if (titleM && !currentSceneId) { flushScene(); currentSceneTitle = titleM[1].trim(); continue; }
+    buf.push(line);
+  }
+  flushScene();
+  buildToc(tocEntries);
+}
+
+function buildToc(entries) {
+  const wrap = document.getElementById('output-toc-wrap');
+  const tocDiv = document.getElementById('output-toc');
+  tocDiv.innerHTML = '';
+  if (!entries.length) { wrap.style.display = 'none'; return; }
+  for (const entry of entries) {
+    const el = document.createElement('div');
+    el.className = entry.type === 'chapter' ? 'toc-chapter-item' : 'toc-scene-item';
+    el.textContent = entry.type === 'scene' ? '\u21b3 ' + entry.label : entry.label;
+    el.onclick = () => {
+      const viewer = document.getElementById('output-viewer');
+      const target = document.getElementById(entry.id);
+      if (target) {
+        viewer.scrollTop = target.offsetTop - 8;
+        target.style.transition = 'background .15s';
+        target.style.background = 'rgba(138,180,248,.18)';
+        setTimeout(() => { target.style.background = ''; }, 900);
+      }
+    };
+    tocDiv.appendChild(el);
+  }
+  wrap.style.display = 'block';
+}
+
+function toggleToc() {
+  const toc = document.getElementById('output-toc');
+  const icon = document.getElementById('toc-toggle-icon');
+  const open = toc.style.display !== 'none';
+  toc.style.display = open ? 'none' : 'block';
+  icon.textContent = open ? '\u25bc' : '\u25b2';
+}
+
+/* ==========================================================
+   Regeneration
+   ========================================================== */
+async function regenerateScene(sceneId) {
+  if (!confirm(`Regenerate Scene ${sceneId}? The old text will be saved to Logs.`)) return;
+  toast(`Regenerating Scene ${sceneId}…`, 'warn');
+  const r = await api('/api/regenerate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scene_id: sceneId }),
+  });
+  if (!r?.ok) toast('Regen failed: ' + (r?.error || 'unknown'), 'error');
+}
+
+async function regenerateChapter(chapterNum) {
+  if (!confirm(`Regenerate ALL scenes in Chapter ${chapterNum}? Old text will be saved to Logs.`)) return;
+  toast(`Regenerating Chapter ${chapterNum}…`, 'warn');
+  const r = await api('/api/regenerate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chapter: chapterNum }),
+  });
+  if (!r?.ok) toast('Regen failed: ' + (r?.error || 'unknown'), 'error');
+}
+
+function _handleSceneRegenerated(data) {
+  const sceneId = data.scene_id || '';
+  const viewer = document.getElementById('output-viewer');
+  const block = viewer.querySelector(`.scene-block[data-scene-id="${sceneId}"]`);
+  if (block) {
+    block.textContent = '\n' + (data.text || '') + '\n\n';
+    block.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    block.style.transition = 'background .5s';
+    block.style.background = 'rgba(78,202,163,.15)';
+    setTimeout(() => { block.style.background = ''; }, 2000);
+  } else {
+    refreshOutput();
+  }
+  toast(`Scene ${sceneId} regenerated`, 'ok');
 }
 
 /* ==========================================================
@@ -1816,6 +2079,9 @@ function connectSSE() {
         break;
       case 'scene_complete':
         appendSceneToOutput(event.data);
+        break;
+      case 'scene_regenerated':
+        _handleSceneRegenerated(event.data);
         break;
       case 'log':
         addLogEntry(event.data);
