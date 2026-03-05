@@ -1,5 +1,6 @@
 """Ollama API calls with retry logic and model routing."""
 
+import threading
 import time
 
 import requests
@@ -10,22 +11,149 @@ class OllamaError(Exception):
     pass
 
 
+class _OllamaWatchdog:
+    """Monitor Ollama model liveness during generation via /api/ps polling.
+
+    Runs in a daemon thread.  If the model disappears from /api/ps (or the
+    server becomes unreachable) for several consecutive checks, closes the
+    HTTP response to unblock the streaming read.
+    """
+
+    POLL_INTERVAL = 30   # seconds between /api/ps checks
+    MISS_THRESHOLD = 3   # consecutive misses before aborting
+
+    def __init__(self, host, model, response, emit_callback=None):
+        self._host = host
+        self._model = model
+        self._response = response
+        self._emit = emit_callback
+        self._abort = threading.Event()
+        self._model_gone = False
+        self._start_time = time.time()
+        self._last_token_time = time.time()
+        self._token_count = 0
+        self._first_token = False
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    # -- public API --------------------------------------------------------
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self):
+        self._abort.set()
+        self._thread.join(timeout=5)
+
+    def record_token(self):
+        """Notify the watchdog that a token was received."""
+        self._last_token_time = time.time()
+        self._token_count += 1
+        if not self._first_token:
+            self._first_token = True
+            elapsed = self._fmt(time.time() - self._start_time)
+            self._log(
+                f"First token after {elapsed} (model load + prompt eval)",
+            )
+
+    @property
+    def model_confirmed_gone(self):
+        return self._model_gone
+
+    # -- internals ---------------------------------------------------------
+
+    def _log(self, msg, level="info"):
+        if self._emit:
+            try:
+                self._emit("log", message=f"[Ollama] {msg}", level=level)
+            except Exception:
+                pass
+
+    @staticmethod
+    def _fmt(seconds):
+        m, s = divmod(int(seconds), 60)
+        return f"{m}m {s}s" if m else f"{s}s"
+
+    def _is_model_active(self):
+        """Poll /api/ps.  Returns True / False / None (unknown)."""
+        try:
+            resp = requests.get(f"{self._host}/api/ps", timeout=10)
+            if not resp.ok:
+                return None
+            for m in resp.json().get("models", []):
+                name = m.get("model", "") or m.get("name", "")
+                if name == self._model:
+                    return True
+            return False
+        except Exception:
+            return None
+
+    def _run(self):
+        misses = 0
+        while not self._abort.wait(self.POLL_INTERVAL):
+            elapsed = self._fmt(time.time() - self._start_time)
+            idle = time.time() - self._last_token_time
+
+            status = self._is_model_active()
+
+            if status is True:
+                misses = 0
+                if self._first_token:
+                    self._log(
+                        f"Model active -- {self._token_count} tokens, "
+                        f"{elapsed} elapsed",
+                    )
+                else:
+                    self._log(
+                        f"Waiting for first token -- model active, "
+                        f"{elapsed} elapsed",
+                    )
+                continue
+
+            # Model missing or server unreachable
+            misses += 1
+            reason = ("not listed in /api/ps" if status is False
+                      else "server unreachable")
+            self._log(
+                f"Model {reason} "
+                f"(check {misses}/{self.MISS_THRESHOLD})",
+                "warn",
+            )
+
+            if misses >= self.MISS_THRESHOLD and idle > 60:
+                self._log(
+                    f"Aborting request: {reason} for "
+                    f"{misses} consecutive checks, no tokens for "
+                    f"{self._fmt(idle)}",
+                    "error",
+                )
+                self._model_gone = True
+                try:
+                    self._response.close()
+                except Exception:
+                    pass
+                return
+
+
 def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
-                temperature=0.85, num_ctx=12288):
+                temperature=0.85, num_ctx=12288, emit_callback=None):
     """Make a single streaming call to the Ollama /api/generate endpoint.
 
-    Uses stream=True so the timeout applies per-chunk (not total generation
-    time). This prevents false timeouts on long scenes where the model is
-    actively generating but takes more than `timeout` seconds overall.
+    Uses stream=True with no read timeout to prevent false timeouts on
+    slow hardware.  A background watchdog thread polls /api/ps to verify
+    the model is still loaded and closes the connection if it detects the
+    model has crashed or been evicted.
 
     Args:
         host: Ollama server URL.
         model: Model name.
         system_prompt: System message.
         user_prompt: User message.
-        timeout: Per-chunk inactivity timeout in seconds.
+        timeout: Connection timeout in seconds (read timeout is unlimited;
+                 the watchdog monitors liveness instead).
         temperature: Sampling temperature.
         num_ctx: Context window size.
+        emit_callback: Optional callable(event_type, **kwargs) for
+            progress/log events (forwarded to the watchdog).
 
     Returns:
         Generated text string.
@@ -50,9 +178,19 @@ def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
         },
     }
 
+    watchdog = None
     try:
-        response = requests.post(url, json=payload, timeout=timeout, stream=True)
+        # Connection timeout only; read timeout unlimited (watchdog
+        # monitors model liveness via /api/ps instead).
+        connect_timeout = min(timeout, 60)
+        response = requests.post(
+            url, json=payload, timeout=(connect_timeout, None), stream=True,
+        )
         response.raise_for_status()
+
+        # Start watchdog to monitor model via /api/ps
+        watchdog = _OllamaWatchdog(host, model, response, emit_callback)
+        watchdog.start()
 
         chunks = []
         for line in response.iter_lines(chunk_size=None):
@@ -65,19 +203,58 @@ def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
             token = data.get("response", "")
             if token:
                 chunks.append(token)
+                watchdog.record_token()
             if data.get("done"):
                 break
 
         return "".join(chunks)
 
     except requests.exceptions.Timeout:
-        raise OllamaError(f"Timed out waiting for response chunk after {timeout}s")
+        raise OllamaError(
+            f"Connection to Ollama timed out after {min(timeout, 60)}s "
+            f"(server may be down)"
+        )
     except requests.exceptions.ConnectionError as e:
+        if watchdog and watchdog.model_confirmed_gone:
+            raise OllamaError(
+                f"Model '{model}' is no longer active on the Ollama server "
+                f"(verified via /api/ps polling)"
+            )
         raise OllamaError(f"Connection failed: {e}")
     except requests.exceptions.HTTPError as e:
         raise OllamaError(f"HTTP error: {e}")
     except Exception as e:
+        if watchdog and watchdog.model_confirmed_gone:
+            raise OllamaError(
+                f"Model '{model}' is no longer active on the Ollama server "
+                f"(verified via /api/ps polling)"
+            )
         raise OllamaError(f"Ollama API error: {e}")
+    finally:
+        if watchdog:
+            watchdog.stop()
+
+
+def _wait_for_ollama(host, max_wait, emit_callback=None):
+    """Poll Ollama until it responds or *max_wait* seconds elapse.
+
+    Checks every 15 seconds.  Returns as soon as the server answers
+    /api/tags (even if no models are loaded yet), so subsequent retry
+    attempts don't waste time sleeping after the server has recovered.
+    """
+    deadline = time.time() + max_wait
+    poll_interval = 15
+    while time.time() < deadline:
+        time.sleep(poll_interval)
+        try:
+            resp = requests.get(f"{host}/api/tags", timeout=10)
+            if resp.ok:
+                if emit_callback:
+                    emit_callback("log", message="[Ollama] Server is back online, retrying...", level="info")
+                return
+        except Exception:
+            pass
+    # Max wait elapsed -- fall through so the retry loop tries anyway
 
 
 def call_ollama_with_retry(host, model, system_prompt, user_prompt,
@@ -103,7 +280,7 @@ def call_ollama_with_retry(host, model, system_prompt, user_prompt,
         OllamaError: If all retry attempts fail.
     """
     _emit_callback = emit_callback
-    backoff_delays = [180, 300, 900, 1800, 3600]  # 3m, 5m, 15m, 30m, 60m — ~1h53m total patience
+    backoff_delays = [180, 300, 900, 1800, 3600]  # 3m, 5m, 15m, 30m, 60m
 
     last_error = None
     for attempt in range(1, retries + 1):
@@ -111,6 +288,7 @@ def call_ollama_with_retry(host, model, system_prompt, user_prompt,
             result = call_ollama(
                 host, model, system_prompt, user_prompt,
                 timeout=timeout, temperature=temperature, num_ctx=num_ctx,
+                emit_callback=_emit_callback,
             )
             return result
         except OllamaError as e:
@@ -121,11 +299,12 @@ def call_ollama_with_retry(host, model, system_prompt, user_prompt,
                 secs = delay % 60
                 delay_str = f"{mins}m {secs}s" if mins else f"{secs}s"
                 print(f"  [Retry {attempt}/{retries}] {e}")
-                print(f"  Waiting {delay_str} before next attempt...")
-                # Emit progress so the web UI shows retry status
+                print(f"  Waiting up to {delay_str} for Ollama...")
                 if _emit_callback:
-                    _emit_callback("log", message=f"[Retry {attempt}/{retries}] Ollama error: {e}. Waiting {delay_str}...", level="warn")
-                time.sleep(delay)
+                    _emit_callback("log", message=f"[Retry {attempt}/{retries}] {e}. Polling Ollama for up to {delay_str}...", level="warn")
+                # Poll Ollama health during backoff -- retry as soon as
+                # the server is reachable rather than sleeping the full delay.
+                _wait_for_ollama(host, delay, _emit_callback)
             else:
                 print(f"  [Failed] All {retries} attempts exhausted.")
 
