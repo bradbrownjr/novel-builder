@@ -972,6 +972,9 @@ textarea {
       <button class="btn gen-btn-resume" onclick="startGeneration(true)" style="display:none;">&#9654; Resume</button>
       <button class="btn btn-danger gen-btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
       <button class="btn" onclick="clearLogs()">&#128465; Clear</button>
+      <label style="display:flex; align-items:center; gap:.3rem; font-size:.78rem; color:var(--text-dim);">
+        <input type="checkbox" id="chk-log-autoscroll" checked> Auto-scroll
+      </label>
       <span class="spacer"></span>
       <button class="btn" onclick="switchTab('memory')">Next: Memory &#8250;</button>
     </div>
@@ -1756,7 +1759,9 @@ function addLogEntry(entry) {
   div.className = 'log-entry' + (entry.level === 'warn' ? ' warn' : entry.level === 'error' ? ' error' : '');
   div.innerHTML = `<span class="time">${escHtml(formatLogTime(entry.time))}</span>${escHtml(entry.message)}`;
   viewer.appendChild(div);
-  viewer.scrollTop = viewer.scrollHeight;
+  if (document.getElementById('chk-log-autoscroll').checked) {
+    viewer.scrollTop = viewer.scrollHeight;
+  }
 }
 
 function clearLogs() {
