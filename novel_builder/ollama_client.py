@@ -257,6 +257,34 @@ def _wait_for_ollama(host, max_wait, emit_callback=None):
     # Max wait elapsed -- fall through so the retry loop tries anyway
 
 
+def unload_model(host, model, emit_callback=None):
+    """Unload a model from Ollama memory by sending keep_alive=0.
+
+    Used to free RAM/VRAM before switching to a different model
+    (e.g., generation -> summary).  No-op if the model is not loaded
+    or the server is unreachable.
+
+    Args:
+        host: Ollama server URL.
+        model: Model name to unload.
+        emit_callback: Optional callable for log events.
+    """
+    try:
+        resp = requests.post(
+            f"{host}/api/generate",
+            json={"model": model, "prompt": "", "keep_alive": 0},
+            timeout=15,
+        )
+        if resp.ok and emit_callback:
+            emit_callback(
+                "log",
+                message=f"[Ollama] Unloaded '{model}' to free memory",
+                level="info",
+            )
+    except Exception:
+        pass  # Server down or model not loaded -- nothing to unload
+
+
 def call_ollama_with_retry(host, model, system_prompt, user_prompt,
                            timeout=900, retries=5, temperature=0.85,
                            num_ctx=12288, emit_callback=None):
@@ -280,7 +308,10 @@ def call_ollama_with_retry(host, model, system_prompt, user_prompt,
         OllamaError: If all retry attempts fail.
     """
     _emit_callback = emit_callback
-    backoff_delays = [180, 300, 900, 1800, 3600]  # 3m, 5m, 15m, 30m, 60m
+    # Generous backoff for scenarios like Docker pulling a 1GB+ upgrade
+    # image (15+ min).  _wait_for_ollama polls during the wait and
+    # resumes immediately once the server is back.
+    backoff_delays = [300, 900, 1800, 3600, 3600]  # 5m, 15m, 30m, 60m, 60m
 
     last_error = None
     for attempt in range(1, retries + 1):
