@@ -14,7 +14,7 @@ import traceback
 
 from .characters import auto_detect_characters, load_characters
 from .locations import load_locations
-from .ollama_client import call_ollama_with_retry, call_summary_model, OllamaError
+from .ollama_client import call_ollama_with_retry, call_summary_model, OllamaError, unload_model
 from .postprocess import clean_scene_text, apply_anti_patterns, strip_scene_header
 from .prompt_builder import build_system_prompt, build_scene_prompt
 from .state import (
@@ -266,6 +266,10 @@ def _run_generation(config, args, event_callback=None):
             # Summarize scene
             summary = ""
             extraction = {"characters": [], "facts": [], "actions": [], "commitments": [], "used_imagery": []}
+            _models_differ = args.model != getattr(args, 'summary_model', args.model)
+            # Free generation model memory before loading summary model
+            if _models_differ:
+                unload_model(args.host, args.model, emit)
             emit("model_active", model="summarization", name=getattr(args, 'summary_model', 'gemma3:1b'))
             setting_id = scene.get("setting", "") or ""
             try:
@@ -304,6 +308,9 @@ def _run_generation(config, args, event_callback=None):
                 # Fall back to first 200 chars
                 summary = text[:200].rsplit(" ", 1)[0] + "..."
             emit("model_active", model="idle", name="")
+            # Free summary model memory before next generation call
+            if _models_differ:
+                unload_model(args.host, getattr(args, 'summary_model', args.model), emit)
 
             # Update state
             try:
@@ -651,6 +658,9 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
         (cdata.get("Name") or cid)
         for cid, cdata in config.get("characters", {}).items()
     ]
+    _models_differ = args.model != getattr(args, 'summary_model', args.model)
+    if _models_differ:
+        unload_model(args.host, args.model, emit if event_callback else None)
     try:
         emit("model_active", model="summarization", name=getattr(args, 'summary_model', 'gemma3:1b'))
         # Build scene meta for grounding
@@ -674,6 +684,8 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
         emit("model_active", model="idle", name="")
         summary = text[:200].rsplit(" ", 1)[0] + "..."
         emit("log", message=f"Summary failed for regen: {e}", level="warn")
+    if _models_differ:
+        unload_model(args.host, getattr(args, 'summary_model', args.model), emit if event_callback else None)
 
     # Update checkpoint — clear stale memory for this scene, then re-merge fresh extraction
     from .state import _merge_story_memory, _sanitize_story_memory, _clear_scene_memory, _MAX_RECENT_SCENES

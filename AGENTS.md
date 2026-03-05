@@ -65,7 +65,7 @@ novel_builder/
 ├── __main__.py           # Entry point: python -m novel_builder
 ├── cli.py                # parse_args()
 ├── config.py             # load_config(), discover_yaml_files()
-├── ollama_client.py      # call_ollama(), call_ollama_with_retry(), call_summary_model(), _OllamaWatchdog, _wait_for_ollama()
+├── ollama_client.py      # call_ollama(), call_ollama_with_retry(), call_summary_model(), unload_model(), _OllamaWatchdog, _wait_for_ollama()
 ├── prompt_builder.py     # build_system_prompt(), build_scene_prompt(), build_summary_prompt()
 ├── state.py              # load_checkpoint(), save_checkpoint(), should_resume(), should_compress(), compress_story_so_far(), get_used_imagery()
 ├── story_processor.py    # generate_story(), process_chapter(), process_scene(), regenerate_scene(), regenerate_chapter()
@@ -135,8 +135,9 @@ Prevents repetitive location/character descriptions across scenes by tracking di
 
 _(Track fixes here for reference.)_
 
-- Retry logic on Ollama timeout -- 5 retries with 3m/5m/15m/30m/60m backoff (Phase 1.1).
+- Retry logic on Ollama timeout -- 5 retries with 5m/15m/30m/60m/60m backoff (Phase 1.1).
 - Ollama watchdog liveness monitor -- `_OllamaWatchdog` polls `/api/ps` every 30s during generation to confirm the model is still loaded. Read timeout set to unlimited (`None`) so slow model loading and prompt evaluation never cause false timeouts. The watchdog only aborts after 3 consecutive checks find the model missing AND no tokens for 60s+. Retry backoff now polls `/api/tags` and resumes immediately when Ollama comes back online.
+- Automatic model unloading between model switches -- `unload_model()` sends `keep_alive=0` to free memory before switching between generation and summary models. Only fires when the two models differ. Prevents RAM/VRAM pressure from having both models loaded simultaneously.
 - Checkpoint/resume — generation can be paused and resumed from last completed scene (Phase 1.2).
 - `story_so_far` rolling compression — every 5 scenes, the summary model compresses the accumulated text to stay within token budget (Phase 2.1).
 - Story memory now extracts ACTIONS (who did what) alongside facts/commitments for continuity tracking.
