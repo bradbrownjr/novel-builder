@@ -619,3 +619,129 @@ def _name_matches_attribution(paragraph, name, verbs):
         return True
 
     return False
+
+
+# ---------------------------------------------------------------------------
+# Model-based dialogue tagging
+# ---------------------------------------------------------------------------
+
+def tag_dialogue_with_model(scene_text, character_names, pov_character,
+                             host, model, num_ctx=4096):
+    """Use a lightweight LLM to attribute dialogue paragraphs to speakers.
+
+    Sends the scene's paragraphs to the configured Ollama model and asks
+    it to label each one as 'narrator' or a character name.  The result
+    is converted to the same segment list format returned by
+    segment_text_for_tts(), so callers can use either transparently.
+
+    Falls back to script-based segment_text_for_tts() on any error.
+
+    Args:
+        scene_text: Raw scene text (paragraphs separated by blank lines).
+        character_names: List of character name strings present in the scene.
+        pov_character: Optional POV character name (first-person anchor).
+        host: Ollama server URL.
+        model: Model name (e.g. 'qwen2.5:1.5b').
+        num_ctx: Context window size for the tagging model.
+
+    Returns:
+        List of segment dicts with 'type', 'text', and 'character' keys.
+    """
+    from .ollama_client import call_ollama_with_retry
+
+    if not host or not model:
+        return segment_text_for_tts(scene_text, character_names,
+                                    pov_character=pov_character)
+
+    paragraphs = [p.strip() for p in scene_text.strip().split("\n\n") if p.strip()]
+    if not paragraphs:
+        return []
+
+    names_str = ", ".join(character_names) if character_names else "none listed"
+    if pov_character:
+        names_str += f" (POV/narrator voice: {pov_character})"
+
+    para_block = "\n".join(f"{i + 1}: {p}" for i, p in enumerate(paragraphs))
+
+    system = (
+        "You are a dialogue attribution assistant for audiobook production. "
+        "Given scene text split into numbered paragraphs and a list of character "
+        "names, label who speaks in each paragraph.\n\n"
+        "Rules:\n"
+        "- Output ONLY lines in the format: N: SpeakerName\n"
+        "- Use 'narrator' for paragraphs with no spoken dialogue (pure narration, "
+        "  action, or description).\n"
+        "- Use a character name from the provided list for paragraphs that contain "
+        "  spoken dialogue.\n"
+        "- For unattributed dialogue, infer the speaker from conversational context "
+        "  and alternation.\n"
+        "- Character names MUST come from the provided list -- do not invent names.\n"
+        "- Do not add explanation, headers, or any other text.\n"
+    )
+
+    user = (
+        f"Characters in this scene: {names_str}\n\n"
+        f"Paragraphs:\n{para_block}\n\n"
+        "Attribute each paragraph (N: SpeakerName):"
+    )
+
+    try:
+        raw = call_ollama_with_retry(
+            host, model, system, user,
+            timeout=120, retries=1, temperature=0.1, num_ctx=num_ctx,
+        )
+    except Exception:
+        return segment_text_for_tts(scene_text, character_names,
+                                    pov_character=pov_character)
+
+    if not raw:
+        return segment_text_for_tts(scene_text, character_names,
+                                    pov_character=pov_character)
+
+    # Parse: build paragraph_number -> speaker mapping
+    valid_names = {n.lower(): n for n in (character_names or [])}
+    allocation = {}
+    for line in raw.strip().splitlines():
+        line = line.strip()
+        if ":" not in line:
+            continue
+        idx_str, _, speaker_str = line.partition(":")
+        idx_str = idx_str.strip()
+        speaker_str = speaker_str.strip()
+        try:
+            idx = int(idx_str)
+        except ValueError:
+            continue
+        speaker_lower = speaker_str.lower()
+        if speaker_lower in ("narrator", "narration", ""):
+            allocation[idx] = None
+        elif speaker_lower in valid_names:
+            allocation[idx] = valid_names[speaker_lower]
+        # Unknown name falls through -- treated as narrator below
+
+    # Guard: if parsing produced nothing useful, fall back
+    if not allocation:
+        return segment_text_for_tts(scene_text, character_names,
+                                    pov_character=pov_character)
+
+    # Build segments from allocation + original text
+    segments = []
+    for i, para in enumerate(paragraphs):
+        para_num = i + 1
+        speaker = allocation.get(para_num)  # None = narrator
+        has_dlg = _has_spoken_dialogue(para)
+
+        if has_dlg and speaker:
+            # Split mixed paragraphs into narration beats + quoted spans
+            sub_segs = _split_paragraph_into_spans(para, speaker)
+            segments.extend(sub_segs)
+        else:
+            segments.append({
+                "type": "dialogue" if (has_dlg and speaker) else "narration",
+                "text": para,
+                "character": speaker,
+            })
+
+    return segments if segments else segment_text_for_tts(
+        scene_text, character_names, pov_character=pov_character
+    )

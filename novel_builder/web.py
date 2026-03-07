@@ -21,6 +21,7 @@ from types import SimpleNamespace
 from flask import (
     Flask,
     Response,
+    current_app,
     jsonify,
     render_template,
     request,
@@ -515,6 +516,9 @@ def _load_web_config():
         "tts_model": "",
         "tts_narrator_voice": "",
         "tts_voice_map": {},
+        # TTS dialogue tagging model (Ollama)
+        "tts_tagging_model": "",
+        "tts_tagging_num_ctx": 4096,
     }
 
 
@@ -712,7 +716,8 @@ def api_config():
     # Sanitize  --  only accept known keys
     allowed = {"host", "model", "summary_model", "retries", "timeout",
                "generation_num_ctx", "consult_num_ctx",
-               "tts_host", "tts_model", "tts_narrator_voice", "tts_voice_map"}
+               "tts_host", "tts_model", "tts_narrator_voice", "tts_voice_map",
+               "tts_tagging_model", "tts_tagging_num_ctx"}
     cfg = _load_web_config()
     for key in allowed:
         if key in data:
@@ -1671,18 +1676,30 @@ def api_output():
         return jsonify({"text": "", "exists": False, "error": str(e)})
 
 
+_MARKER_STRIP_RE = re.compile(
+    r"<!--\s*(?:/?scene:[\d.]+|chapter:\d+|speaker:[^>]*|/speaker:[^>]*)\s*-->",
+    re.IGNORECASE,
+)
+
+
 @app.route("/api/download")
 def api_download():
-    """Download the output .md file."""
+    """Download the output .md file with all HTML comment markers stripped."""
     output_path = os.path.join(WORKSPACE_DIR, "full_story.md")
     if not os.path.exists(output_path):
         return jsonify({"ok": False, "error": "No output file yet"}), 404
 
-    return send_file(
-        output_path,
+    with open(output_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # Strip scene/chapter/speaker markers and collapse excess blank lines
+    content = _MARKER_STRIP_RE.sub("", content)
+    content = re.sub(r"\n{3,}", "\n\n", content).strip() + "\n"
+
+    return current_app.response_class(
+        content,
         mimetype="text/markdown",
-        as_attachment=True,
-        download_name="novel_output.md",
+        headers={"Content-Disposition": 'attachment; filename="novel_output.md"'},
     )
 
 
@@ -2641,17 +2658,32 @@ def api_tts_speak():
 def api_tts_segments():
     """Segment scene text into narration/dialogue blocks.
 
+    Uses a lightweight Ollama model for attribution if tts_tagging_model
+    is configured, otherwise falls back to the scripted heuristic engine.
+
     Returns a list of paragraph-level segments, each attributed to
     a character (for dialogue) or left as narration.
     """
-    from .tts import segment_text_for_tts
+    from .tts import tag_dialogue_with_model, segment_text_for_tts
 
     data = request.get_json(force=True)
     text = data.get("text", "")
     characters = data.get("characters", [])
     pov_character = data.get("pov_character") or None
 
-    segments = segment_text_for_tts(text, characters, pov_character=pov_character)
+    cfg = _load_web_config()
+    tagging_model = cfg.get("tts_tagging_model", "").strip()
+    tagging_num_ctx = int(cfg.get("tts_tagging_num_ctx", 4096))
+    ollama_host = _normalize_host(cfg.get("host", ""))
+
+    if tagging_model and ollama_host:
+        segments = tag_dialogue_with_model(
+            text, characters, pov_character,
+            ollama_host, tagging_model, tagging_num_ctx,
+        )
+    else:
+        segments = segment_text_for_tts(text, characters, pov_character=pov_character)
+
     return jsonify({"ok": True, "segments": segments})
 
 
