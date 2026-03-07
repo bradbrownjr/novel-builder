@@ -923,6 +923,25 @@ textarea {
       <label style="margin-top:.5rem;">Character Voices</label>
       <div id="tts-voice-map-entries"></div>
     </div>
+    <div class="form-row" style="margin-top:.75rem;">
+      <div class="form-group" style="flex:2;">
+        <label for="cfg-tts-tagging-model">Dialogue Tagging Model</label>
+        <input type="text" id="cfg-tts-tagging-model" list="tts-tagging-model-list"
+               placeholder="e.g., qwen2.5:1.5b (leave blank to use heuristics)">
+        <datalist id="tts-tagging-model-list">
+          <option value="qwen2.5:1.5b">qwen2.5:1.5b -- recommended, fast</option>
+          <option value="qwen2.5:3b">qwen2.5:3b -- more accurate</option>
+          <option value="gemma3:1b">gemma3:1b</option>
+          <option value="gemma3:4b">gemma3:4b</option>
+          <option value="phi4-mini">phi4-mini</option>
+        </datalist>
+      </div>
+      <div class="form-group" style="flex:1;">
+        <label for="cfg-tts-tagging-ctx">Tagging Context</label>
+        <input type="number" id="cfg-tts-tagging-ctx" min="1024" max="32768" step="1024"
+               placeholder="4096">
+      </div>
+    </div>
     <div style="display:flex; gap:.5rem; margin-top:.75rem;">
       <button class="btn btn-sm" onclick="checkTTSHealth()">Check Connection</button>
       <button class="btn btn-sm" onclick="saveTTSConfig()">Save TTS Config</button>
@@ -1295,6 +1314,8 @@ function loadConfigIntoForm(cfg) {
   // TTS fields
   document.getElementById('cfg-tts-host').value = cfg.tts_host || '';
   document.getElementById('cfg-tts-narrator-voice').value = cfg.tts_narrator_voice || '';
+  document.getElementById('cfg-tts-tagging-model').value = cfg.tts_tagging_model || '';
+  document.getElementById('cfg-tts-tagging-ctx').value = cfg.tts_tagging_num_ctx || 4096;
   tts.host = cfg.tts_host || '';
   tts.model = cfg.tts_model || '';
   tts.narratorVoice = cfg.tts_narrator_voice || '';
@@ -2272,6 +2293,8 @@ async function saveTTSConfig() {
     tts_model: document.getElementById('cfg-tts-model').value.trim(),
     tts_narrator_voice: document.getElementById('cfg-tts-narrator-voice').value.trim(),
     tts_voice_map: vm,
+    tts_tagging_model: document.getElementById('cfg-tts-tagging-model').value.trim(),
+    tts_tagging_num_ctx: parseInt(document.getElementById('cfg-tts-tagging-ctx').value) || 4096,
   };
   const r = await apiPost('/api/config', cfg);
   if (r && r.ok) {
