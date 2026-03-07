@@ -1,6 +1,7 @@
 """Checkpoint read/write, resume logic, and story memory management."""
 
 import os
+import re
 from datetime import datetime
 
 from .yaml_io import load_yaml_optional, save_yaml
@@ -14,6 +15,48 @@ _COMPRESSION_INTERVAL = 5  # compress story_so_far every N scenes
 _MAX_IMAGERY_PER_LOCATION = 20  # max used-imagery phrases per location
 _MAX_IMAGERY_PER_CHARACTER = 10  # max used-imagery phrases per character
 _MAX_IMAGERY_GLOBAL = 15  # max unkeyed used-imagery phrases
+
+# --- Deduplication config for actions/commitments ---
+_DEDUP_JACCARD_THRESHOLD = 0.25  # minimum overlap ratio to consider a duplicate
+_DEDUP_LOOKBACK = 30             # how many recent entries to compare against
+
+# Stop-words for deduplication (includes routine-work verbs to avoid false misses)
+_DEDUP_STOP_WORDS = {
+    "the", "a", "an", "is", "was", "and", "or", "of", "to", "in", "for",
+    "on", "it", "he", "she", "they", "with", "that", "this", "her", "his",
+    "had", "has", "have", "but", "not", "are", "were", "will", "must",
+    "begin", "begins", "beginning", "continue", "continues", "continuing",
+    "complete", "completes", "completing", "start", "starts", "starting",
+    "finish", "finishes", "finishing", "ensure", "ensures", "maintain",
+    "maintains", "until", "end", "before", "after", "during", "all",
+    "any", "each", "every", "more", "some", "their", "its", "be", "do",
+    "does", "did", "if", "as", "at", "by", "up", "my", "our", "your",
+    "i", "we", "you", "me", "him", "them", "day", "shift", "time",
+    "work", "task", "tasks", "assigned", "process", "properly", "rest",
+    "scene", "narrative", "details", "noted", "noted", "throughout",
+}
+
+
+def _dedup_words(text):
+    """Extract set of crude-stemmed content words for Jaccard deduplication."""
+    tokens = re.sub(r"[^\w\s]", "", text.lower()).split()
+    return {t[:6] for t in tokens if t not in _DEDUP_STOP_WORDS and len(t) >= 3}
+
+
+def _is_near_duplicate(new_detail, existing_entries):
+    """Return True if new_detail is too similar to any recent entry (Jaccard >= threshold)."""
+    new_words = _dedup_words(new_detail)
+    if len(new_words) < 2:
+        return False
+    for entry in existing_entries[-_DEDUP_LOOKBACK:]:
+        existing_words = _dedup_words(entry.get("detail", ""))
+        if not existing_words:
+            continue
+        overlap = len(new_words & existing_words)
+        union = len(new_words | existing_words)
+        if union > 0 and overlap / union >= _DEDUP_JACCARD_THRESHOLD:
+            return True
+    return False
 
 
 def _sanitize_story_memory(memory):
@@ -318,21 +361,25 @@ def _merge_story_memory(state, extraction, scene_id, known_names=None,
                 "detail": fact.strip(),
             })
 
-    # Actions
+    # Actions (with deduplication guard)
     for action in extraction.get("actions", []):
         if action.strip():
-            memory.setdefault("actions", []).append({
-                "scene": scene_id,
-                "detail": action.strip(),
-            })
+            existing = memory.get("actions", [])
+            if not _is_near_duplicate(action.strip(), existing):
+                memory.setdefault("actions", []).append({
+                    "scene": scene_id,
+                    "detail": action.strip(),
+                })
 
-    # Commitments
+    # Commitments (with deduplication guard)
     for commitment in extraction.get("commitments", []):
         if commitment.strip():
-            memory.setdefault("commitments", []).append({
-                "scene": scene_id,
-                "detail": commitment.strip(),
-            })
+            existing = memory.get("commitments", [])
+            if not _is_near_duplicate(commitment.strip(), existing):
+                memory.setdefault("commitments", []).append({
+                    "scene": scene_id,
+                    "detail": commitment.strip(),
+                })
 
     # Used imagery — distinctive descriptive phrases keyed to location/character
     _merge_used_imagery(
