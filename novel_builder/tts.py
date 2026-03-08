@@ -676,7 +676,9 @@ def tag_dialogue_with_model(scene_text, character_names, pov_character,
         "- For unattributed dialogue, infer the speaker from conversational context "
         "  and alternation.\n"
         "- Character names MUST come from the provided list -- do not invent names.\n"
-        "- Do not add explanation, headers, or any other text.\n"
+        "- Do NOT reproduce, reword, or alter any of the scene text.\n"
+        "- Do NOT add explanation, summaries, headers, or any other text.\n"
+        "- Your entire response must be ONLY the numbered label lines.\n"
     )
 
     user = (
