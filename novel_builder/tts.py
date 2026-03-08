@@ -745,3 +745,101 @@ def tag_dialogue_with_model(scene_text, character_names, pov_character,
     return segments if segments else segment_text_for_tts(
         scene_text, character_names, pov_character=pov_character
     )
+
+
+def tag_scene_text_with_spans(scene_text, character_names, pov_character,
+                               host, model, num_ctx=4096):
+    """Tag a scene's text with <span data-tts="Name"> for each spoken quote.
+
+    Uses tag_dialogue_with_model() for speaker attribution then reconstructs
+    the original paragraph text with HTML spans wrapping the quoted portions
+    assigned to each character.  Narration text is left unmodified.
+
+    Falls back to the scripted heuristic engine on any error.
+
+    Args:
+        scene_text: Raw scene text (paragraphs separated by blank lines).
+        character_names: List of character name strings present in the scene.
+        pov_character: Optional POV character name (first-person anchor).
+        host: Ollama server URL.
+        model: Model name (e.g. 'qwen2.5:1.5b').
+        num_ctx: Context window size for the tagging model.
+
+    Returns:
+        Scene text string with <span data-tts="Name">...</span> around each
+        attributed quote.  Narration paragraphs are returned unchanged.
+    """
+    paragraphs = [p for p in scene_text.split("\n\n")]
+    stripped = [p.strip() for p in paragraphs]
+
+    if not any(stripped):
+        return scene_text
+
+    # Get attribution via model (falls back to heuristic internally)
+    segments = tag_dialogue_with_model(
+        scene_text, character_names, pov_character, host, model, num_ctx,
+    )
+
+    # Build a flat list of (para_index -> speaker) from segment output.
+    # tag_dialogue_with_model works paragraph-by-paragraph so we need to map
+    # back from segment list to paragraph position.  We do this by matching
+    # the original stripped paragraphs against segment text.
+    para_speaker = {}  # para_index -> speaker name or None
+    seg_idx = 0
+    for para_idx, para in enumerate(stripped):
+        if not para:
+            continue
+        # Collect all segments whose text appears in this paragraph
+        speakers_seen = set()
+        while seg_idx < len(segments):
+            seg = segments[seg_idx]
+            seg_text = seg.get("text", "")
+            if seg_text and seg_text in para:
+                if seg.get("character"):
+                    speakers_seen.add(seg["character"])
+                seg_idx += 1
+            else:
+                # Segment belongs to next paragraph; check if we're advancing
+                if any(seg.get("text", "") in (stripped[j] or "")
+                       for j in range(para_idx + 1, len(stripped))):
+                    break
+                seg_idx += 1  # skip unmatched (e.g. sub-span from prior para)
+        if speakers_seen:
+            # If multiple speakers in one paragraph, use the first non-None
+            para_speaker[para_idx] = next(iter(speakers_seen))
+
+    # Rebuild paragraphs with spans around attributed quotes
+    result_paras = []
+    for para_idx, para in enumerate(paragraphs):
+        stripped_para = para.strip()
+        speaker = para_speaker.get(para_idx)
+        if speaker and _has_spoken_dialogue(stripped_para):
+            result_paras.append(_wrap_quotes_with_span(stripped_para, speaker))
+        else:
+            result_paras.append(para)
+
+    return "\n\n".join(result_paras)
+
+
+def _wrap_quotes_with_span(paragraph, speaker):
+    """Wrap each quoted span in paragraph with <span data-tts="speaker">.
+
+    Non-quoted text is left as-is.  Preserves surrounding whitespace.
+
+    Args:
+        paragraph: Paragraph text, stripped.
+        speaker: Character name to use in the data-tts attribute.
+
+    Returns:
+        Paragraph text with spans inserted.
+    """
+    result = []
+    last_end = 0
+    for m in _QUOTE_RE.finditer(paragraph):
+        if m.start() > last_end:
+            result.append(paragraph[last_end:m.start()])
+        result.append(f'<span data-tts="{speaker}">{m.group()}</span>')
+        last_end = m.end()
+    if last_end < len(paragraph):
+        result.append(paragraph[last_end:])
+    return "".join(result)
