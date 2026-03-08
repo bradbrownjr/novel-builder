@@ -39,7 +39,10 @@ _DEDUP_STOP_WORDS = {
 
 def _dedup_words(text):
     """Extract set of crude-stemmed content words for Jaccard deduplication."""
-    tokens = re.sub(r"[^\w\s]", "", text.lower()).split()
+    # Replace non-word/non-space chars with a space (not empty) so that
+    # hyphenated words split correctly: "cedar-scented" -> "cedar scented"
+    # rather than collapsing to "cedarscented" and losing the root.
+    tokens = re.sub(r"[^\w\s]", " ", text.lower()).split()
     return {t[:6] for t in tokens if t not in _DEDUP_STOP_WORDS and len(t) >= 3}
 
 
@@ -479,10 +482,29 @@ def _merge_used_imagery(memory, raw_imagery, scene_id, setting_id,
                         scope_type = "_global"
                         scope_id = ""
 
-        # Deduplicate: skip if this exact phrase (case-insensitive) already exists
+        # Deduplicate: exact-match first (fast path).
         phrase_lower = phrase.lower()
         if any(e.get("detail", "").lower() == phrase_lower for e in imagery_list):
             continue
+
+        # Fuzzy-dedup within the same scope: if a new phrase shares any
+        # significant content word with an existing entry for the same
+        # (scope_type, scope_id), treat it as a concept variant and skip it.
+        # This prevents "scent of cedar", "cedar aroma", "cedar-scented air"
+        # from accumulating as separate entries for the same location.
+        if scope_type in ("setting", "character") and scope_id:
+            new_words = _dedup_words(phrase)
+            if new_words:  # skip check for very short / stop-word-only phrases
+                scope_entries = [
+                    e for e in imagery_list
+                    if e.get("scope_type") == scope_type
+                    and e.get("scope_id") == scope_id
+                ]
+                if any(
+                    len(new_words & _dedup_words(e.get("detail", ""))) >= 1
+                    for e in scope_entries
+                ):
+                    continue
 
         imagery_list.append({
             "scene": scene_id,

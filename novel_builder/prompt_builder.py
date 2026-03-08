@@ -595,24 +595,20 @@ def _inject_imagery_suppression(parts, state, setting_ref, scene, all_characters
     ]
 
     if setting_phrases:
-        lines.append("  Setting (already described this way):")
-        for phrase in setting_phrases[-_MAX_IMAGERY_PROMPT:]:
+        lines.append("  Setting (already described this way -- avoid these concepts in any phrasing):")
+        for phrase in setting_phrases:
             lines.append(f"    - \"{phrase}\"")
 
     for cid, phrases in char_phrases.items():
         char_name = (all_characters.get(cid, {}).get("Name")
                      or all_characters.get(cid, {}).get("name", cid))
-        lines.append(f"  {char_name} (already described this way):")
-        for phrase in phrases[-_MAX_IMAGERY_PROMPT:]:
+        lines.append(f"  {char_name} (already described this way -- avoid these concepts in any phrasing):")
+        for phrase in phrases:
             lines.append(f"    - \"{phrase}\"")
 
     if global_phrases:
         lines.append("  Previously used imagery:")
-        for phrase in global_phrases[-_MAX_IMAGERY_PROMPT:]:
+        for phrase in global_phrases:
             lines.append(f"    - \"{phrase}\"")
 
     parts.append("\n".join(lines))
-
-
-# Max imagery phrases to inject per category in a single prompt
-_MAX_IMAGERY_PROMPT = 8
