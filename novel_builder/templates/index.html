@@ -1182,15 +1182,15 @@ textarea {
     <button class="btn btn-sm gen-btn-resume" onclick="startGeneration(true)" style="display:none;">&#9654; Resume</button>
     <button class="btn btn-sm btn-danger gen-btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
     <span class="spacer"></span>
-    <button class="btn btn-sm" id="btn-tts-tag" onclick="tagForAudiobook()">Tag for Audiobook</button>
-    <button class="btn btn-sm btn-danger" id="btn-tts-tag-stop" onclick="stopTagging()" style="display:none;">Stop Tagging</button>
-    <span id="tts-tag-progress" style="display:none; font-size:.78rem; color:var(--text-dim); white-space:nowrap;"></span>
-    <button class="btn btn-sm" id="btn-tts-download" onclick="downloadAudiobook()">Download MP3</button>
-    <button class="btn btn-sm btn-danger" id="btn-tts-download-cancel" onclick="cancelDownload()" style="display:none;">Cancel</button>
-    <span id="tts-download-progress" style="display:none; font-size:.78rem; color:var(--text-dim); white-space:nowrap;"></span>
     <button class="btn btn-sm" id="btn-tts-play" onclick="playAllScenes()">Read Aloud</button>
     <button class="btn btn-sm" id="btn-tts-pause" onclick="pauseTTS()" style="display:none;">Pause</button>
     <button class="btn btn-sm btn-danger" id="btn-tts-stop" onclick="stopTTS()" style="display:none;">Stop</button>
+    <button class="btn btn-sm" id="btn-tts-download" onclick="downloadAudiobook()">Download MP3</button>
+    <button class="btn btn-sm btn-danger" id="btn-tts-download-cancel" onclick="cancelDownload()" style="display:none;">Cancel</button>
+    <span id="tts-download-progress" style="display:none; font-size:.78rem; color:var(--text-dim); white-space:nowrap;"></span>
+    <button class="btn btn-sm" id="btn-tts-tag" onclick="tagForAudiobook()" title="Bake speaker attribution into the output file for faster, more accurate voice assignment">Tag for Audiobook</button>
+    <button class="btn btn-sm btn-danger" id="btn-tts-tag-stop" onclick="stopTagging()" style="display:none;">Stop Tagging</button>
+    <span id="tts-tag-progress" style="display:none; font-size:.78rem; color:var(--text-dim); white-space:nowrap;"></span>
   </div>
   </div>
   <div class="output-viewer" id="output-viewer">(No output yet — start generation to see scenes here.)</div>
