@@ -163,8 +163,11 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
 
         roster_lines = []
         for char_id, char_data in characters.items():
-            # Only include characters that have appeared or are in this scene
-            if appeared_ids and char_id not in appeared_ids:
+            # Only include characters that have appeared or are in this scene.
+            # Note: do NOT short-circuit when appeared_ids is empty -- that
+            # would include every character (including late-story characters)
+            # in scene 1 before anyone has appeared yet.
+            if char_id not in appeared_ids:
                 continue
             name = char_data.get("Name") or char_data.get("name", "")
             role = char_data.get("role", "")
