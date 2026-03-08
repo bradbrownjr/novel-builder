@@ -1692,8 +1692,9 @@ def api_download():
     with open(output_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # Strip scene/chapter/speaker markers and collapse excess blank lines
+    # Strip scene/chapter/speaker markers, data-tts spans, and collapse excess blank lines
     content = _MARKER_STRIP_RE.sub("", content)
+    content = re.sub(r'<span\s+data-tts="[^"]*">|</span>', "", content)
     content = re.sub(r"\n{3,}", "\n\n", content).strip() + "\n"
 
     return current_app.response_class(
@@ -2507,6 +2508,212 @@ def api_memory_post():
     except Exception as e:
         return jsonify({"ok": False, "error": f"Could not write checkpoint: {e}"}), 500
 
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# TTS dialogue tagging state
+# ---------------------------------------------------------------------------
+
+class _TaggingState:
+    """Lightweight state for the audiobook tagging background job."""
+
+    def __init__(self):
+        self.running = False
+        self.done = 0
+        self.total = 0
+        self.current_scene = ""
+        self.error = None
+        self._lock = threading.Lock()
+
+    def start(self, total):
+        with self._lock:
+            self.running = True
+            self.done = 0
+            self.total = total
+            self.current_scene = ""
+            self.error = None
+
+    def advance(self, scene_id):
+        with self._lock:
+            self.done += 1
+            self.current_scene = scene_id
+
+    def finish(self, error=None):
+        with self._lock:
+            self.running = False
+            self.error = error
+
+    def request_stop(self):
+        with self._lock:
+            self.running = False
+
+    def snapshot(self):
+        with self._lock:
+            return {
+                "running": self.running,
+                "done": self.done,
+                "total": self.total,
+                "current_scene": self.current_scene,
+                "error": self.error,
+            }
+
+
+_tagging_state = _TaggingState()
+
+_SCENE_BLOCK_RE = re.compile(
+    r"(<!--\s*scene:([\d.]+)\s*-->)"    # group 1 = open tag, group 2 = scene id
+    r"([\s\S]*?)"                        # group 3 = scene content
+    r"(<!--\s*/scene:[\d.]+\s*-->)",     # group 4 = close tag
+    re.IGNORECASE,
+)
+
+
+def _run_tagging_job(cfg, output_path):
+    """Background worker: tag all scenes in full_story.md with data-tts spans."""
+    from .tts import tag_scene_text_with_spans
+
+    host = _normalize_host(cfg.get("host", ""))
+    model = cfg.get("tts_tagging_model", "").strip()
+    num_ctx = int(cfg.get("tts_tagging_num_ctx", 4096))
+
+    try:
+        with open(output_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except OSError as e:
+        _tagging_state.finish(error=str(e))
+        return
+
+    scene_matches = list(_SCENE_BLOCK_RE.finditer(content))
+    if not scene_matches:
+        _tagging_state.finish(error="No scene markers found in output file.")
+        return
+
+    _tagging_state.start(total=len(scene_matches))
+    state.emit("model_active", {"model": "tagging", "name": model})
+    state.emit("log", {"message": f"Audiobook tagging started: {len(scene_matches)} scenes", "level": "info", "time": time.time()})
+
+    # Load character roster and checkpoint for per-scene scoping
+    chars_path = os.path.join(WORKSPACE_DIR, "characters.yaml")
+    checkpoint_path = os.path.join(WORKSPACE_DIR, "checkpoint.yaml")
+    all_characters = {}
+    char_appearances = {}
+    pov_character = ""
+
+    try:
+        import yaml as _y
+        if os.path.exists(chars_path):
+            raw = _y.safe_load(open(chars_path, encoding="utf-8")) or {}
+            all_characters = raw.get("characters", raw) or {}
+        if os.path.exists(checkpoint_path):
+            ck = _y.safe_load(open(checkpoint_path, encoding="utf-8")) or {}
+            char_appearances = ck.get("character_appearances", {})
+        outline_path = os.path.join(WORKSPACE_DIR, "story_outline.yaml")
+        if os.path.exists(outline_path):
+            raw_o = _y.safe_load(open(outline_path, encoding="utf-8")) or {}
+            arc = raw_o.get("overall_arc", {})
+            if isinstance(arc, dict):
+                pov_character = arc.get("pov_character", "")
+    except Exception:
+        pass  # proceed with empty roster -- model will infer from text
+
+    # Build name lookup: char_id -> display name
+    id_to_name = {}
+    for cid, cdata in all_characters.items():
+        if isinstance(cdata, dict):
+            id_to_name[cid] = cdata.get("Name") or cdata.get("name") or cid
+
+    # Process each scene: replace content in-place within the full content string
+    # Build list of (start, end, replacement) then apply in reverse order
+    replacements = []
+    for m in scene_matches:
+        if not _tagging_state.running:
+            break
+        scene_id = m.group(2)
+        scene_content = m.group(3)
+
+        # Determine character names present in this scene from checkpoint
+        scene_char_names = []
+        for cid, scenes_list in char_appearances.items():
+            if scene_id in (scenes_list or []):
+                if cid in id_to_name:
+                    scene_char_names.append(id_to_name[cid])
+        # Fall back to full roster if checkpoint has no data
+        if not scene_char_names:
+            scene_char_names = list(id_to_name.values())
+
+        try:
+            tagged = tag_scene_text_with_spans(
+                scene_content, scene_char_names, pov_character or None,
+                host, model, num_ctx,
+            )
+        except Exception as e:
+            state.emit("log", {"message": f"Tagging scene {scene_id} failed: {e}", "level": "warn", "time": time.time()})
+            tagged = scene_content  # keep original on error
+
+        open_tag = m.group(1)
+        close_tag = m.group(4)
+        replacements.append((m.start(), m.end(), f"{open_tag}\n{tagged}\n{close_tag}"))
+
+        _tagging_state.advance(scene_id)
+        state.emit("log", {"message": f"Tagged scene {scene_id} ({_tagging_state.done}/{_tagging_state.total})", "level": "info", "time": time.time()})
+
+    # Apply replacements in reverse so offsets stay valid
+    for start, end, replacement in reversed(replacements):
+        content = content[:start] + replacement + content[end:]
+
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(content)
+    except OSError as e:
+        _tagging_state.finish(error=str(e))
+        state.emit("model_active", {"model": "idle", "name": ""})
+        return
+
+    _tagging_state.finish()
+    state.emit("model_active", {"model": "idle", "name": ""})
+    state.emit("log", {"message": "Audiobook tagging complete.", "level": "info", "time": time.time()})
+
+
+@app.route("/api/tts/tag-story", methods=["POST"])
+def api_tts_tag_story():
+    """Start (or restart) the audiobook tagging background job.
+
+    Tags every scene in full_story.md with <span data-tts="Name"> spans
+    around attributed dialogue quotes.  Overwrites any existing tags.
+    Progress is emitted via the standard /api/events SSE stream.
+    """
+    if _tagging_state.running:
+        return jsonify({"ok": False, "error": "Tagging already in progress"}), 409
+
+    output_path = os.path.join(WORKSPACE_DIR, "full_story.md")
+    if not os.path.exists(output_path):
+        return jsonify({"ok": False, "error": "No output file found"}), 404
+
+    cfg = _load_web_config()
+    if not cfg.get("tts_tagging_model", "").strip():
+        return jsonify({"ok": False, "error": "No dialogue tagging model configured in Setup"}), 400
+
+    t = threading.Thread(
+        target=_run_tagging_job,
+        args=(cfg, output_path),
+        daemon=True,
+        name="novel-tts-tag",
+    )
+    t.start()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/tts/tag-status")
+def api_tts_tag_status():
+    """Return current tagging job status."""
+    return jsonify(_tagging_state.snapshot())
+
+
+@app.route("/api/tts/tag-stop", methods=["POST"])
+def api_tts_tag_stop():
+    """Request the tagging job to stop after the current scene."""
+    _tagging_state.request_stop()
     return jsonify({"ok": True})
 
 

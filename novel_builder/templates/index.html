@@ -1182,6 +1182,9 @@ textarea {
     <button class="btn btn-sm gen-btn-resume" onclick="startGeneration(true)" style="display:none;">&#9654; Resume</button>
     <button class="btn btn-sm btn-danger gen-btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
     <span class="spacer"></span>
+    <button class="btn btn-sm" id="btn-tts-tag" onclick="tagForAudiobook()">Tag for Audiobook</button>
+    <button class="btn btn-sm btn-danger" id="btn-tts-tag-stop" onclick="stopTagging()" style="display:none;">Stop Tagging</button>
+    <span id="tts-tag-progress" style="display:none; font-size:.78rem; color:var(--text-dim); white-space:nowrap;"></span>
     <button class="btn btn-sm" id="btn-tts-download" onclick="downloadAudiobook()">Download MP3</button>
     <button class="btn btn-sm btn-danger" id="btn-tts-download-cancel" onclick="cancelDownload()" style="display:none;">Cancel</button>
     <span id="tts-download-progress" style="display:none; font-size:.78rem; color:var(--text-dim); white-space:nowrap;"></span>
@@ -2104,6 +2107,12 @@ function connectSSE() {
       case 'scene_regenerated':
         _handleSceneRegenerated(event.data);
         break;
+      case 'tts_tag_progress':
+        _handleTagProgress(event.data);
+        break;
+      case 'tts_tag_complete':
+        _handleTagComplete(event.data);
+        break;
       case 'log':
         addLogEntry(event.data);
         break;
@@ -2147,6 +2156,32 @@ function getFirstVisibleSceneIdx() {
 /* ==========================================================
    Text-to-Speech (TTS) -- Speaches / Kokoro / Piper
    ========================================================== */
+
+/* --- Span segment parser (pre-baked data-tts tags) ---
+   Returns an array of {type, text, character} segments if the text
+   contains <span data-tts="Name"> markup, otherwise returns null
+   so the caller can fall back to the /api/tts/segments model pass.
+   NOTE: tag text lives as literal characters in DOM textContent --
+   we scan for the literal angle-bracket strings, not parsed nodes.
+*/
+function parseSpanSegments(text) {
+  if (!text.includes('<span data-tts="')) return null;
+  const spanRe = /<span data-tts="([^"]*)">([\s\S]*?)<\/span>/g;
+  const segments = [];
+  let lastIdx = 0;
+  let m;
+  while ((m = spanRe.exec(text)) !== null) {
+    const before = text.slice(lastIdx, m.index);
+    if (before.trim()) segments.push({ type: 'narration', text: before, character: null });
+    // The inner text of the span is the attributed quote
+    segments.push({ type: 'dialogue', text: m[2], character: m[1] || null });
+    lastIdx = m.index + m[0].length;
+  }
+  const after = text.slice(lastIdx);
+  if (after.trim()) segments.push({ type: 'narration', text: after, character: null });
+  return segments.length ? segments : null;
+}
+
 const tts = {
   playing: false,
   paused: false,
@@ -2460,12 +2495,19 @@ async function playAllScenes() {
     updateTTSProgress();
     scrollToScene(i);
 
-    const segResp = await apiPost('/api/tts/segments', {
-      text: tts.scenes[i], characters: charNames, pov_character: povCharacter,
-    });
-    const segments = segResp?.ok
-      ? segResp.segments
-      : [{ type: 'narration', text: tts.scenes[i], character: null }];
+    // Use pre-baked span attribution if available; otherwise call the model
+    const preTagged = parseSpanSegments(tts.scenes[i]);
+    let segments;
+    if (preTagged) {
+      segments = preTagged;
+    } else {
+      const segResp = await apiPost('/api/tts/segments', {
+        text: tts.scenes[i], characters: charNames, pov_character: povCharacter,
+      });
+      segments = segResp?.ok
+        ? segResp.segments
+        : [{ type: 'narration', text: tts.scenes[i], character: null }];
+    }
 
     for (const seg of segments) {
       if (tts.stopped) break;
@@ -2525,10 +2567,17 @@ async function downloadAudiobook() {
   const allSegments = [];
   for (let ci = 0; ci < chapters.length; ci++) {
     for (const scene of chapters[ci].scenes) {
-      const segResp = await apiPost('/api/tts/segments', { text: scene, characters: charNames, pov_character: povCharacter });
-      const segs = segResp?.ok
-        ? segResp.segments
-        : [{ type: 'narration', text: scene, character: null }];
+      // Use pre-baked span attribution if available; otherwise call the model
+      const preTagged = parseSpanSegments(scene);
+      let segs;
+      if (preTagged) {
+        segs = preTagged;
+      } else {
+        const segResp = await apiPost('/api/tts/segments', { text: scene, characters: charNames, pov_character: povCharacter });
+        segs = segResp?.ok
+          ? segResp.segments
+          : [{ type: 'narration', text: scene, character: null }];
+      }
       for (const seg of segs) allSegments.push({ seg, chapterIdx: ci });
     }
   }
@@ -2623,6 +2672,55 @@ async function downloadAudiobook() {
 
 function cancelDownload() {
   tts.downloadCancelled = true;
+}
+
+/* --- Audiobook tagging (bake data-tts spans into file) --- */
+async function tagForAudiobook() {
+  const resp = await apiPost('/api/tts/tag-story', {});
+  if (!resp?.ok) {
+    toast('Tagging failed: ' + (resp?.error || 'Unknown error'), 'error');
+    return;
+  }
+  _updateTagControls(true, 0, 0);
+  toast('Audiobook tagging started', 'info');
+}
+
+async function stopTagging() {
+  await apiPost('/api/tts/tag-stop', {});
+}
+
+function _handleTagProgress(data) {
+  _updateTagControls(true, data.done || 0, data.total || 0, data.current_scene || '');
+}
+
+function _handleTagComplete(data) {
+  _updateTagControls(false, data.total || 0, data.total || 0);
+  if (data.error) {
+    toast('Tagging error: ' + data.error, 'error');
+  } else {
+    toast('Audiobook tagging complete -- scenes now have voice attribution', 'ok');
+    refreshOutput();
+  }
+}
+
+function _updateTagControls(running, done, total, currentScene) {
+  const btnTag = document.getElementById('btn-tts-tag');
+  const btnStop = document.getElementById('btn-tts-tag-stop');
+  const prog = document.getElementById('tts-tag-progress');
+  if (!btnTag) return;
+  if (running) {
+    btnTag.style.display = 'none';
+    if (btnStop) btnStop.style.display = '';
+    if (prog) {
+      prog.style.display = '';
+      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      prog.textContent = 'Tagging... ' + done + '/' + total + ' (' + pct + '%)';
+    }
+  } else {
+    btnTag.style.display = '';
+    if (btnStop) btnStop.style.display = 'none';
+    if (prog) { prog.style.display = 'none'; prog.textContent = ''; }
+  }
 }
 
 function updateDownloadControls(done, total, finished = false) {
