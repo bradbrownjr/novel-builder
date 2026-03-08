@@ -724,6 +724,7 @@ textarea {
     <div class="header-actions">
       <button id="btn-global-stop" onclick="stopActiveJob()" class="btn-danger btn-sm" style="display:none;" title="Stop active job">Stop</button>
       <button onclick="toggleTheme()" title="Toggle light/dark">&#x263D;</button>
+      <button onclick="confirmResetGeneration()" title="Clear output and checkpoint, keep story files and consult results" class="btn-sm">Reset</button>
       <button onclick="confirmNewStory()" title="New Story" class="btn-danger btn-sm">New Story</button>
     </div>
   </div>
@@ -1654,10 +1655,27 @@ async function stopGeneration() {
 /* ==========================================================
    New story
    ========================================================== */
+function confirmResetGeneration() {
+  showConfirm(
+    'Reset Generation',
+    'This will delete the output file and checkpoint so generation can restart from scratch. Your story YAML files and Consult results will be preserved. Continue?',
+    async () => {
+      const r = await apiPost('/api/reset-generation');
+      if (r && r.ok) {
+        toast('Generation reset' + (r.removed.length ? ` (${r.removed.join(', ')} removed)` : ''), 'ok');
+        document.getElementById('output-viewer').textContent = '(No output yet -- start generation to see scenes here.)';
+        updateUIForStatus('idle');
+      } else {
+        toast(r?.error || 'Reset failed', 'error');
+      }
+    }
+  );
+}
+
 function confirmNewStory() {
   showConfirm(
     'New Story',
-    'This will delete ALL uploaded YAML files, output, and checkpoint from the workspace. Are you sure?',
+    'This will delete ALL uploaded YAML files, output, checkpoint, and Consult results from the workspace. Are you sure?',
     async () => {
       const r = await apiPost('/api/new-story');
       if (r && r.ok) {

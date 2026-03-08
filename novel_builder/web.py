@@ -1358,6 +1358,28 @@ def api_new_story():
     return jsonify({"ok": True, "removed": removed})
 
 
+@app.route("/api/reset-generation", methods=["POST"])
+def api_reset_generation():
+    """Clear checkpoint and output only, preserving YAML story files and consult results.
+
+    Use this to rerun generation from scratch without losing the AI Consult
+    analysis or your uploaded story files.
+    """
+    if state.status == "running":
+        return jsonify({"ok": False, "error": "Cannot reset while generation is running"}), 400
+
+    _ensure_workspace()
+    removed = []
+    for filename in ["checkpoint.yaml", "full_story.md"]:
+        path = os.path.join(WORKSPACE_DIR, filename)
+        if os.path.exists(path):
+            os.remove(path)
+            removed.append(filename)
+
+    state.reset()
+    return jsonify({"ok": True, "removed": removed})
+
+
 @app.route("/api/parse-yaml")
 def api_parse_yaml():
     """Parse uploaded YAML files and return a summary of loaded data.
