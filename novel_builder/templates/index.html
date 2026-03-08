@@ -762,6 +762,14 @@ textarea {
       <span style="font-size:.72rem;color:var(--text-dim)">Preset:</span>
       <span id="lbl-preset" style="font-size:.72rem;font-weight:600;"></span>
     </div>
+    <div class="indicator" id="ind-tts-compile" style="display:none;">
+      <span class="dot blue pulse" id="dot-tts-compile"></span>
+      <span id="tts-download-progress"></span>
+    </div>
+    <div class="indicator" id="ind-tts-tag" style="display:none;">
+      <span class="dot blue pulse" id="dot-tts-tag-prog"></span>
+      <span id="tts-tag-progress"></span>
+    </div>
   </div>
 </header>
 <div class="progress-wrap"><div class="progress-fill" id="progress-fill"></div></div>
@@ -1194,10 +1202,8 @@ textarea {
     <button class="btn btn-sm btn-danger" id="btn-tts-stop" onclick="stopTTS()" style="display:none;">Stop</button>
     <button class="btn btn-sm" id="btn-tts-download" onclick="downloadAudiobook()">Download MP3</button>
     <button class="btn btn-sm btn-danger" id="btn-tts-download-cancel" onclick="cancelDownload()" style="display:none;">Cancel</button>
-    <span id="tts-download-progress" style="display:none; font-size:.78rem; color:var(--text-dim); white-space:nowrap;"></span>
     <button class="btn btn-sm" id="btn-tts-tag" onclick="tagForAudiobook()" title="Bake speaker attribution into the output file for faster, more accurate voice assignment">Tag for Audiobook</button>
     <button class="btn btn-sm btn-danger" id="btn-tts-tag-stop" onclick="stopTagging()" style="display:none;">Stop Tagging</button>
-    <span id="tts-tag-progress" style="display:none; font-size:.78rem; color:var(--text-dim); white-space:nowrap;"></span>
   </div>
   </div>
   <div class="output-viewer" id="output-viewer">(No output yet — start generation to see scenes here.)</div>
@@ -2732,18 +2738,20 @@ function _updateTagControls(running, done, total, currentScene) {
   const btnStop = document.getElementById('btn-tts-tag-stop');
   const prog = document.getElementById('tts-tag-progress');
   if (!btnTag) return;
+  const chip = document.getElementById('ind-tts-tag');
   if (running) {
     btnTag.style.display = 'none';
     if (btnStop) btnStop.style.display = '';
     if (prog) {
-      prog.style.display = '';
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
       prog.textContent = 'Tagging... ' + done + '/' + total + ' (' + pct + '%)';
     }
+    if (chip) chip.style.display = '';
   } else {
     btnTag.style.display = '';
     if (btnStop) btnStop.style.display = 'none';
-    if (prog) { prog.style.display = 'none'; prog.textContent = ''; }
+    if (prog) prog.textContent = '';
+    if (chip) chip.style.display = 'none';
   }
 }
 
@@ -2752,17 +2760,18 @@ function updateDownloadControls(done, total, finished = false) {
   const btnCancel = document.getElementById('btn-tts-download-cancel');
   const prog = document.getElementById('tts-download-progress');
   if (!btnDl) return;
+  const chip = document.getElementById('ind-tts-compile');
   if (finished || !tts.downloading) {
     btnDl.style.display = '';
     btnCancel.style.display = 'none';
-    prog.style.display = 'none';
-    prog.textContent = '';
+    if (prog) prog.textContent = '';
+    if (chip) chip.style.display = 'none';
   } else {
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
     btnDl.style.display = 'none';
     btnCancel.style.display = '';
-    prog.style.display = '';
-    prog.textContent = 'Compiling... ' + done + '/' + total + ' (' + pct + '%)';
+    if (prog) prog.textContent = 'Compiling... ' + done + '/' + total + ' (' + pct + '%)';
+    if (chip) chip.style.display = '';
   }
 }
 
