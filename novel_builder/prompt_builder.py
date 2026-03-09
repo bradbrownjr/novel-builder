@@ -164,9 +164,8 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
         roster_lines = []
         for char_id, char_data in characters.items():
             # Only include characters that have appeared or are in this scene.
-            # Note: do NOT short-circuit when appeared_ids is empty -- that
-            # would include every character (including late-story characters)
-            # in scene 1 before anyone has appeared yet.
+            # NOTE: do NOT short-circuit when appeared_ids is empty -- that
+            # would leak every character in the story into scene 1's roster.
             if char_id not in appeared_ids:
                 continue
             name = char_data.get("Name") or char_data.get("name", "")
@@ -382,7 +381,12 @@ def _build_character_block(scene, all_characters, heritage_defs,
     if explicit_chars:
         present_ids = list(explicit_chars)
     else:
-        present_ids = auto_detect_characters(scene_text, all_characters)
+        # Only auto-detect characters that have already appeared in the story.
+        # This prevents future characters (not yet introduced) from being
+        # pulled into a scene's bio block via a name mention in the YAML.
+        appeared = set(appearance_history.keys())
+        present_ids = auto_detect_characters(scene_text, all_characters,
+                                             allowed_ids=appeared if appeared else None)
 
     if not present_ids:
         return ""
@@ -578,7 +582,9 @@ def _inject_imagery_suppression(parts, state, setting_ref, scene, all_characters
         char_ids = list(explicit_chars)
     else:
         scene_text = f"{scene.get('events', '')} {scene.get('notes', '')}"
-        char_ids = auto_detect_characters(scene_text, all_characters)
+        appeared = set(state.get("character_appearances", {}).keys())
+        char_ids = auto_detect_characters(scene_text, all_characters,
+                                          allowed_ids=appeared if appeared else None)
 
     imagery = get_used_imagery(state, setting_id=setting_ref or None,
                                char_ids=char_ids)

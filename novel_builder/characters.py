@@ -25,18 +25,24 @@ def load_characters(config):
     return config.get("characters", {})
 
 
-def auto_detect_characters(text, characters):
+def auto_detect_characters(text, characters, allowed_ids=None):
     """Scan text for mentions of character IDs or Names.
 
     Args:
         text: Text to scan (scene events, notes, etc.).
         characters: Dict of character_id -> character_data.
+        allowed_ids: Optional set/list of character IDs to consider.
+            When provided, only characters in this set are matched.
+            Use this to prevent future characters from being detected
+            in scenes that occur before their intended introduction.
 
     Returns:
         List of detected character IDs.
     """
     detected = set()
     for char_id, info in characters.items():
+        if allowed_ids is not None and char_id not in allowed_ids:
+            continue
         search_terms = [char_id]
         if isinstance(info, dict):
             name = info.get("Name") or info.get("name", "")
