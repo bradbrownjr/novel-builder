@@ -185,14 +185,18 @@ def _run_generation(config, args, event_callback=None):
             emit("progress", chapter=ch_num, total_chapters=total_chapters,
                  scene=scenes_completed, total_scenes=all_scene_count, percent=pct)
 
-            # Detect characters
+            # Detect characters -- limit auto-detection to characters that
+            # have already appeared so future characters can't leak in via
+            # a name mention in the scene YAML.
             scene_text = f"{scene.get('events', '')} {scene.get('notes', '')}"
             explicit_chars = scene.get("characters", [])
             if explicit_chars:
                 present_ids = list(explicit_chars)
             else:
+                appeared = set(state.get("character_appearances", {}).keys())
                 present_ids = auto_detect_characters(
-                    scene_text, all_characters)
+                    scene_text, all_characters,
+                    allowed_ids=appeared if appeared else None)
             if present_ids:
                 names = [
                     (all_characters.get(cid, {}).get("Name") or cid)
@@ -402,8 +406,10 @@ def _dry_run(config, chapters, state, heritage_defs,
             if explicit_chars:
                 present_ids = list(explicit_chars)
             else:
+                appeared = set(state.get("character_appearances", {}).keys())
                 present_ids = auto_detect_characters(
-                    scene_text, all_characters)
+                    scene_text, all_characters,
+                    allowed_ids=appeared if appeared else None)
 
             system_prompt = build_system_prompt(
                 config, state=state, scene_char_ids=present_ids,
@@ -608,7 +614,10 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
     if explicit_chars:
         present_ids = list(explicit_chars)
     else:
-        present_ids = auto_detect_characters(scene_text, all_characters)
+        appeared = set(state.get("character_appearances", {}).keys())
+        present_ids = auto_detect_characters(
+            scene_text, all_characters,
+            allowed_ids=appeared if appeared else None)
 
     # Build prompts
     system_prompt = build_system_prompt(
