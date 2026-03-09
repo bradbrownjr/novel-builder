@@ -32,7 +32,7 @@ Before any large file rewrite, verify every row in the affected file column is p
 | Story generation (CLI + web) | story_processor.py, web.py | `generate_story()`, `process_scene()`, `/api/generate` |
 | Checkpoint / resume | state.py, web.py | `save_checkpoint()`, `load_checkpoint()`, `/api/status` |
 | Web UI (all tabs) | web.py, templates/index.html | `run_server()`, all `/api/*` routes |
-| TTS Read Aloud | web.py, templates/index.html | `/api/tts/*`, `const tts`, `btn-tts-play`, `btn-tts-stop` |
+| TTS Read Aloud | web.py, tts.py, templates/index.html | `/api/tts/*`, `parse_span_segments()`, `parseSpanSegments()`, `const tts`, `btn-tts-play`, `btn-tts-stop` |
 | TTS Download MP3 with chapters | web.py, templates/index.html | `/api/tts/add-chapters`, `downloadAudiobook()` |
 | AI Consult (YAML audit) | consult.py, web.py | `/api/consult`, `/api/consult-apply` |
 | Scene / chapter regeneration | story_processor.py, web.py | `regenerate_scene()`, `/api/regenerate` |
@@ -73,7 +73,7 @@ novel_builder/
 ├── locations.py          # load_locations(), resolve_location()
 ├── yaml_io.py            # load_yaml(), save_yaml()
 ├── postprocess.py        # clean_scene_text(), apply_anti_patterns()
-├── tts.py                # segment_text_for_tts(), _find_speaker(), _name_matches_attribution()
+├── tts.py                # parse_span_segments(), _has_spoken_dialogue()
 ├── web.py                # Flask web UI, TTS proxy, /api/memory (GET+POST), /api/regenerate, /api/download (marker-stripped), /api/ollama-pull (model download), /api/consult (AI audit)
 ├── consult.py            # AI-powered YAML audit: multi-pass analysis prompts, fix generation
 └── validator.py          # validate_all()
@@ -154,6 +154,7 @@ _(Track fixes here for reference.)_
 - Used Imagery tracking -- summary model extracts distinctive descriptive phrases; stored per-location and per-character in checkpoint; injected as suppression context to prevent repetitive descriptions across scenes.\n- Consult Generate Fix errors and crossref fix support -- fixed fix generation errors, added crossref multi-file fix support, diff view, download, fix persistence across page refresh, and \"Generate All Fixes\" button.\n- Content policy -- anti-censorship directives in all prompts (consult analysis, fix generation, story generation).
 - TTS Read Aloud and MP3 download restored -- lost in the fcafc95 UI rewrite, fully restored. Four API routes (/api/tts/health, /api/tts/voices, /api/tts/speak, /api/tts/segments), TTS config card in Setup tab, Read Aloud/Pause/Stop controls and Download MP3 button in Output tab, header status indicators.
 - TTS Download MP3 with chapters -- MP3 audiobook download now embeds ID3v2 CHAP/CTOC chapter markers. Each `<!-- chapter:N -->` boundary in the output file maps to a chapter in the tagged MP3, with time offsets interpolated from byte offsets. Requires `mutagen>=1.47`. Route: `/api/tts/add-chapters` (multipart: mp3 file + chapters JSON). Falls back to untagged MP3 gracefully if tagging fails or only one chapter is present.
+- Inline TTS voice tagging -- voice attribution now happens during scene generation, not as a post-processing pass. The generation model wraps spoken dialogue in `<span data-tts="CharacterName">` tags inline. Removed: heuristic attribution engine (`segment_text_for_tts`), model-based tagger (`tag_dialogue_with_model`, `tag_scene_text_with_spans`), tagging routes (`/api/tts/tag-story`, `/api/tts/tag-status`, `/api/tts/tag-stop`), tagging UI (buttons, header chip, config inputs). `tts.py` reduced from 847 lines to ~90 lines. `parse_span_segments()` parses inline spans for TTS playback. `prompt_builder.py` injects tagging instructions when `_tts_voice_map` is present in config.
 
 ## Scene Marker Format
 

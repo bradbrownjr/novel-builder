@@ -204,6 +204,30 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
         "Write only the narrative prose."
     )
 
+    # TTS voice tagging — when voice map is configured, instruct the model
+    # to wrap spoken dialogue in <span data-tts="CharacterName"> tags
+    tts_voice_map = config.get("_tts_voice_map")
+    if tts_voice_map:
+        tagged_names = [n for n in tts_voice_map if n.lower() != "narrator"]
+        if tagged_names:
+            names_str = ", ".join(tagged_names)
+            parts.append(
+                "\nAUDIOBOOK VOICE TAGGING:"
+                "\nWrap each character's spoken dialogue in a span tag for "
+                "text-to-speech voice assignment. Use this exact format:"
+                '\n  <span data-tts="CharacterName">"Dialogue here."</span>'
+                "\nRules:"
+                f"\n- Tag dialogue for these characters: {names_str}"
+                "\n- Only tag actual spoken dialogue (words characters say "
+                "out loud to each other)"
+                "\n- Do NOT tag: signs, letters, notes, inscriptions, "
+                "written text, internal thoughts, narration"
+                "\n- Do NOT tag dialogue from unnamed or minor characters "
+                "without a voice assignment"
+                "\n- Place the span around the quotation marks"
+                "\n- Leave all narration and action untagged"
+            )
+
     return "\n".join(parts)
 
 
