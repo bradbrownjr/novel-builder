@@ -23,6 +23,7 @@ from .state import (
     save_checkpoint,
     should_resume,
     update_after_scene,
+    update_word_frequency,
     resumption_point,
     should_compress,
     compress_story_so_far,
@@ -266,6 +267,9 @@ def _run_generation(config, args, event_callback=None):
             # Print to terminal (unless quiet)
             if not args.quiet:
                 _print_scene(text)
+
+            # Track sensory/atmospheric word frequency for variety nudges
+            update_word_frequency(state, text)
 
             # Summarize scene
             summary = ""
@@ -695,6 +699,9 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
         emit("log", message=f"Summary failed for regen: {e}", level="warn")
     if _models_differ:
         unload_model(args.host, getattr(args, 'summary_model', args.model), emit if event_callback else None)
+
+    # Track sensory/atmospheric word frequency for variety nudges
+    update_word_frequency(state, text)
 
     # Update checkpoint — clear stale memory for this scene, then re-merge fresh extraction
     from .state import _merge_story_memory, _sanitize_story_memory, _clear_scene_memory, _MAX_RECENT_SCENES

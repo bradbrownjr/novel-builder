@@ -9,6 +9,44 @@ from .yaml_io import load_yaml_optional, save_yaml
 
 _CHECKPOINT_FILE = "checkpoint.yaml"
 _MAX_RECENT_SCENES = 3
+_MAX_OVERUSED_WORDS_INJECTED = 12  # cap per prompt injection
+_WORD_FREQ_THRESHOLD = 3          # uses before a word is flagged as overused
+# Split by category so the prompt can group them meaningfully.
+_SENSORY_WATCH_WORDS = {
+    "sound": [
+        "groan", "creak", "sigh", "rustle", "thud", "clatter", "hum", "buzz",
+        "rumble", "rattle", "click", "crack", "snap", "pop", "whir", "drone",
+        "murmur", "whisper", "scrape", "shuffle", "clunk", "bang", "tap",
+        "tick", "whine", "screech", "squeak", "crunch", "splash", "clang",
+        "thump", "whoosh", "hiss", "boom", "echo", "reverberate",
+    ],
+    "sight": [
+        "gleam", "shimmer", "flicker", "glow", "glint", "glimmer", "dapple",
+        "bleak", "stark", "ashen", "muted", "hollow", "vacant", "dim",
+        "pallid", "wan", "haggard", "bleary", "murky", "hazy", "shadowy",
+        "looming", "glare", "blaze", "smolder",
+    ],
+    "smell": [
+        "musty", "acrid", "stale", "damp", "earthy", "pungent", "fetid",
+        "woody", "dusty", "smoky", "sour", "briny", "metallic", "antiseptic",
+    ],
+    "touch": [
+        "coarse", "slick", "gritty", "sticky", "clammy", "rough", "craggy",
+        "bristly", "greasy", "clammy", "leathery",
+    ],
+    "atmosphere": [
+        "oppressive", "suffocating", "heavy", "thick", "eerie", "desolate",
+        "foreboding", "ominous", "bleak", "dreary", "dismal", "somber",
+        "gloomy", "sullen", "brooding",
+    ],
+}
+
+# Flat lookup: word -> category
+_WATCH_WORD_CATEGORY = {
+    word: cat
+    for cat, words in _SENSORY_WATCH_WORDS.items()
+    for word in words
+}
 _MAX_MEMORY_CHARACTERS = 20
 _RECENT_ALWAYS_INJECT = 5  # always-inject memory from last N scenes
 _COMPRESSION_INTERVAL = 5  # compress story_so_far every N scenes
@@ -221,6 +259,7 @@ def init_state(config, output_file):
         "story_so_far": "",
         "recent_scenes": [],
         "character_appearances": {},
+        "word_frequency": {},
         "story_memory": {
             "characters": {},
             "facts": [],
@@ -710,7 +749,51 @@ def get_used_imagery(state, setting_id=None, char_ids=None):
     }
 
 
-def resumption_point(state, chapters):
+def update_word_frequency(state, scene_text):
+    """Scan scene text for sensory/atmospheric watch words and accumulate counts.
+
+    Updates state["word_frequency"] in place.  This data is later read by
+    the prompt builder to inject a variety nudge for words used too often.
+
+    Args:
+        state: Checkpoint state dict (mutated).
+        scene_text: The generated scene text string.
+    """
+    freq = state.setdefault("word_frequency", {})
+    # Tokenize: lowercase, strip punctuation, split on whitespace
+    tokens = re.sub(r"[^\w\s]", " ", scene_text.lower()).split()
+    for token in tokens:
+        if token in _WATCH_WORD_CATEGORY:
+            freq[token] = freq.get(token, 0) + 1
+
+
+def get_overused_words(state, threshold=None):
+    """Return watch-list words that have been used at or above the threshold.
+
+    Results are grouped by sensory category so the prompt can present
+    them in a readable way.
+
+    Args:
+        state: Checkpoint state dict.
+        threshold: Minimum use count to flag (default: _WORD_FREQ_THRESHOLD).
+
+    Returns:
+        Dict of category -> list of (word, count) tuples, sorted by count
+        descending.  Only categories with at least one overused word are
+        included.
+    """
+    if threshold is None:
+        threshold = _WORD_FREQ_THRESHOLD
+    freq = state.get("word_frequency", {})
+    by_category = {}
+    for word, count in freq.items():
+        if count >= threshold:
+            cat = _WATCH_WORD_CATEGORY.get(word, "other")
+            by_category.setdefault(cat, []).append((word, count))
+    # Sort each category by count descending
+    for cat in by_category:
+        by_category[cat].sort(key=lambda x: x[1], reverse=True)
+    return by_category
     """Determine where to resume generation.
 
     Args:

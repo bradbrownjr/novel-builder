@@ -14,7 +14,7 @@ from .characters import (
     should_include_secret,
 )
 from .locations import resolve_location, format_location_for_prompt
-from .state import get_relevant_memory, get_used_imagery
+from .state import get_relevant_memory, get_used_imagery, get_overused_words
 
 
 # ---------------------------------------------------------------------------
@@ -360,6 +360,9 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
     # -- Used imagery suppression (avoid repeating distinctive descriptions) --
     _inject_imagery_suppression(parts, state, setting_ref, scene, all_characters)
 
+    # -- Overused word nudge (sensory/atmospheric variety) --
+    _inject_word_variety_nudge(parts, state)
+
     # -- Story so far (condensed) --
     story_so_far = state.get("story_so_far", "")
     if story_so_far:
@@ -662,5 +665,41 @@ def _inject_imagery_suppression(parts, state, setting_ref, scene, all_characters
         lines.append("  Previously used imagery:")
         for phrase in global_phrases:
             lines.append(f"    - \"{phrase}\"")
+
+    parts.append("\n".join(lines))
+
+
+def _inject_word_variety_nudge(parts, state):
+    """Inject a nudge listing sensory/atmospheric words used too frequently.
+
+    Reads accumulated word frequency from state and groups words by
+    category (sound, sight, smell, touch, atmosphere).  Only fires when
+    at least one word has hit the threshold (default 3 uses).  Caps the
+    total words injected to keep the token footprint small.
+    """
+    from .state import _MAX_OVERUSED_WORDS_INJECTED
+    overused = get_overused_words(state)
+    if not overused:
+        return
+
+    category_labels = {
+        "sound": "Sound words",
+        "sight": "Sight/light words",
+        "smell": "Smell words",
+        "touch": "Touch/texture words",
+        "atmosphere": "Atmosphere words",
+    }
+
+    lines = ["Word variety \u2014 these words have appeared often in the story already. "
+             "Use them sparingly here; reach for fresher, more specific alternatives:"]
+    total = 0
+    for cat, pairs in overused.items():
+        if total >= _MAX_OVERUSED_WORDS_INJECTED:
+            break
+        label = category_labels.get(cat, cat.capitalize())
+        chunk = pairs[:_MAX_OVERUSED_WORDS_INJECTED - total]
+        word_list = ", ".join(f"{w} ({n}x)" for w, n in chunk)
+        lines.append(f"  {label}: {word_list}")
+        total += len(chunk)
 
     parts.append("\n".join(lines))
