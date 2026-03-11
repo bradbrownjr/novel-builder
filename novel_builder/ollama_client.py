@@ -185,7 +185,7 @@ class _OllamaWatchdog:
 
 
 def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
-                temperature=0.85, num_ctx=12288, emit_callback=None):
+                temperature=0.9, num_ctx=12288, emit_callback=None):
     """Make a single streaming call to the Ollama /api/generate endpoint.
 
     Uses stream=True with no read timeout to prevent false timeouts on
@@ -222,7 +222,7 @@ def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
         "options": {
             "num_ctx": num_ctx,
             "temperature": temperature,
-            "top_p": 0.92,
+            "top_p": 0.95,
             "presence_penalty": 0.2,
             "repeat_penalty": 1.15,
         },
@@ -342,7 +342,7 @@ def unload_model(host, model, emit_callback=None):
 
 
 def call_ollama_with_retry(host, model, system_prompt, user_prompt,
-                           timeout=900, retries=5, temperature=0.85,
+                           timeout=900, retries=5, temperature=0.9,
                            num_ctx=12288, emit_callback=None):
     """Call Ollama with exponential backoff retry logic.
 
