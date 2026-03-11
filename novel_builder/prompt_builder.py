@@ -133,7 +133,15 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
         if arc.get("genre"):
             parts.append(f"\nGenre: {arc['genre']}")
         if arc.get("tone"):
-            parts.append(f"Tone: {arc['tone']}")
+            parts.append(
+                f"Tone: {arc['tone']} "
+                "This is the narrator's emotional lens, not a mandate for every "
+                "moment. The world contains warmth, humor, charm, and lightness "
+                "even when the POV character is hurting. Let scenes breathe -- "
+                "a warm setting, a funny exchange, or an unexpected moment of "
+                "beauty can coexist with the character's inner state, and often "
+                "lands more powerfully because of the contrast."
+            )
         if arc.get("themes"):
             themes = arc["themes"]
             if isinstance(themes, list):
@@ -195,7 +203,10 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
     parts.append(
         f"\nIMPORTANT — Avoid these overused phrases and patterns: "
         f"{patterns_str}. "
-        "Use fresh, original language instead."
+        "Use fresh, original language instead. "
+        "Vary your vocabulary relentlessly — do not repeat the same atmospheric "
+        "sound words, action verbs, or emotional descriptors across scenes. "
+        "If a word or phrase was already used in the story, find a sharper alternative."
     )
 
     # Do NOT impose word count
