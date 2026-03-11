@@ -201,6 +201,7 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
     # Do NOT impose word count
     parts.append(
         "\nDo not include scene headers, titles, or meta-commentary. "
+        "Do not use markdown formatting (**bold**, *italic*, etc.) anywhere in the prose. "
         "Write only the narrative prose."
     )
 
@@ -318,6 +319,11 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
     )
     if char_block:
         parts.append(f"\nCharacters in this scene:\n{char_block}")
+        parts.append(
+            "Only the characters listed above are present and active in this scene. "
+            "Any other people referenced in the notes are background context only -- "
+            "do not write them as present, speaking, or taking action in the scene."
+        )
 
     # -- Narrative hooks --
     hook_text = _get_relevant_hook(config, scene)
@@ -436,9 +442,9 @@ def _build_character_block(scene, all_characters, heritage_defs,
         if context.get("appearance"):
             lines.append(f"  Appearance: {context['appearance']}")
 
-        # Vibe — always
+        # Vibe — always; phrased as a directive so the LLM treats it as a constraint
         if context.get("vibe"):
-            lines.append(f"  Vibe: {context['vibe']}")
+            lines.append(f"  Tone and manner, always maintain: {context['vibe']}")
 
         # Summary (first appearance only)
         if context.get("summary"):

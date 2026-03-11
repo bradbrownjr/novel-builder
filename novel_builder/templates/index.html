@@ -2037,7 +2037,7 @@ function buildToc(entries) {
       const viewer = document.getElementById('output-viewer');
       const target = document.getElementById(entry.id);
       if (target) {
-        viewer.scrollTop = target.offsetTop - 8;
+        viewer.scrollTop += target.getBoundingClientRect().top - viewer.getBoundingClientRect().top - 8;
         target.style.transition = 'background .15s';
         target.style.background = 'rgba(138,180,248,.18)';
         setTimeout(() => { target.style.background = ''; }, 900);
