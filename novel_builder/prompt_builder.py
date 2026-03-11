@@ -201,7 +201,9 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
     # Do NOT impose word count
     parts.append(
         "\nDo not include scene headers, titles, or meta-commentary. "
-        "Do not use markdown formatting (**bold**, *italic*, etc.) anywhere in the prose. "
+        "Do not use markdown formatting (**bold**, *italic*, etc.) to annotate, "
+        "flag, or call attention to character names or story elements. "
+        "Use bold or italic only when the prose itself calls for emphasis. "
         "Write only the narrative prose."
     )
 
