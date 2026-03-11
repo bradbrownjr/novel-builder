@@ -644,9 +644,21 @@ def _start_generation(web_config):
         except (OSError, _yaml.YAMLError):
             pass
 
-    # Inject TTS voice map so prompt builder can add voice tagging instructions
-    if web_config.get("tts_voice_map"):
-        config["_tts_voice_map"] = web_config["tts_voice_map"]
+    # Inject TTS voice map so prompt builder can add voice tagging instructions.
+    # Merge tts_voice fields from characters.yaml with any manually saved voice
+    # assignments.  yaml-defined voices take lower priority; saved config wins.
+    yaml_voices = {}
+    for char_id, char_data in config.get("characters", {}).items():
+        if not isinstance(char_data, dict):
+            continue
+        voice = char_data.get("tts_voice", "")
+        if voice:
+            name = char_data.get("Name") or char_data.get("name", char_id)
+            yaml_voices[name] = voice
+    saved_voice_map = web_config.get("tts_voice_map") or {}
+    merged_voice_map = {**yaml_voices, **saved_voice_map}
+    if merged_voice_map:
+        config["_tts_voice_map"] = merged_voice_map
 
     # Reset state and start
     state.reset()
