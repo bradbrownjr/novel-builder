@@ -79,6 +79,16 @@ def clean_scene_text(text):
     text = re.sub(r"^```(?:markdown|text|md)?\s*\n", "", text)
     text = re.sub(r"\n```\s*$", "", text)
 
+    # Fix TTS voice-tag duplication -- when the model writes dialogue both
+    # untagged and tagged, e.g.:
+    #   "Hello!" <span data-tts="Name">"Hello!"</span>
+    # Collapse to just the tagged version.
+    text = re.sub(
+        r'"([^"]+)"\s*(<span\s+data-tts="[^"]+">"\1"</span>)',
+        r"\2",
+        text,
+    )
+
     return text.strip()
 
 
