@@ -121,6 +121,7 @@ def _run_generation(config, args, event_callback=None):
         start_ch, start_sc = resumption_point(state, chapters)
         print(f"\nResuming from Chapter {start_ch + 1}, "
               f"Scene index {start_sc}...")
+        emit("log", message=f"Resuming from Chapter {start_ch + 1}, scene index {start_sc}", level="info")
     else:
         state = init_state(config, output_file)
         start_ch, start_sc = 0, 0
@@ -147,8 +148,11 @@ def _run_generation(config, args, event_callback=None):
     emit("progress", chapter=start_ch + 1, total_chapters=total_chapters,
          scene=scenes_completed, total_scenes=all_scene_count,
          percent=int(100 * scenes_completed / all_scene_count) if all_scene_count else 0)
-    emit("log", message=f"Starting: {config.get('story_title', 'Untitled')} "
-         f"— {total_chapters} chapters, {all_scene_count} scenes", level="info")
+    emit("log", message=(
+        f"Starting: {config.get('story_title', 'Untitled')} -- "
+        f"{total_chapters} chapters, {all_scene_count} scenes | "
+        f"Model: {args.model} | Output: {output_file}"
+    ), level="info")
 
     for ch_idx in range(start_ch, total_chapters):
         if _shutdown_requested:
@@ -200,12 +204,21 @@ def _run_generation(config, args, event_callback=None):
                 present_ids = auto_detect_characters(
                     scene_text, all_characters,
                     allowed_ids=appeared if appeared else None)
+            setting_ref = scene.get("setting", "")
             if present_ids:
                 names = [
                     (all_characters.get(cid, {}).get("Name") or cid)
                     for cid in present_ids
                 ]
                 print(f"    Characters: {', '.join(names)}")
+                _scene_detail = f"Characters: {', '.join(names)}"
+            else:
+                print(f"    Characters: (none detected)")
+                _scene_detail = "Characters: (none detected)"
+            if setting_ref:
+                print(f"    Setting: {setting_ref}")
+                _scene_detail += f" | Setting: {setting_ref}"
+            emit("log", message=_scene_detail, level="info")
 
             # Build system + scene prompts (system prompt is per-scene
             # because the character roster is scoped to known characters)
@@ -261,6 +274,8 @@ def _run_generation(config, args, event_callback=None):
                 return
             _scene_gen_elapsed = round(time.time() - _scene_gen_t0, 1)
             emit("model_active", model="idle", name="")
+            print(f"    Generated in {_scene_gen_elapsed}s")
+            emit("log", message=f"Scene {scene_num} generated in {_scene_gen_elapsed}s", level="info")
 
             # Post-process
             text = clean_scene_text(raw_text)
@@ -272,6 +287,10 @@ def _run_generation(config, args, event_callback=None):
                 print(f"    Anti-pattern warnings: {len(warnings)}")
                 for pat, match, line in warnings[:3]:
                     print(f"      Line {line}: \"{match}\"")
+                emit("log", message=(
+                    f"Anti-pattern warnings ({len(warnings)}): "
+                    + "; ".join(f'"{m}" (line {ln})' for _, m, ln in warnings[:3])
+                ), level="warn")
 
             # Write to file
             _write_scene(output_file, scene_num, scene_title, text)
@@ -313,6 +332,7 @@ def _run_generation(config, args, event_callback=None):
                     scene_meta=scene_meta,
                 )
                 print(f"    Summary: {summary[:100]}...")
+                emit("log", message=f"Summary: {summary[:120]}", level="info")
                 _exlog = (
                     f"Extracted: {len(extraction.get('facts', []))} fact(s), "
                     f"{len(extraction.get('actions', []))} action(s), "
