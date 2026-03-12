@@ -191,6 +191,8 @@ def _run_generation(config, args, event_callback=None):
             # a name mention in the scene YAML.
             scene_text = f"{scene.get('events', '')} {scene.get('notes', '')}"
             explicit_chars = scene.get("characters", [])
+            if isinstance(explicit_chars, str):
+                explicit_chars = [explicit_chars] if explicit_chars else []
             if explicit_chars:
                 present_ids = list(explicit_chars)
             else:
