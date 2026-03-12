@@ -97,6 +97,7 @@ def load_config(args):
         # Outline fields
         "story_title": outline_data.get("story_title", "Untitled"),
         "overall_arc": outline_data.get("overall_arc", {}),
+        "pov_character": outline_data.get("pov_character", ""),
         "style_directives": outline_data.get("style_directives", ""),
         "world": outline_data.get("world", ""),
         "anti_patterns": outline_data.get("anti_patterns", []),

@@ -147,10 +147,19 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
             if isinstance(themes, list):
                 themes = ", ".join(themes)
             parts.append(f"Themes: {themes}")
-        if arc.get("pov"):
+        pov_text = arc.get("pov", "")
+        pov_char = config.get("pov_character", "")
+        if pov_text:
             parts.append(
-                f"Point of view: {arc['pov']} "
+                f"Point of view: {pov_text} "
                 "Write the entire story in this narrative voice. "
+                "Never shift away from this POV."
+            )
+        elif pov_char:
+            parts.append(
+                f"Point of view: First-person, from {pov_char}'s perspective. "
+                f"Write the entire story in {pov_char}'s voice using 'I', "
+                "not 'he', 'she', or 'they'. "
                 "Never shift away from this POV."
             )
     elif isinstance(arc, str) and arc:
