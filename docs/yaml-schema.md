@@ -21,7 +21,9 @@ CLI flags (`--outline`, `--characters`, `--locations`) override auto-discovery.
 
 ```yaml
 # ─── Story Metadata ───────────────────────────────────────────────
-story_title: "The Last Lighthouse"pov_character: "Silas Marsh"     # Optional. First-person narrator — used by TTS to attribute "I said/asked" to this character
+story_title: "The Last Lighthouse"
+pov_character: "Silas Marsh"     # Optional. First-person narrator. Drives both
+                                 # generation (POV voice) and TTS attribution.
 style_directives: >
   Write grounded literary fiction with sensory detail.
   Favor dry humor over melodrama. Avoid purple prose.
@@ -113,14 +115,14 @@ chapters:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `story_title` | string | Yes | Title of the story |
-| `pov_character` | string | No | Full name of the first-person narrator. When set, `I said/asked/etc.` patterns in TTS attribution are assigned to this character rather than falling through to alternation |
+| `pov_character` | string | No | Full name of the first-person narrator. When set: (1) the generation prompt automatically instructs the AI to write in first-person from this character's perspective, (2) TTS attributes `I said/asked/etc.` patterns to this character. For first-person stories, this field alone is sufficient -- `overall_arc.pov` can be omitted. |
 | `style_directives` | string | No | Global writing style instructions for the AI |
 | `world` | string | No | Global setting context (era, genre rules, tech level) — included in every prompt |
 | `overall_arc` | object | No | Genre, theme, tone, and POV for the story |
 | `overall_arc.genre` | string | No | Genre e.g. `literary fiction`, `dark fantasy` |
 | `overall_arc.themes` | string or list | No | Central theme(s) |
 | `overall_arc.tone` | string | No | Narrative tone/mood |
-| `overall_arc.pov` | string | No | Point of view — applied to every scene unless overridden per-scene |
+| `overall_arc.pov` | string | No | Point of view -- applied to every scene unless overridden per-scene. Optional for first-person stories: if `pov_character` is set and this field is absent, the generation prompt is automatically synthesized from `pov_character`. Use this field for third-person or multi-POV stories where a character name alone is not sufficient. |
 | `anti_patterns` | list of strings | No | Additional AI phrases/clichés to suppress (built-in defaults always active) |
 | `narrative_hooks` | list | No | Story-level plot beats (see below) |
 | `chapters` | list | Yes | Chapter definitions |
