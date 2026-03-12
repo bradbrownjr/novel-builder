@@ -309,7 +309,7 @@ def _run_generation(config, args, event_callback=None):
             # Free generation model memory before loading summary model
             if _models_differ:
                 unload_model(args.host, args.model, emit)
-            emit("model_active", model="summarization", name=getattr(args, 'summary_model', 'gemma3:1b'))
+            emit("model_active", model="summarization", name=getattr(args, 'summary_model', 'gemma3:4b'))
             setting_id = scene.get("setting", "") or ""
             try:
                 summary_model = args.summary_model
@@ -711,7 +711,7 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
     if _models_differ:
         unload_model(args.host, args.model, emit if event_callback else None)
     try:
-        emit("model_active", model="summarization", name=getattr(args, 'summary_model', 'gemma3:1b'))
+        emit("model_active", model="summarization", name=getattr(args, 'summary_model', 'gemma3:4b'))
         # Build scene meta for grounding
         char_names = []
         if scene and scene.get("characters"):
@@ -913,7 +913,7 @@ def rebuild_memories(config, args, event_callback=None):
         chapter_num = ch_num or 0
 
         emit("log", message=f"  Summarising scene {scene_id}…", level="info")
-        emit("model_active", model="summarization", name=getattr(args, "summary_model", "gemma3:1b"))
+        emit("model_active", model="summarization", name=getattr(args, "summary_model", "gemma3:4b"))
 
         try:
             summary, extraction = call_summary_model(
@@ -936,7 +936,7 @@ def rebuild_memories(config, args, event_callback=None):
     # Compress story_so_far if it's long
     try:
         emit("log", message="Compressing story summary…", level="info")
-        emit("model_active", model="summarization", name=getattr(args, "summary_model", "gemma3:1b"))
+        emit("model_active", model="summarization", name=getattr(args, "summary_model", "gemma3:4b"))
         compress_story_so_far(state, args.host, args.summary_model)
         emit("model_active", model="idle", name="")
     except Exception as e:

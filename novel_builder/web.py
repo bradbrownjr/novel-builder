@@ -509,7 +509,7 @@ def _load_web_config():
     return {
         "host": os.environ.get("OLLAMA_HOST", ""),
         "model": "gemma3:12b",
-        "summary_model": "gemma3:1b",
+        "summary_model": "gemma3:4b",
         "retries": 3,
         "timeout": 900,
         # TTS (Speaches / Kokoro / Piper)
@@ -581,7 +581,7 @@ def _start_generation(web_config):
     args = SimpleNamespace(
         host=_normalize_host(web_config.get("host", "")),
         model=web_config.get("model", "gemma3:12b"),
-        summary_model=web_config.get("summary_model", "gemma3:1b"),
+        summary_model=web_config.get("summary_model", "gemma3:4b"),
         retries=int(web_config.get("retries", 3)),
         timeout=int(web_config.get("timeout", 900)),
         num_ctx=int(web_config.get("generation_num_ctx", 8192)),
@@ -2371,8 +2371,8 @@ def api_voice_cast():
 
             cfg = _load_web_config()
             host = _normalize_host(cfg.get("host", ""))
-            model = cfg.get("model", "gemma3:12b")
-            consult_ctx = int(cfg.get("consult_num_ctx", 32768))
+            model = cfg.get("summary_model", "gemma3:4b")
+            cast_ctx = int(cfg.get("generation_num_ctx", 8192))
             timeout_s = max(int(cfg.get("timeout", 900)), 1800)
 
             if not host:
@@ -2432,7 +2432,7 @@ def api_voice_cast():
                     "prompt": user_prompt,
                     "stream": True,
                     "options": {
-                        "num_ctx": consult_ctx,
+                        "num_ctx": cast_ctx,
                         "temperature": 0.4,
                         "top_p": 0.9,
                     },
