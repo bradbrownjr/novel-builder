@@ -407,6 +407,8 @@ def _dry_run(config, chapters, state, heritage_defs,
             # Detect characters for roster scoping
             scene_text = f"{scene.get('events', '')} {scene.get('notes', '')}"
             explicit_chars = scene.get("characters", [])
+            if isinstance(explicit_chars, str):
+                explicit_chars = [explicit_chars] if explicit_chars else []
             if explicit_chars:
                 present_ids = list(explicit_chars)
             else:
@@ -615,6 +617,8 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
     # Detect characters for roster scoping
     scene_text = f"{scene.get('events', '')} {scene.get('notes', '')}"
     explicit_chars = scene.get("characters", [])
+    if isinstance(explicit_chars, str):
+        explicit_chars = [explicit_chars] if explicit_chars else []
     if explicit_chars:
         present_ids = list(explicit_chars)
     else:
