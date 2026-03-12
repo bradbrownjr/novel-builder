@@ -118,7 +118,7 @@ def _iget(d, *keys):
 # ---------------------------------------------------------------------------
 
 _KNOWN_OUTLINE_KEYS = {
-    "story_title", "overall_arc", "chapters", "style_directives",
+    "story_title", "overall_arc", "pov_character", "chapters", "style_directives",
     "anti_patterns", "narrative_hooks", "world", "characters",
     "heritage", "setting", "locations",
 }
