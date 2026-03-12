@@ -976,7 +976,11 @@ textarea {
 
   <!-- Story Concept Builder -->
   <div class="card" id="card-concept">
-    <h3>&#128161; Story Concept Builder</h3>
+    <div id="concept-header" onclick="toggleConcept()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;">
+      <h3 style="margin:0;">&#128161; Story Concept Builder</h3>
+      <span id="concept-chevron" style="font-size:.9rem;color:var(--text-dim);transition:transform .2s;">&#9660;</span>
+    </div>
+    <div id="concept-body" style="display:none;margin-top:.75rem;">
     <p style="font-size:.82rem;color:var(--text-dim);margin-bottom:.75rem;">
       Describe your story idea and let the AI build complete YAML files (outline, characters, locations) for you.
       Review, edit, then save to populate the file slots below.
@@ -1015,6 +1019,7 @@ textarea {
           <button class="btn btn-primary" onclick="saveAllConceptFiles()">Save All to Plan</button>
         </div>
       </div>
+    </div>
     </div>
   </div>
 
@@ -2946,6 +2951,7 @@ async function init() {
   // Restore consult results from server cache
   restoreConsult();
   restoreVoiceCast();
+  restoreConcept();
 
   // Load setup state
   loadPromptPresets();
@@ -3998,6 +4004,14 @@ async function saveCrossrefFixes() {
    ========================================================== */
 let _conceptRunning = false;
 
+function toggleConcept(forceOpen) {
+  const body = document.getElementById('concept-body');
+  const chevron = document.getElementById('concept-chevron');
+  const open = forceOpen !== undefined ? forceOpen : body.style.display === 'none';
+  body.style.display = open ? '' : 'none';
+  chevron.style.transform = open ? 'rotate(180deg)' : '';
+}
+
 async function startConcept() {
   const idea = document.getElementById('concept-idea').value.trim();
   if (!idea) { alert('Please describe your story idea first.'); return; }
@@ -4008,6 +4022,7 @@ async function startConcept() {
   const streamDiv = document.getElementById('concept-stream');
   const editorsDiv = document.getElementById('concept-editors');
 
+  toggleConcept(true);
   btn.disabled = true;
   btn.textContent = 'Building...';
   statusEl.textContent = 'Connecting...';
@@ -4313,6 +4328,33 @@ async function restoreVoiceCast() {
   }
 }
 
+async function restoreConcept() {
+  const r = await api('/api/concept/result');
+  if (!r || r.status === 'idle') return;
+  const streamDiv = document.getElementById('concept-stream');
+  const editorsDiv = document.getElementById('concept-editors');
+  const resultsDiv = document.getElementById('concept-results');
+  const statusEl = document.getElementById('concept-status');
+  const btn = document.getElementById('btn-concept');
+
+  toggleConcept(true);
+  if (r.text) {
+    resultsDiv.style.display = '';
+    streamDiv.style.display = '';
+    streamDiv.textContent = r.text;
+  }
+  if (r.status === 'done') {
+    statusEl.textContent = 'Done -- review and save below';
+    btn.textContent = 'Build Concept';
+    _parseConceptOutput(r.text || '');
+  } else if (r.status === 'error') {
+    statusEl.textContent = 'Error: ' + (r.error || 'unknown');
+    statusEl.style.color = 'var(--red)';
+  } else if (r.status === 'running') {
+    startConcept(); // Reconnect to running stream
+  }
+}
+
 /* ==========================================================
    Tab switch helper
    ========================================================== */
@@ -4538,6 +4580,7 @@ function switchTab(name) {
   // Re-sync consult state when switching to the consult tab (stream may have
   // finished while the user was on another tab)
   if (name === 'consult' && !consultRunning) { restoreConsult(); restoreVoiceCast(); }
+  if (name === 'plan' && !_conceptRunning) restoreConcept();
   // Refresh output when switching to the output tab so content stays current
   // after the browser was in the background or the user was on another tab
   if (name === 'output') refreshOutput();
