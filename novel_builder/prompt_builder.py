@@ -422,6 +422,8 @@ def _build_character_block(scene, all_characters, heritage_defs,
     """
     # Determine which characters are in this scene
     explicit_chars = scene.get("characters", [])
+    if isinstance(explicit_chars, str):
+        explicit_chars = [explicit_chars] if explicit_chars else []
     scene_text = f"{scene.get('events', '')} {scene.get('notes', '')}"
 
     if explicit_chars:
@@ -624,6 +626,8 @@ def _inject_imagery_suppression(parts, state, setting_ref, scene, all_characters
     """
     # Determine which character IDs are present
     explicit_chars = scene.get("characters", [])
+    if isinstance(explicit_chars, str):
+        explicit_chars = [explicit_chars] if explicit_chars else []
     if explicit_chars:
         char_ids = list(explicit_chars)
     else:
