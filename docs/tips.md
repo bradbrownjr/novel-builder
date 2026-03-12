@@ -63,9 +63,9 @@ Characters can change across the story. Add evolution notes that get injected af
 
 ```yaml
 evolution:
-  - after: 1.3
+  - after_chapter: 2
     note: "Now distrustful of authority after the betrayal."
-  - after: 3.1
+  - after_chapter: 4
     note: "Starting to open up. Less guarded in dialogue."
 ```
 

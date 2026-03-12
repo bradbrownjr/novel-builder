@@ -18,7 +18,7 @@ python novel-builder.py [OPTIONS]
 |---|---|---|
 | `--host HOST` | `$OLLAMA_HOST` | Ollama host URL. If not set, prompts interactively. |
 | `--model MODEL` | `gemma3:12b` | Model for scene generation. |
-| `--summary-model MODEL` | `gemma3:1b` | Model for scene summarization. |
+| `--summary-model MODEL` | `gemma3:4b` | Model for scene summarization. |
 | `--outline FILE` | auto-discovered | Story outline YAML file. |
 | `--characters FILE` | auto-discovered | Characters YAML file. |
 | `--locations FILE` | auto-discovered | Locations/settings YAML file. |
@@ -26,7 +26,7 @@ python novel-builder.py [OPTIONS]
 | `--resume` | — | Resume from last checkpoint without prompting. |
 | `--restart` | — | Ignore checkpoint, start fresh. |
 | `--quiet` | — | Suppress terminal output of generated scenes. |
-| `--retries N` | `3` | Retry attempts on Ollama failure. |
+| `--retries N` | `5` | Retry attempts on Ollama failure. |
 | `--timeout SECS` | `900` | Ollama request timeout in seconds. |
 | `--dry-run` | — | Parse YAML and show generation plan. No LLM calls. |
 | `--chapter N` | — | Generate only chapter N. |

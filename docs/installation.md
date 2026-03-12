@@ -33,7 +33,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Dependencies are minimal: `pyyaml`, `requests`, and `flask`.
+Dependencies are minimal: `pyyaml`, `requests`, `flask`, and `mutagen`.
 
 ## Installing Ollama
 
@@ -44,7 +44,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 # Pull models
 ollama pull gemma3:12b     # Generation model
-ollama pull gemma3:1b      # Summary model (fast, lightweight)
+ollama pull gemma3:4b      # Summary model
 
 # Verify it's running
 curl http://localhost:11434/api/tags

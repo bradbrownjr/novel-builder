@@ -16,28 +16,57 @@ Opens on `http://0.0.0.0:8080`. Accessible from any device on your LAN.
 python -m novel_builder --web --port 9090
 ```
 
-## Setup Tab
+## Tabs
+
+The interface is organized as a wizard-style flow: **Setup → Plan → Consult → Logs → Memory → Output**
+
+### Setup Tab
 
 | Feature | Details |
 |---|---|
 | **Ollama Host** | Enter the IP/URL of your Ollama server (e.g., `http://10.6.26.3:11434`). Saved to `workspace/web_config.json` — you set it once and it persists across restarts. |
-| **Model selection** | Choose your generation model and summary model. |
+| **Model selection** | Choose your generation and summary models from a dropdown of recommended options (with RAM estimates), or type any model name. If a model isn't installed, a Pull button fetches it from Ollama. |
 | **Retries & timeout** | Configure retry attempts and timeout per request. |
 | **File upload** | Upload, drag-drop, paste, or type YAML files for outline, characters, locations, and custom style prompt. Each file shows status, size, and timestamp. |
 | **Edit / Export / Delete** | Edit any file in-browser, export it as a download, or remove it. |
-| **Parsed data preview** | After uploading, see a summary of what's loaded: story title, chapter/scene tree, character names with trait icons, locations, heritage groups. Confirms everything parsed correctly before generating. |
+| **Prompt Presets** | Create and activate named prompt configurations (author instruction, style, scene closing, extra anti-patterns). Activating a preset writes `custom_style.txt` and `prompt_overrides.yaml` in the workspace. |
 | **New Story** | Clears all uploaded files, output, and checkpoint (with confirmation). Does not touch config. |
 
-## Output Tab
+### Plan Tab
 
-- **Live viewer** — Scenes appear in real time as they're generated, with auto-scroll.
-- **Refresh** — Pull the full output from disk at any time.
-- **Download** — Grab the `.md` file directly from the browser.
+- **Parsed data preview** — After uploading YAML, see a summary of everything loaded: story title, chapter/scene tree, character names with trait icons, locations, heritage groups.
+- **Generation plan** — Full scene-by-scene breakdown of what will be generated: characters detected per scene, setting resolved, hooks matched.
+- Confirms everything parsed and resolved correctly before you start generating.
+- Shows any validation warnings without blocking generation.
 
-## Logs Tab
+### Consult Tab
 
-- Timestamped log feed of every generation event — chapter/scene progress, character detection, errors, warnings.
+AI-powered audit of your YAML story files using the generation model.
+
+- **Multi-pass analysis** — Separate passes for Characters, Outline, Locations, and Cross-references. Each streams incrementally.
+- **Generate Fix** — For any completed pass, generate a corrected YAML file. A side-by-side diff lets you review and edit before applying.
+- **Generate All Fixes** — Trigger fix generation for all completed passes at once.
+- **Retry** — Re-run a failed pass without losing completed results.
+- Results persist in `workspace/consult_cache.json` and survive page refresh and server restarts.
+
+### Logs Tab
+
+- Timestamped log feed of every generation event — chapter/scene progress, character detection, retry attempts, errors, warnings.
 - Persists server-side, so reconnecting shows the full history.
+
+### Memory Tab
+
+- View and edit all story memory extracted from generated scenes: facts, actions, commitments, minor characters, and used imagery.
+- Add, edit, or delete any entry — changes are saved back to `checkpoint.yaml`.
+- Used imagery entries show scope type, scope ID, phrase, and source scene.
+
+### Output Tab
+
+- **Live viewer** — Scenes appear in real time as they are generated, with auto-scroll. Each scene block has a **Regen** button to regenerate that scene individually, or regenerate the entire chapter.
+- **Read Aloud** — TTS playback of the story using Kokoro voices, with play/pause/stop controls. Requires a running Kokoro TTS server.
+- **Download MP3** — Export the story as a voiced MP3 audiobook with embedded chapter markers.
+- **Refresh** — Pull the full output from disk at any time.
+- **Download** — Grab a clean `.md` file (scene markers stripped) directly from the browser.
 
 ## Status Bar
 
@@ -84,13 +113,16 @@ Uploaded files and output live in the `workspace/` directory next to the project
 
 ```
 workspace/
-├── story_outline.yaml    # Uploaded outline
-├── characters.yaml       # Uploaded characters
-├── locations.yaml        # Uploaded locations (optional)
-├── custom_style.txt      # Custom style prompt (optional)
-├── full_story.md         # Generated output
-├── checkpoint.yaml       # Generation progress
-└── web_config.json       # Persisted config (host, model, retries, timeout)
+├── story_outline.yaml      # Uploaded outline
+├── characters.yaml         # Uploaded characters
+├── locations.yaml          # Uploaded locations (optional)
+├── custom_style.txt        # Written when a style preset is activated
+├── prompt_overrides.yaml   # Written when a preset is activated (author instruction, scene closing)
+├── style_presets.yaml      # Named prompt presets
+├── full_story.md           # Generated output
+├── checkpoint.yaml         # Generation progress and story memory
+├── consult_cache.json      # Persisted AI Consult results (survives restarts)
+└── web_config.json         # Persisted config (host, model, retries, timeout)
 ```
 
 ---

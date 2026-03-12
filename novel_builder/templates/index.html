@@ -938,7 +938,7 @@ textarea {
         <option value="0.85">0.85x</option>
         <option value="0.9">0.90x</option>
         <option value="0.95">0.95x</option>
-        <option value="1.0" selected>1.00x -- normal</option>
+        <option value="1" selected>1.00x -- normal</option>
         <option value="1.1">1.10x</option>
         <option value="1.25">1.25x -- fast</option>
       </select>
@@ -1322,7 +1322,10 @@ function loadConfigIntoForm(cfg) {
   document.getElementById('cfg-tts-narrator-voice').value = cfg.tts_narrator_voice || '';
 
   const speedSel = document.getElementById('cfg-tts-speed');
-  if (speedSel) speedSel.value = String(cfg.tts_speed || 1.0);
+  if (speedSel) {
+    speedSel.value = String(cfg.tts_speed ?? 1.0);
+    if (!speedSel.value) speedSel.value = '1'; // fallback if stored value doesn't match any option
+  }
   tts.host = cfg.tts_host || '';
   tts.model = cfg.tts_model || '';
   tts.narratorVoice = cfg.tts_narrator_voice || '';

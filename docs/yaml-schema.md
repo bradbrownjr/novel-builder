@@ -75,7 +75,7 @@ chapters:
       - scene_number: 1.1               # REQUIRED
         setting: "the_lighthouse"        # Reference to locations/settings ID, or inline string
         setting_detail: "The watch room at the top of the spiral staircase"  # Optional — zooms into a specific area
-        characters_present:              # Optional explicit list (auto-detected if omitted)
+        characters:                       # Optional explicit list (auto-detected if omitted)
           - silas_marsh
         events: >                        # REQUIRED
           Silas performs his morning inspection. Describe the lighthouse
@@ -88,7 +88,7 @@ chapters:
 
       - scene_number: 1.2
         setting: "The general store in town. Fluorescent lights, linoleum floor."
-        characters_present:
+        characters:
           - silas_marsh
           - ruth_perry
         events: >
@@ -139,7 +139,7 @@ chapters:
 | `scene_number` | string/number | Yes | Identifier (e.g., `1.1`, `1.2`) |
 | `setting` | string | Yes | Location ID (from settings file) or inline description |
 | `setting_detail` | string | No | Zooms into a specific area within the setting (e.g., "the back stockroom", "the parking lot"). Appended after the base location. Works with or without `setting`. |
-| `characters_present` | list of strings | No | Character IDs. Auto-detected from events/notes if omitted. |
+| `characters` | list of strings | No | Character IDs. Auto-detected from events/notes if omitted. |
 | `events` | string | Yes | What happens in the scene |
 | `emotional_arc` | string | No | Emotional trajectory (e.g., "Calm → dread") |
 | `pacing` | string | No | `slow-burn`, `action`, `dialogue-heavy`, `introspective` |
