@@ -730,6 +730,7 @@ def api_config():
     allowed = {"host", "model", "summary_model", "retries", "timeout",
                "generation_num_ctx", "consult_num_ctx",
                "tts_host", "tts_model", "tts_narrator_voice", "tts_voice_map",
+               "tts_speed",
                }
     cfg = _load_web_config()
     for key in allowed:

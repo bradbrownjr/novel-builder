@@ -18,6 +18,9 @@ novel_builder/
 ├── locations.py           # Location loading and resolution
 ├── yaml_io.py             # YAML loading/saving utilities
 ├── postprocess.py         # Regex cleanup, anti-pattern removal
+├── tts.py                 # TTS segment parsing
+├── consult.py             # AI-powered YAML audit prompt construction
+├── validator.py           # YAML structure validation
 ├── web.py                 # Flask web UI backend, SSE streaming
 └── templates/
     └── index.html         # Single-page web frontend
@@ -89,6 +92,7 @@ Browser ─── SSE (text/event-stream) ──→ Flask (threaded)
 | `pyyaml` | YAML parsing for all story data |
 | `requests` | HTTP client for Ollama API |
 | `flask` | Web UI backend |
+| `mutagen` | ID3 chapter tagging for audiobook MP3 export |
 
 All are lightweight. No build tools, no npm, no C extensions.
 

@@ -19,7 +19,7 @@ On the machine running Ollama:
 
 ```bash
 ollama pull gemma3:12b     # Generation
-ollama pull gemma3:1b      # Summarization
+ollama pull gemma3:4b      # Summarization
 ```
 
 ## 3. Create your story files
