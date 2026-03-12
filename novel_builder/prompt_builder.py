@@ -221,21 +221,45 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
     )
 
     # TTS voice tagging — when voice map is configured, instruct the model
-    # to wrap spoken dialogue in <span data-tts="CharacterName"> tags
+    # to wrap spoken dialogue in <span data-tts="CharacterName"> tags.
+    # IMPORTANT: Scope to appeared + current-scene characters only, matching
+    # the character roster scoping above.  Listing future character names
+    # here would leak them to the model and cause premature introductions.
     tts_voice_map = config.get("_tts_voice_map")
     if tts_voice_map:
-        tagged_names = [n for n in tts_voice_map if n.lower() != "narrator"]
+        # Build the same appeared_ids set used for the roster
+        tts_known = set()
+        if state:
+            tts_known = set(state.get("character_appearances", {}).keys())
+        if scene_char_ids:
+            tts_known.update(scene_char_ids)
+
+        # Map character IDs to display names for scoping
+        characters = config.get("characters", {})
+        known_names = set()
+        for cid in tts_known:
+            cdata = characters.get(cid, {})
+            if isinstance(cdata, dict):
+                known_names.add(cdata.get("Name") or cdata.get("name", cid))
+
+        tagged_names = [
+            n for n in tts_voice_map
+            if n.lower() != "narrator" and n in known_names
+        ]
         if tagged_names:
             names_str = ", ".join(tagged_names)
             parts.append(
                 "\nAUDIOBOOK VOICE TAGGING:"
-                "\nWrap each character's spoken dialogue in a span tag for "
-                "text-to-speech voice assignment. Use this exact format:"
+                "\nEvery line of spoken dialogue from a listed character "
+                "MUST be wrapped in a span tag. Do NOT write the dialogue "
+                "outside the span and then repeat it inside -- the span IS "
+                "the dialogue. Use this exact format:"
                 '\n  <span data-tts="CharacterName">"Dialogue here."</span>'
                 "\nRules:"
-                f"\n- Tag dialogue for these characters: {names_str}"
+                f"\n- Tag ALL spoken dialogue for: {names_str}"
+                "\n- Every quoted line these characters speak gets a span"
                 "\n- Only tag actual spoken dialogue (words characters say "
-                "out loud to each other)"
+                "out loud)"
                 "\n- Do NOT tag: signs, letters, notes, inscriptions, "
                 "written text, internal thoughts, narration"
                 "\n- Do NOT tag dialogue from unnamed or minor characters "
