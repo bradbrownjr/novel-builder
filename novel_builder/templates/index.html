@@ -2521,6 +2521,10 @@ async function testVoice(nameOrNarrator) {
   const model = document.getElementById('cfg-tts-model').value.trim();
   if (!voice || !model || !host) { toast('Set host, model and voice first', 'warn'); return; }
 
+  // Create AudioContext immediately during user gesture to bypass autoplay policy.
+  // Browsers expire the gesture context after an await, so we must unlock it first.
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
   toast('Testing voice for ' + label + '...', 'info');
   try {
     const resp = await fetch('/api/tts/speak', {
@@ -2533,15 +2537,22 @@ async function testVoice(nameOrNarrator) {
     });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
+      audioCtx.close();
       toast('Test failed: ' + (err.error || resp.statusText), 'error');
       return;
     }
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = new Audio(url);
-    a.onended = () => URL.revokeObjectURL(url);
-    a.play();
-  } catch (e) { toast('Test error: ' + e.message, 'error'); }
+    const arrayBuffer = await resp.arrayBuffer();
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    const source = audioCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioCtx.destination);
+    source.onended = () => audioCtx.close();
+    source.start();
+    toast('Playing voice for ' + label, 'ok');
+  } catch (e) {
+    audioCtx.close();
+    toast('Test error: ' + e.message, 'error');
+  }
 }
 
 /* --- Playback engine --- */
