@@ -2428,8 +2428,11 @@ function updateVoiceMapUI(characters) {
   for (const ch of characters) {
     const yamlVoice = ch.tts_voice || '';
     const saved = tts.voiceMap[ch.name] || '';
-    const displayVoice = yamlVoice || saved;
-    const fromYaml = !!yamlVoice;
+    // Saved config (voice cast) wins over YAML so assignments persist across restarts.
+    // fromYaml is only true when there is a YAML voice and no saved override --
+    // that is the only case where we render the input as readonly.
+    const displayVoice = saved || yamlVoice;
+    const fromYaml = !!yamlVoice && !saved;
     const catalog = tts.voiceCatalog || {};
     const voiceInfo = displayVoice ? catalog[displayVoice] : null;
     const descHtml = voiceInfo ? _voiceDescSpan(voiceInfo) : '';
@@ -4290,7 +4293,6 @@ async function applyVoiceCast() {
   let applied = 0;
   for (const input of inputs) {
     const charName = input.dataset.character;
-    if (input.readOnly) continue; // Skip YAML-defined voices
 
     // Try to match by converting name to ID format (lowercase, spaces to underscores)
     const charId = charName.toLowerCase().replace(/\s+/g, '_');
