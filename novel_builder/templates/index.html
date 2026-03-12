@@ -678,11 +678,23 @@ textarea {
   display: flex;
   gap: .5rem;
   align-items: center;
-  margin-bottom: .35rem;
+  margin-bottom: 0;
   padding: .25rem 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: none;
 }
 .voice-map-row:last-child { border-bottom: none; }
+.voice-map-desc-row {
+  padding: 0 0 .3rem 0;
+  margin-bottom: .25rem;
+  border-bottom: 1px solid var(--border);
+}
+.voice-map-desc-row:last-child { border-bottom: none; }
+.voice-desc {
+  font-size: .7rem;
+  color: var(--text-dim);
+  font-style: italic;
+  padding-left: 112px;
+}
 .voice-map-name { min-width: 110px; font-size: .82rem; font-weight: 500; }
 .voice-map-role { min-width: 80px; font-size: .72rem; color: var(--text-dim); }
 .voice-map-input {
@@ -926,9 +938,10 @@ textarea {
       <label for="cfg-tts-narrator-voice">Narrator Voice</label>
       <div style="display:flex; gap:.5rem; align-items:center;">
         <input type="text" id="cfg-tts-narrator-voice" list="tts-voices-list"
-               placeholder="e.g., af_heart" style="flex:1;">
+               placeholder="e.g., af_heart" style="flex:1;" onchange="onNarratorVoiceChange()">
         <button class="btn btn-sm" onclick="testVoice('narrator')" title="Preview narrator voice">Test</button>
       </div>
+      <div id="narrator-voice-desc" class="voice-desc" style="margin-top:.2rem;padding-left:0;"></div>
     </div>
     <div class="form-group" style="max-width:180px;">
       <label for="cfg-tts-speed">Playback Speed</label>
@@ -1066,6 +1079,21 @@ textarea {
     </div>
   </div>
   <div id="consult-passes-container"></div>
+
+  <!-- Voice Casting card -->
+  <div class="card" id="card-voice-cast">
+    <h3>&#127908; Voice Casting</h3>
+    <p style="font-size:.82rem;color:var(--text-dim);margin-bottom:.75rem;">
+      AI-powered TTS voice recommendations based on character personality, origin, voice,
+      and role. Requires characters.yaml and a configured Ollama model.
+    </p>
+    <div style="display:flex; gap:.5rem; align-items:center; flex-wrap:wrap;">
+      <button class="btn btn-sm" id="btn-voice-cast" onclick="startVoiceCast()">Cast Voices</button>
+      <button class="btn btn-sm" id="btn-voice-cast-apply" onclick="applyVoiceCast()" style="display:none;">Apply Recommendations</button>
+      <span id="voice-cast-status" style="font-size:.78rem;color:var(--text-dim);"></span>
+    </div>
+    <pre class="consult-text" id="voice-cast-text" style="display:none;"></pre>
+  </div>
 
 </div>
 
@@ -2212,6 +2240,7 @@ const tts = {
   host: '',
   voiceMap: {},       // manually saved via web UI
   yamlVoiceMap: {},   // sourced from characters.yaml tts_voice field (takes precedence)
+  voiceCatalog: {},   // enriched voice metadata from voice_catalog.py
   narratorVoice: '',
   model: '',
   speed: 1.0,
@@ -2278,20 +2307,39 @@ async function discoverVoices(model) {
   const dl = document.getElementById('tts-voices-list');
   dl.innerHTML = '';
   tts.availableVoices = [];
+  tts.voiceCatalog = {};
 
   if (r && r.ok && r.voices?.length) {
     tts.availableVoices = r.voices;
     for (const v of r.voices) {
       const o = document.createElement('option');
-      o.value = typeof v === 'string' ? v : (v.id || v.name || String(v));
+      if (typeof v === 'object' && v.id) {
+        o.value = v.id;
+        const label = v.desc ? v.id + ' -- ' + v.desc : v.id;
+        o.textContent = label;
+        tts.voiceCatalog[v.id] = v;
+      } else {
+        const vid = typeof v === 'string' ? v : (v.id || v.name || String(v));
+        o.value = vid;
+      }
       dl.appendChild(o);
     }
+    // Re-render voice map with descriptions now available
+    const statusR = await api('/api/status');
+    if (statusR?.characters?.characters) updateVoiceMapUI(statusR.characters.characters);
   }
 }
 
 function onTTSModelChange() {
   const m = document.getElementById('cfg-tts-model').value;
   if (m) discoverVoices(m);
+}
+
+function onNarratorVoiceChange() {
+  const vid = document.getElementById('cfg-tts-narrator-voice').value.trim();
+  const el = document.getElementById('narrator-voice-desc');
+  const info = (tts.voiceCatalog || {})[vid];
+  el.textContent = info ? info.desc : '';
 }
 
 /* --- Character voice map UI --- */
@@ -2312,6 +2360,12 @@ function updateVoiceMapUI(characters) {
     const saved = tts.voiceMap[ch.name] || '';
     const displayVoice = yamlVoice || saved;
     const fromYaml = !!yamlVoice;
+    const catalog = tts.voiceCatalog || {};
+    const voiceInfo = displayVoice ? catalog[displayVoice] : null;
+    const descHtml = voiceInfo
+      ? '<span class="voice-desc" title="' + escHtml(voiceInfo.tone || '') + '. Best for: ' + escHtml(voiceInfo.best_for || '') + '">'
+        + escHtml(voiceInfo.desc) + '</span>'
+      : '';
     html += '<div class="voice-map-row">'
       + '<span class="voice-map-name">' + escHtml(ch.name) + '</span>'
       + '<span class="voice-map-role">' + escHtml(ch.role || '') + '</span>';
@@ -2321,19 +2375,41 @@ function updateVoiceMapUI(characters) {
         + ' data-character="' + escHtml(ch.name) + '"'
         + ' value="' + escHtml(displayVoice) + '"'
         + ' readonly title="Defined in characters.yaml -- edit tts_voice to change"'
-        + ' style="flex:1;opacity:.75;cursor:default;">'
+        + ' style="flex:1;opacity:.75;cursor:default;"'
+        + ' onchange="onVoiceInputChange(this)">'
         + '<span title="Voice defined in characters.yaml" style="font-size:.7rem;color:var(--text-dim);white-space:nowrap;">yaml</span>'
         + '</span>';
     } else {
       html += '<input type="text" list="tts-voices-list" class="voice-map-input tts-char-voice"'
         + ' data-character="' + escHtml(ch.name) + '"'
         + ' value="' + escHtml(displayVoice) + '"'
-        + ' placeholder="voice name">';
+        + ' placeholder="voice name"'
+        + ' onchange="onVoiceInputChange(this)">';
     }
     html += '<button class="btn btn-sm" onclick="testVoice(\'' + escHtml(ch.name).replace(/'/g, "\\'") + '\')" title="Test">Test</button>'
       + '</div>';
+    if (descHtml) html += '<div class="voice-map-desc-row">' + descHtml + '</div>';
   }
   container.innerHTML = html;
+}
+
+function onVoiceInputChange(el) {
+  const vid = el.value.trim();
+  const catalog = tts.voiceCatalog || {};
+  const row = el.closest('.voice-map-row');
+  if (!row) return;
+  // Remove existing desc row if present
+  const nextRow = row.nextElementSibling;
+  if (nextRow && nextRow.classList.contains('voice-map-desc-row')) nextRow.remove();
+  // Add new desc row if voice is known
+  const info = catalog[vid];
+  if (info) {
+    const descDiv = document.createElement('div');
+    descDiv.className = 'voice-map-desc-row';
+    descDiv.innerHTML = '<span class="voice-desc" title="' + escHtml(info.tone || '') + '. Best for: ' + escHtml(info.best_for || '') + '">'
+      + escHtml(info.desc) + '</span>';
+    row.after(descDiv);
+  }
 }
 
 /* --- Save / test --- */
@@ -2808,6 +2884,7 @@ async function init() {
 
   // Restore consult results from server cache
   restoreConsult();
+  restoreVoiceCast();
 
   // Load setup state
   loadPromptPresets();
@@ -3856,6 +3933,188 @@ async function saveCrossrefFixes() {
 }
 
 /* ==========================================================
+   Voice Casting
+   ========================================================== */
+let _voiceCastRunning = false;
+
+async function startVoiceCast() {
+  const btn = document.getElementById('btn-voice-cast');
+  const statusEl = document.getElementById('voice-cast-status');
+  const textEl = document.getElementById('voice-cast-text');
+  const applyBtn = document.getElementById('btn-voice-cast-apply');
+
+  btn.disabled = true;
+  btn.textContent = 'Casting...';
+  statusEl.textContent = 'Starting voice casting...';
+  textEl.style.display = '';
+  textEl.textContent = '';
+  applyBtn.style.display = 'none';
+  _voiceCastRunning = true;
+
+  try {
+    const resp = await fetch('/api/voice-cast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      statusEl.textContent = err.error || 'Failed to start';
+      btn.disabled = false;
+      btn.textContent = 'Cast Voices';
+      _voiceCastRunning = false;
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+        if (ev.type === 'snapshot') {
+          textEl.textContent = ev.text;
+          textEl.scrollTop = textEl.scrollHeight;
+        } else if (ev.type === 'chunk') {
+          textEl.textContent += ev.text;
+          textEl.scrollTop = textEl.scrollHeight;
+        } else if (ev.type === 'done') {
+          statusEl.textContent = 'Voice casting complete';
+          applyBtn.style.display = '';
+        } else if (ev.type === 'error') {
+          statusEl.textContent = 'Error: ' + (ev.message || 'unknown');
+          statusEl.style.color = 'var(--red)';
+        }
+      }
+    }
+  } catch (e) {
+    statusEl.textContent = 'Connection error';
+    statusEl.style.color = 'var(--red)';
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Recast Voices';
+  _voiceCastRunning = false;
+}
+
+async function applyVoiceCast() {
+  const textEl = document.getElementById('voice-cast-text');
+  const text = textEl.textContent || '';
+
+  // Parse the YAML block from the voice casting output
+  const yamlMatch = text.match(/```yaml\s*\n([\s\S]*?)```/);
+  if (!yamlMatch) {
+    toast('No YAML voice assignments found in output', 'warn');
+    return;
+  }
+
+  const yamlBlock = yamlMatch[1];
+  // Parse narrator and character voice assignments
+  const lines = yamlBlock.split('\n');
+  let narrator = '';
+  const assignments = {};
+  let inCharacters = false;
+  let currentChar = '';
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    const narratorMatch = trimmed.match(/^narrator:\s*(\S+)/);
+    if (narratorMatch) {
+      narrator = narratorMatch[1];
+      inCharacters = false;
+      continue;
+    }
+
+    if (trimmed === 'characters:') {
+      inCharacters = true;
+      continue;
+    }
+
+    if (inCharacters) {
+      const charMatch = trimmed.match(/^(\w+):$/);
+      if (charMatch) {
+        currentChar = charMatch[1];
+        continue;
+      }
+      const voiceMatch = trimmed.match(/^tts_voice:\s*(\S+)/);
+      if (voiceMatch && currentChar) {
+        assignments[currentChar] = voiceMatch[1];
+      }
+    }
+  }
+
+  // Apply narrator voice
+  if (narrator) {
+    document.getElementById('cfg-tts-narrator-voice').value = narrator;
+    onNarratorVoiceChange();
+  }
+
+  // Now we need to map character IDs to display names for the voice map
+  // The voice map inputs use data-character with display names
+  const inputs = document.querySelectorAll('.tts-char-voice');
+  let applied = 0;
+  for (const input of inputs) {
+    const charName = input.dataset.character;
+    if (input.readOnly) continue; // Skip YAML-defined voices
+
+    // Try to match by converting name to ID format (lowercase, spaces to underscores)
+    const charId = charName.toLowerCase().replace(/\s+/g, '_');
+    const voice = assignments[charId];
+    if (voice) {
+      input.value = voice;
+      onVoiceInputChange(input);
+      applied++;
+    }
+  }
+
+  // Save TTS config
+  await saveTTSConfig();
+
+  if (applied > 0 || narrator) {
+    const parts = [];
+    if (applied > 0) parts.push(applied + ' character voice(s)');
+    if (narrator) parts.push('narrator voice');
+    toast('Applied: ' + parts.join(' + '), 'ok');
+  } else {
+    toast('No voice assignments could be matched to characters', 'warn');
+  }
+}
+
+async function restoreVoiceCast() {
+  const r = await api('/api/voice-cast/result');
+  if (!r || r.status === 'idle') return;
+  const textEl = document.getElementById('voice-cast-text');
+  const statusEl = document.getElementById('voice-cast-status');
+  const btn = document.getElementById('btn-voice-cast');
+  const applyBtn = document.getElementById('btn-voice-cast-apply');
+
+  if (r.text) {
+    textEl.style.display = '';
+    textEl.textContent = r.text;
+  }
+  if (r.status === 'done') {
+    statusEl.textContent = 'Voice casting complete';
+    btn.textContent = 'Recast Voices';
+    applyBtn.style.display = '';
+  } else if (r.status === 'error') {
+    statusEl.textContent = 'Error: ' + (r.error || 'unknown');
+    statusEl.style.color = 'var(--red)';
+  } else if (r.status === 'running') {
+    startVoiceCast(); // Reconnect to running stream
+  }
+}
+
+/* ==========================================================
    Tab switch helper
    ========================================================== */
 /* ==========================================================
@@ -4079,7 +4338,7 @@ function switchTab(name) {
   if (name === 'memory') refreshMemory();
   // Re-sync consult state when switching to the consult tab (stream may have
   // finished while the user was on another tab)
-  if (name === 'consult' && !consultRunning) restoreConsult();
+  if (name === 'consult' && !consultRunning) { restoreConsult(); restoreVoiceCast(); }
   // Refresh output when switching to the output tab so content stays current
   // after the browser was in the background or the user was on another tab
   if (name === 'output') refreshOutput();
@@ -4092,7 +4351,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   const active = document.querySelector('.tab-btn.active');
   const tab = active ? active.dataset.tab : '';
-  if (tab === 'consult' && !consultRunning) restoreConsult();
+  if (tab === 'consult' && !consultRunning) { restoreConsult(); restoreVoiceCast(); }
   if (tab === 'output') refreshOutput();
   if (tab === 'memory') refreshMemory();
 });

@@ -9,6 +9,9 @@ Passes:
   2. Outline    — scene events, pacing, emotional arcs, chapter flow
   3. Locations  — atmosphere, sensory detail, mood_shift usage
   4. Cross-refs — character-scene alignment, continuity risks, timing
+
+Standalone tools:
+  - Voice Casting — TTS voice recommendations based on character traits
 """
 
 import json
@@ -624,3 +627,86 @@ def build_pass_prompt(pass_name, files, story_context=""):
 
     system = (story_context + _SCHEMA_CONTEXT) if story_context else _SCHEMA_CONTEXT
     return system, user_prompt
+
+
+# ---------------------------------------------------------------------------
+# Voice Casting — TTS voice recommendation
+# ---------------------------------------------------------------------------
+
+def build_voice_casting_prompt(char_yaml, voice_catalog_text, available_voices):
+    """Build prompts for AI-powered TTS voice casting.
+
+    Args:
+        char_yaml: Raw characters.yaml content string.
+        voice_catalog_text: Compact voice catalog summary from
+            voice_catalog.get_catalog_summary().
+        available_voices: List of voice IDs actually available on the
+            user's TTS server (may be a subset of the full catalog).
+
+    Returns:
+        Tuple of (system_prompt, user_prompt).
+    """
+    system = (
+        "You are a professional audiobook casting director. Your job is to "
+        "match fictional characters to TTS voices based on their personality, "
+        "origin, age, role, speaking style, and emotional tone.\n\n"
+        "You have deep expertise in how voice qualities (warmth, authority, "
+        "playfulness, accent, pacing) shape a listener's perception of a "
+        "character. You consider:\n"
+        "- **Gender and age** -- match voice gender and maturity\n"
+        "- **Personality/vibe** -- a warm, nurturing character needs a warm "
+        "voice; a commanding leader needs authority\n"
+        "- **Voice/speech patterns** -- if the character speaks in clipped "
+        "sentences, pick a precise voice; if flowery, pick an expressive one\n"
+        "- **Role in story** -- protagonists need engaging voices; villains "
+        "need distinctive ones; mentors need gravitas\n"
+        "- **Origin/accent** -- match accent when appropriate (British "
+        "characters suit British voices, etc.)\n"
+        "- **Contrast** -- ensure characters who share many scenes have "
+        "clearly distinct voices so listeners can tell them apart\n"
+        "- **Narrator** -- recommend a narrator voice that suits the story's "
+        "overall tone and genre\n\n"
+        "CRITICAL CONTENT POLICY:\n"
+        "- This is fiction for adult readers. Characters may be dark, "
+        "morally complex, or non-human. Cast them authentically.\n"
+        "- Never refuse to cast a character based on their nature or role."
+    )
+
+    available_note = ""
+    if available_voices:
+        available_note = (
+            "\n\nIMPORTANT: The user's TTS server currently has these voices "
+            "installed:\n  " + ", ".join(available_voices) + "\n"
+            "Prefer voices from this list. If none fit well, you may suggest "
+            "voices from the full catalog but note they would need to be "
+            "installed."
+        )
+
+    user = (
+        f"## Available TTS Voices\n\n{voice_catalog_text}\n"
+        f"{available_note}\n\n"
+        f"## Characters to Cast\n\n```yaml\n{char_yaml}\n```\n\n"
+        f"## Your Task\n\n"
+        f"For each character, recommend a TTS voice. For each recommendation, "
+        f"explain WHY that voice fits the character (1-2 sentences referencing "
+        f"specific character traits). Also recommend a narrator voice.\n\n"
+        f"Format your response as:\n\n"
+        f"### Narrator\n"
+        f"**Voice:** `voice_id`\n"
+        f"**Why:** explanation\n\n"
+        f"### Character Name\n"
+        f"**Voice:** `voice_id`\n"
+        f"**Why:** explanation\n\n"
+        f"After all recommendations, add a section:\n\n"
+        f"### Voice Assignments (YAML)\n"
+        f"```yaml\n"
+        f"narrator: voice_id\n"
+        f"characters:\n"
+        f"  character_id:\n"
+        f"    tts_voice: voice_id\n"
+        f"```\n\n"
+        f"Use the character's YAML key (lowercase with underscores) as the "
+        f"character_id. Include ALL characters."
+    )
+
+    return system, user
