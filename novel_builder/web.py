@@ -2136,6 +2136,227 @@ def api_consult_clear():
     return jsonify({"ok": True})
 
 
+# ---------------------------------------------------------------------------
+# Voice Casting (AI-assisted TTS voice recommendations)
+# ---------------------------------------------------------------------------
+
+_voice_cast_state = {"thread": None, "text": "", "status": "idle", "error": None}
+_voice_cast_lock = threading.Lock()
+_voice_cast_subs = []
+
+
+@app.route("/api/voice-cast", methods=["POST"])
+def api_voice_cast():
+    """Run AI voice casting and stream recommendations as SSE.
+
+    Sends character data + voice catalog to the LLM and streams back
+    per-character voice recommendations with explanations.
+    """
+    from .consult import build_voice_casting_prompt
+    from .voice_catalog import get_catalog_summary
+
+    with _voice_cast_lock:
+        t = _voice_cast_state.get("thread")
+        if t is not None and t.is_alive():
+            pass  # Allow reconnection -- just subscribe to existing run
+        else:
+            # Start new voice casting run
+            _voice_cast_state["text"] = ""
+            _voice_cast_state["status"] = "running"
+            _voice_cast_state["error"] = None
+
+            cfg = _load_web_config()
+            host = _normalize_host(cfg.get("host", ""))
+            model = cfg.get("model", "gemma3:12b")
+            consult_ctx = int(cfg.get("consult_num_ctx", 32768))
+            timeout_s = max(int(cfg.get("timeout", 900)), 1800)
+
+            if not host:
+                return jsonify({"ok": False, "error": "No Ollama host configured"}), 400
+
+            # Load characters YAML
+            char_path = os.path.join(WORKSPACE_DIR, FILE_ROLES.get("characters", "characters.yaml"))
+            if not os.path.exists(char_path):
+                return jsonify({"ok": False, "error": "No characters.yaml found"}), 400
+            with open(char_path, "r", encoding="utf-8") as f:
+                char_yaml = f.read()
+
+            catalog_text = get_catalog_summary()
+
+            # Get available voices from TTS server (best-effort)
+            available = []
+            tts_host = _normalize_tts_host(cfg.get("tts_host", ""))
+            tts_model = cfg.get("tts_model", "")
+            if tts_host:
+                eps = []
+                if tts_model:
+                    eps.append(f"/v1/audio/voices?model={tts_model}")
+                eps.extend(["/v1/audio/voices", "/v1/voices"])
+                for ep in eps:
+                    try:
+                        resp = _requests.get(f"{tts_host}{ep}", timeout=5)
+                        if not resp.ok:
+                            continue
+                        data = resp.json()
+                        raw = (
+                            data if isinstance(data, list)
+                            else data.get("voices", data.get("data", []))
+                        )
+                        if isinstance(raw, list):
+                            for v in raw:
+                                if isinstance(v, str):
+                                    available.append(v)
+                                elif isinstance(v, dict):
+                                    available.append(
+                                        v.get("id") or v.get("name")
+                                        or v.get("voice_id") or str(v)
+                                    )
+                            if available:
+                                break
+                    except Exception:
+                        continue
+
+            system_prompt, user_prompt = build_voice_casting_prompt(
+                char_yaml, catalog_text, sorted(available)
+            )
+
+            def worker():
+                url = f"{host}/api/generate"
+                payload = {
+                    "model": model,
+                    "system": system_prompt,
+                    "prompt": user_prompt,
+                    "stream": True,
+                    "options": {
+                        "num_ctx": consult_ctx,
+                        "temperature": 0.4,
+                        "top_p": 0.9,
+                    },
+                }
+                state.emit("model_active", {"model": "consult", "name": model})
+                state.emit("log", {
+                    "message": f"[Voice Cast] Starting voice casting with {model}",
+                    "level": "info",
+                    "time": time.time(),
+                })
+                try:
+                    resp = _requests.post(
+                        url, json=payload,
+                        timeout=(30, None),
+                        stream=True,
+                    )
+                    resp.raise_for_status()
+                    for line in resp.iter_lines():
+                        if not line:
+                            continue
+                        try:
+                            chunk = json.loads(line)
+                        except ValueError:
+                            continue
+                        token = chunk.get("response", "")
+                        if token:
+                            with _voice_cast_lock:
+                                _voice_cast_state["text"] += token
+                            for q in list(_voice_cast_subs):
+                                try:
+                                    q.put_nowait({"type": "chunk", "text": token})
+                                except Exception:
+                                    pass
+                        if chunk.get("done"):
+                            break
+                    with _voice_cast_lock:
+                        _voice_cast_state["status"] = "done"
+                    for q in list(_voice_cast_subs):
+                        try:
+                            q.put_nowait({"type": "done"})
+                        except Exception:
+                            pass
+                    state.emit("log", {
+                        "message": "[Voice Cast] Voice casting complete",
+                        "level": "info",
+                        "time": time.time(),
+                    })
+                except Exception as e:
+                    with _voice_cast_lock:
+                        _voice_cast_state["status"] = "error"
+                        _voice_cast_state["error"] = str(e)
+                    for q in list(_voice_cast_subs):
+                        try:
+                            q.put_nowait({"type": "error", "message": str(e)})
+                        except Exception:
+                            pass
+                    state.emit("log", {
+                        "message": f"[Voice Cast] Error: {e}",
+                        "level": "error",
+                        "time": time.time(),
+                    })
+                finally:
+                    state.emit("model_active", {"model": "idle", "name": ""})
+
+            t = threading.Thread(target=worker, daemon=True, name="voice-cast")
+            t.start()
+            _voice_cast_state["thread"] = t
+
+    # Subscribe to events
+    q = queue.Queue()
+    _voice_cast_subs.append(q)
+
+    def stream():
+        try:
+            # Send existing text first
+            with _voice_cast_lock:
+                if _voice_cast_state["text"]:
+                    yield f"data: {json.dumps({'type': 'snapshot', 'text': _voice_cast_state['text']})}\n\n"
+                if _voice_cast_state["status"] == "done":
+                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                    return
+                if _voice_cast_state["status"] == "error":
+                    yield f"data: {json.dumps({'type': 'error', 'message': _voice_cast_state.get('error', '')})}\n\n"
+                    return
+
+            while True:
+                try:
+                    ev = q.get(timeout=15)
+                    yield f"data: {json.dumps(ev)}\n\n"
+                    if ev["type"] in ("done", "error"):
+                        break
+                except queue.Empty:
+                    yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            if q in _voice_cast_subs:
+                _voice_cast_subs.remove(q)
+
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.route("/api/voice-cast/result")
+def api_voice_cast_result():
+    """Return the current voice casting result snapshot."""
+    with _voice_cast_lock:
+        return jsonify({
+            "status": _voice_cast_state["status"],
+            "text": _voice_cast_state["text"],
+            "error": _voice_cast_state.get("error"),
+        })
+
+
+@app.route("/api/voice-catalog")
+def api_voice_catalog():
+    """Return the full voice catalog as a JSON dict."""
+    from .voice_catalog import KOKORO_VOICES
+    return jsonify({"ok": True, "voices": KOKORO_VOICES})
+
+
 @app.route("/api/consult-apply", methods=["POST"])
 def api_consult_apply():
     """Start background fix generation for one or more analysis passes.
@@ -2589,7 +2810,12 @@ def api_tts_voices():
     Tries several common endpoints (Speaches / OpenAI-compatible),
     returns whatever voice list the server exposes.  Falls back
     gracefully so the UI can offer a text input instead.
+
+    Returns enriched voice data with descriptions from the voice
+    catalog when available.
     """
+    from .voice_catalog import enrich_voice_list
+
     host = request.args.get("host", "").strip()
     model = request.args.get("model", "").strip()
     if not host:
@@ -2631,7 +2857,8 @@ def api_tts_voices():
                     )
                     voices.append(vid)
             if voices:
-                return jsonify({"ok": True, "voices": sorted(voices)})
+                enriched = enrich_voice_list(sorted(voices))
+                return jsonify({"ok": True, "voices": enriched})
         except Exception:
             continue
 

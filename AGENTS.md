@@ -44,6 +44,8 @@ Before any large file rewrite, verify every row in the affected file column is p
 | YAML validator | validator.py, web.py | `validate_all()`, `/api/validate` |
 | Scene markers in output | story_processor.py, web.py | `<!-- scene:X.Y -->`, `/api/download` (strips markers) |
 | Character appearance tracking | characters.py, state.py | `character_appearances`, tiered context logic |
+| Voice catalog & descriptions | voice_catalog.py, web.py, templates/index.html | `KOKORO_VOICES`, `enrich_voice_list()`, `/api/tts/voices` (enriched), `/api/voice-catalog` |
+| Voice casting (AI) | consult.py, web.py, templates/index.html | `build_voice_casting_prompt()`, `/api/voice-cast`, `/api/voice-cast/result`, `startVoiceCast()`, `applyVoiceCast()` |
 
 ## Project Conventions
 
@@ -74,8 +76,9 @@ novel_builder/
 ├── yaml_io.py            # load_yaml(), save_yaml()
 ├── postprocess.py        # clean_scene_text(), apply_anti_patterns()
 ├── tts.py                # parse_span_segments(), _has_spoken_dialogue()
-├── web.py                # Flask web UI, TTS proxy, /api/memory (GET+POST), /api/regenerate, /api/download (marker-stripped), /api/ollama-pull (model download), /api/consult (AI audit)
-├── consult.py            # AI-powered YAML audit: multi-pass analysis prompts, fix generation
+├── voice_catalog.py      # KOKORO_VOICES, enrich_voice_list(), get_voice_info(), get_catalog_summary()
+├── web.py                # Flask web UI, TTS proxy, /api/memory (GET+POST), /api/regenerate, /api/download (marker-stripped), /api/ollama-pull (model download), /api/consult (AI audit), /api/voice-cast (voice casting)
+├── consult.py            # AI-powered YAML audit: multi-pass analysis prompts, fix generation, voice casting prompts
 └── validator.py          # validate_all()
 ```
 
@@ -158,6 +161,8 @@ _(Track fixes here for reference.)_
 - Inline TTS voice tagging -- voice attribution now happens during scene generation, not as a post-processing pass. The generation model wraps spoken dialogue in `<span data-tts="CharacterName">` tags inline. Removed: heuristic attribution engine (`segment_text_for_tts`), model-based tagger (`tag_dialogue_with_model`, `tag_scene_text_with_spans`), tagging routes (`/api/tts/tag-story`, `/api/tts/tag-status`, `/api/tts/tag-stop`), tagging UI (buttons, header chip, config inputs). `tts.py` reduced from 847 lines to ~90 lines. `parse_span_segments()` parses inline spans for TTS playback. `prompt_builder.py` injects tagging instructions when `_tts_voice_map` is present in config.
 - TTS voice name scoping -- the TTS tagging instruction block in the system prompt now lists only characters that have appeared in the story or are present in the current scene. Previously it listed ALL characters with `tts_voice` defined, which leaked future character names (e.g. Chrissy, Francine) into early scenes and caused the model to hallucinate their premature introduction.
 - TTS duplication postprocessing -- `clean_scene_text()` in `postprocess.py` now detects and collapses duplicated dialogue where the model writes a quote both untagged and span-tagged (e.g. `"Hello!" <span data-tts="X">"Hello!"</span>` becomes just the tagged version).
+- Voice catalog and descriptions -- `voice_catalog.py` provides metadata (description, accent, gender, tone, best-for) for 58 Kokoro TTS voices. `/api/tts/voices` now returns enriched voice data with descriptions. Voice selection dropdowns show descriptions alongside voice IDs.
+- Voice casting (AI) -- new card in Consult tab. Uses the generation model to analyze character traits (vibe, voice, personality, origin, role) against the voice catalog and recommend TTS voices. Streams recommendations via SSE. "Apply Recommendations" parses the YAML output block and writes voice assignments to character inputs. Route: `/api/voice-cast` (streaming SSE), `/api/voice-cast/result` (snapshot), `/api/voice-catalog` (catalog JSON).
 
 ## Scene Marker Format
 
