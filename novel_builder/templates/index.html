@@ -2335,11 +2335,32 @@ function onTTSModelChange() {
   if (m) discoverVoices(m);
 }
 
+function _voiceCastingLine(info) {
+  // Build a compact casting traits line: "adult . medium pitch . smooth . medium pace"
+  const parts = [];
+  if (info.age) parts.push(info.age);
+  if (info.pitch) parts.push(info.pitch + ' pitch');
+  if (info.texture) parts.push(info.texture);
+  if (info.pacing) parts.push(info.pacing + ' pace');
+  return parts.join(' \u00B7 ');
+}
+
+function _voiceDescSpan(info) {
+  const tip = escHtml((info.tone || '') + '. Best for: ' + (info.best_for || ''));
+  const castLine = _voiceCastingLine(info);
+  const extra = castLine ? '<br><span style="font-size:.65rem;opacity:.7;">' + escHtml(castLine) + '</span>' : '';
+  return '<span class="voice-desc" title="' + tip + '">' + escHtml(info.desc) + extra + '</span>';
+}
+
 function onNarratorVoiceChange() {
   const vid = document.getElementById('cfg-tts-narrator-voice').value.trim();
   const el = document.getElementById('narrator-voice-desc');
   const info = (tts.voiceCatalog || {})[vid];
-  el.textContent = info ? info.desc : '';
+  if (info) {
+    el.innerHTML = _voiceDescSpan(info);
+  } else {
+    el.textContent = '';
+  }
 }
 
 /* --- Character voice map UI --- */
@@ -2362,10 +2383,7 @@ function updateVoiceMapUI(characters) {
     const fromYaml = !!yamlVoice;
     const catalog = tts.voiceCatalog || {};
     const voiceInfo = displayVoice ? catalog[displayVoice] : null;
-    const descHtml = voiceInfo
-      ? '<span class="voice-desc" title="' + escHtml(voiceInfo.tone || '') + '. Best for: ' + escHtml(voiceInfo.best_for || '') + '">'
-        + escHtml(voiceInfo.desc) + '</span>'
-      : '';
+    const descHtml = voiceInfo ? _voiceDescSpan(voiceInfo) : '';
     html += '<div class="voice-map-row">'
       + '<span class="voice-map-name">' + escHtml(ch.name) + '</span>'
       + '<span class="voice-map-role">' + escHtml(ch.role || '') + '</span>';
@@ -2406,8 +2424,7 @@ function onVoiceInputChange(el) {
   if (info) {
     const descDiv = document.createElement('div');
     descDiv.className = 'voice-map-desc-row';
-    descDiv.innerHTML = '<span class="voice-desc" title="' + escHtml(info.tone || '') + '. Best for: ' + escHtml(info.best_for || '') + '">'
-      + escHtml(info.desc) + '</span>';
+    descDiv.innerHTML = _voiceDescSpan(info);
     row.after(descDiv);
   }
 }
