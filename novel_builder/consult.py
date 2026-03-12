@@ -659,13 +659,13 @@ def build_voice_casting_prompt(char_yaml, voice_catalog_text, available_voices, 
 
     if first_person and pov_character:
         narrator_guidance = (
-            f"- **Narrator voice** -- The story is written in **first-person** "
-            f"from **{pov_character}**'s perspective. The narrator IS that character "
-            f"speaking directly to the reader. Assign the narrator the SAME voice as "
-            f"{pov_character}. (Exception: if the framing is a character looking back "
-            f"on their past self from a much older age -- like a memoir or voiceover "
-            f"flashback -- you may choose a more mature variant, but note this "
-            f"explicitly in your Why.)"
+            f"- **Narrator voice** -- This story is written in **first-person** "
+            f"from **{pov_character}**'s perspective. The narrator IS {pov_character} "
+            f"speaking directly to the reader -- NOT a separate narrator character. "
+            f"You MUST assign the narrator the SAME voice as {pov_character}. "
+            f"Do NOT recommend a different voice for the narrator. "
+            f"(Exception: memoir/voiceover framing where an older self narrates "
+            f"-- if this applies, note it explicitly in your Why.)"
         )
     elif first_person:
         narrator_guidance = (

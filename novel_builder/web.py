@@ -2515,22 +2515,27 @@ def api_voice_cast():
             t.start()
             _voice_cast_state["thread"] = t
 
-    # Subscribe to events
     q = queue.Queue()
-    _voice_cast_subs.append(q)
 
     def stream():
         try:
-            # Send existing text first
+            # Subscribe and snapshot atomically so no token can land in
+            # both the snapshot and the queue (which would duplicate text
+            # at the tail of the streamed output).
             with _voice_cast_lock:
-                if _voice_cast_state["text"]:
-                    yield f"data: {json.dumps({'type': 'snapshot', 'text': _voice_cast_state['text']})}\n\n"
-                if _voice_cast_state["status"] == "done":
-                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                    return
-                if _voice_cast_state["status"] == "error":
-                    yield f"data: {json.dumps({'type': 'error', 'message': _voice_cast_state.get('error', '')})}\n\n"
-                    return
+                _voice_cast_subs.append(q)
+                snapshot_text = _voice_cast_state["text"]
+                snapshot_status = _voice_cast_state["status"]
+                snapshot_error = _voice_cast_state.get("error", "")
+            # Yield outside the lock so the worker is not blocked.
+            if snapshot_text:
+                yield f"data: {json.dumps({'type': 'snapshot', 'text': snapshot_text})}\n\n"
+            if snapshot_status == "done":
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                return
+            if snapshot_status == "error":
+                yield f"data: {json.dumps({'type': 'error', 'message': snapshot_error})}\n\n"
+                return
 
             while True:
                 try:
