@@ -633,7 +633,7 @@ def build_pass_prompt(pass_name, files, story_context=""):
 # Voice Casting — TTS voice recommendation
 # ---------------------------------------------------------------------------
 
-def build_voice_casting_prompt(char_yaml, voice_catalog_text, available_voices):
+def build_voice_casting_prompt(char_yaml, voice_catalog_text, available_voices, outline_context=None):
     """Build prompts for AI-powered TTS voice casting.
 
     Args:
@@ -642,10 +642,42 @@ def build_voice_casting_prompt(char_yaml, voice_catalog_text, available_voices):
             voice_catalog.get_catalog_summary().
         available_voices: List of voice IDs actually available on the
             user's TTS server (may be a subset of the full catalog).
+        outline_context: Optional dict with keys:
+            - pov_character: display name of the first-person narrator (str or None)
+            - pov: POV description from overall_arc (str or None)
 
     Returns:
         Tuple of (system_prompt, user_prompt).
     """
+    # Determine narrator guidance from outline context
+    pov_character = (outline_context or {}).get("pov_character", "")
+    pov_desc = (outline_context or {}).get("pov", "")
+    first_person = (
+        pov_character
+        or (pov_desc and "first" in pov_desc.lower() and "person" in pov_desc.lower())
+    )
+
+    if first_person and pov_character:
+        narrator_guidance = (
+            f"- **Narrator voice** -- The story is written in **first-person** "
+            f"from **{pov_character}**'s perspective. The narrator IS that character "
+            f"speaking directly to the reader. Assign the narrator the SAME voice as "
+            f"{pov_character}. (Exception: if the framing is a character looking back "
+            f"on their past self from a much older age -- like a memoir or voiceover "
+            f"flashback -- you may choose a more mature variant, but note this "
+            f"explicitly in your Why.)"
+        )
+    elif first_person:
+        narrator_guidance = (
+            "- **Narrator voice** -- The story uses first-person narration. "
+            "The narrator's voice should match the protagonist's voice."
+        )
+    else:
+        narrator_guidance = (
+            "- **Narrator** -- recommend a narrator voice that suits the story's "
+            "overall tone and genre"
+        )
+
     system = (
         "You are a professional audiobook casting director. Your job is to "
         "match fictional characters to TTS voices based on their personality, "
@@ -664,8 +696,7 @@ def build_voice_casting_prompt(char_yaml, voice_catalog_text, available_voices):
         "characters suit British voices, etc.)\n"
         "- **Contrast** -- ensure characters who share many scenes have "
         "clearly distinct voices so listeners can tell them apart\n"
-        "- **Narrator** -- recommend a narrator voice that suits the story's "
-        "overall tone and genre\n\n"
+        f"{narrator_guidance}\n\n"
         "CRITICAL CONTENT POLICY:\n"
         "- This is fiction for adult readers. Characters may be dark, "
         "morally complex, or non-human. Cast them authentically.\n"

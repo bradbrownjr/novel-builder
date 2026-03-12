@@ -2443,6 +2443,7 @@ function updateVoiceMapUI(characters) {
       html += '<span style="display:flex;align-items:center;gap:.35rem;flex:1;">'
         + '<input type="text" list="tts-voices-list" class="voice-map-input tts-char-voice"'
         + ' data-character="' + escHtml(ch.name) + '"'
+        + ' data-character-id="' + escHtml(ch.id) + '"'
         + ' value="' + escHtml(displayVoice) + '"'
         + ' readonly title="Defined in characters.yaml -- edit tts_voice to change"'
         + ' style="flex:1;opacity:.75;cursor:default;"'
@@ -2452,6 +2453,7 @@ function updateVoiceMapUI(characters) {
     } else {
       html += '<input type="text" list="tts-voices-list" class="voice-map-input tts-char-voice"'
         + ' data-character="' + escHtml(ch.name) + '"'
+        + ' data-character-id="' + escHtml(ch.id) + '"'
         + ' value="' + escHtml(displayVoice) + '"'
         + ' placeholder="voice name"'
         + ' onchange="onVoiceInputChange(this)">';
@@ -4294,9 +4296,15 @@ async function applyVoiceCast() {
   for (const input of inputs) {
     const charName = input.dataset.character;
 
-    // Try to match by converting name to ID format (lowercase, spaces to underscores)
-    const charId = charName.toLowerCase().replace(/\s+/g, '_');
-    const voice = assignments[charId];
+    // Prefer the stored character ID (set in updateVoiceMapUI via data-character-id).
+    // Fall back to deriving an ID from the display name for backward compatibility.
+    const charId = input.dataset.characterId
+      || charName.toLowerCase().replace(/\s+/g, '_');
+
+    // Direct match first; then try any assignment key that starts with charId
+    // to handle suffixed IDs like chrissy_display matching "chrissy_display".
+    const voice = assignments[charId]
+      || assignments[Object.keys(assignments).find(k => k === charId) || ''];
     if (voice) {
       input.value = voice;
       onVoiceInputChange(input);
@@ -4306,6 +4314,30 @@ async function applyVoiceCast() {
 
   // Save TTS config
   await saveTTSConfig();
+
+  // If the outline defines a pov_character, the narrator IS that character.
+  // Auto-sync narrator voice to match the POV character's assigned voice,
+  // unless the AI already assigned the same voice (or narrator wasn't applied).
+  const parsed = await api('/api/parse-yaml');
+  const povCharName = parsed?.outline?.pov_character || '';
+  if (povCharName && !narrator) {
+    // AI didn't assign a narrator -- find the POV character's voice and use it
+    const povInput = [...document.querySelectorAll('.tts-char-voice')]
+      .find(el => el.dataset.character === povCharName || el.dataset.characterId === povCharName);
+    if (povInput && povInput.value) {
+      document.getElementById('cfg-tts-narrator-voice').value = povInput.value;
+      onNarratorVoiceChange();
+      toast('Narrator synced to ' + povCharName + ' (first-person POV)', 'info');
+      await saveTTSConfig();
+    }
+  } else if (povCharName && narrator) {
+    // AI assigned a narrator -- check if it differs from the POV character's voice
+    const povInput = [...document.querySelectorAll('.tts-char-voice')]
+      .find(el => el.dataset.character === povCharName || el.dataset.characterId === povCharName);
+    if (povInput && povInput.value && povInput.value !== narrator) {
+      toast('Note: narrator voice differs from ' + povCharName + ' (POV character). Use "Recast Voices" if you want them matched.', 'info');
+    }
+  }
 
   if (applied > 0 || narrator) {
     const parts = [];
