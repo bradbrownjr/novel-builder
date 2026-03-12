@@ -824,7 +824,7 @@ textarea {
     <div class="form-row">
       <div class="form-group">
         <label for="cfg-summary-model">Summary Model</label>
-        <input type="text" id="cfg-summary-model" placeholder="gemma3:1b">
+        <input type="text" id="cfg-summary-model" placeholder="gemma3:4b">
       </div>
       <div class="form-group" style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:.5rem;">
         <div>
@@ -1384,7 +1384,7 @@ function loadConfigIntoForm(cfg) {
   if (!cfg) return;
   document.getElementById('cfg-host').value = cfg.host || '';
   document.getElementById('cfg-model').value = cfg.model || 'gemma3:12b';
-  document.getElementById('cfg-summary-model').value = cfg.summary_model || 'gemma3:1b';
+  document.getElementById('cfg-summary-model').value = cfg.summary_model || 'gemma3:4b';
   document.getElementById('cfg-retries').value = cfg.retries || 3;
   document.getElementById('cfg-timeout').value = cfg.timeout || 900;
   document.getElementById('cfg-gen-ctx').value = cfg.generation_num_ctx || 8192;
