@@ -151,6 +151,8 @@ def build_character_context(char_id, character, heritage_defs,
             context["species"] = merged["species"]
         if merged.get("appearance"):
             context["appearance"] = merged["appearance"]
+        if merged.get("origin"):
+            context["origin"] = merged["origin"]
         if merged.get("voice"):
             context["voice"] = merged["voice"]
         if merged.get("habit"):
@@ -178,6 +180,8 @@ def build_character_context(char_id, character, heritage_defs,
             context["species"] = character["species"]
         if character.get("appearance"):
             context["appearance"] = character["appearance"]
+        if character.get("origin"):
+            context["origin"] = character["origin"]
         if character.get("voice"):
             context["voice"] = character["voice"]
         if character.get("habit"):

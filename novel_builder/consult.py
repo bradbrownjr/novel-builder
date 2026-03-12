@@ -31,8 +31,8 @@ IMPORTANT CONTEXT — how Novel Builder uses these files:
 - The AI is given ONLY the information for the current scene (active characters, \
   setting, recent summary). It never sees the full story at once.
 - Character bios get a FULL send on first appearance (Name, summary, role, \
-  personality, vibe, species, appearance, voice, habit + heritage traits), then \
-  only a REMINDER (Name, role, vibe, species, appearance, voice + evolution) after.
+  personality, vibe, species, appearance, origin, voice, habit + heritage traits), then \
+  only a REMINDER (Name, role, vibe, species, appearance, origin, voice + evolution) after.
 - `vibe` is the single most impactful character field — it anchors the AI's \
   tonal understanding of the character across every scene.
 - `voice` shapes dialogue patterns and is always sent when present.
