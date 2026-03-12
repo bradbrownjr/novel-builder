@@ -1463,6 +1463,7 @@ def api_parse_yaml():
                     for h in (data.get("narrative_hooks") or [])
                 ],
                 "overall_arc": data.get("overall_arc") or {},
+                "pov_character": data.get("pov_character", ""),
             }
         except Exception as e:
             result["outline"] = {"error": str(e)}
@@ -2387,6 +2388,19 @@ def api_voice_cast():
 
             catalog_text = get_catalog_summary()
 
+            # Load outline for POV/narrator context (best-effort)
+            outline_context = {}
+            outline_path = os.path.join(WORKSPACE_DIR, FILE_ROLES.get("outline", "story_outline.yaml"))
+            if os.path.exists(outline_path):
+                try:
+                    with open(outline_path, "r", encoding="utf-8") as f:
+                        outline_data = _yaml.safe_load(f.read()) or {}
+                    outline_context["pov_character"] = outline_data.get("pov_character", "")
+                    arc = outline_data.get("overall_arc") or {}
+                    outline_context["pov"] = arc.get("pov", "")
+                except Exception:
+                    pass
+
             # Get available voices from TTS server (best-effort)
             available = []
             tts_host = _normalize_tts_host(cfg.get("tts_host", ""))
@@ -2421,7 +2435,7 @@ def api_voice_cast():
                         continue
 
             system_prompt, user_prompt = build_voice_casting_prompt(
-                char_yaml, catalog_text, sorted(available)
+                char_yaml, catalog_text, sorted(available), outline_context
             )
 
             def worker():
