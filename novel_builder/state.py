@@ -794,6 +794,9 @@ def get_overused_words(state, threshold=None):
     for cat in by_category:
         by_category[cat].sort(key=lambda x: x[1], reverse=True)
     return by_category
+
+
+def resumption_point(state, chapters):
     """Determine where to resume generation.
 
     Args:
@@ -814,7 +817,7 @@ def get_overused_words(state, threshold=None):
         if ch_num > last_ch:
             return ch_idx, 0
 
-        # Same chapter — find the scene after the last completed one
+        # Same chapter -- find the scene after the last completed one
         scenes = chapter.get("scenes", [])
         for sc_idx, scene in enumerate(scenes):
             sc_id = str(scene.get("scene_number", f"{ch_num}.{sc_idx + 1}"))
