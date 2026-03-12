@@ -974,6 +974,50 @@ textarea {
 <!-- ==================== PLAN TAB ==================== -->
 <div class="tab-panel" id="panel-plan">
 
+  <!-- Story Concept Builder -->
+  <div class="card" id="card-concept">
+    <h3>&#128161; Story Concept Builder</h3>
+    <p style="font-size:.82rem;color:var(--text-dim);margin-bottom:.75rem;">
+      Describe your story idea and let the AI build complete YAML files (outline, characters, locations) for you.
+      Review, edit, then save to populate the file slots below.
+    </p>
+    <textarea id="concept-idea" rows="5" placeholder="Describe your story idea here... setting, characters, themes, mood, genre, plot hooks -- anything that inspires you. The more detail you give, the richer the result."
+      style="width:100%;font-size:.85rem;margin-bottom:.5rem;resize:vertical;"></textarea>
+    <div class="tts-toolbar" style="margin-bottom:.5rem;">
+      <button class="btn btn-primary" id="btn-concept" onclick="startConcept()">Build Concept</button>
+      <span id="concept-status" style="font-size:.78rem;color:var(--text-dim);"></span>
+    </div>
+    <div id="concept-results" style="display:none;">
+      <div id="concept-stream" class="code-block" style="max-height:300px;overflow-y:auto;font-size:.78rem;white-space:pre-wrap;margin-bottom:.75rem;display:none;"></div>
+      <div id="concept-editors" style="display:none;">
+        <div class="concept-file-group" data-role="outline">
+          <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.25rem;">
+            <strong>story_outline.yaml</strong>
+            <button class="btn btn-sm btn-primary" onclick="saveConceptFile('outline')">Save to Plan</button>
+          </div>
+          <textarea id="concept-yaml-outline" rows="12" style="width:100%;font-family:monospace;font-size:.78rem;resize:vertical;"></textarea>
+        </div>
+        <div class="concept-file-group" data-role="characters" style="margin-top:.75rem;">
+          <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.25rem;">
+            <strong>characters.yaml</strong>
+            <button class="btn btn-sm btn-primary" onclick="saveConceptFile('characters')">Save to Plan</button>
+          </div>
+          <textarea id="concept-yaml-characters" rows="12" style="width:100%;font-family:monospace;font-size:.78rem;resize:vertical;"></textarea>
+        </div>
+        <div class="concept-file-group" data-role="locations" style="margin-top:.75rem;">
+          <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.25rem;">
+            <strong>locations.yaml</strong>
+            <button class="btn btn-sm btn-primary" onclick="saveConceptFile('locations')">Save to Plan</button>
+          </div>
+          <textarea id="concept-yaml-locations" rows="12" style="width:100%;font-family:monospace;font-size:.78rem;resize:vertical;"></textarea>
+        </div>
+        <div style="margin-top:.5rem;">
+          <button class="btn btn-primary" onclick="saveAllConceptFiles()">Save All to Plan</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="card">
     <h3>&#9654; Story Generation</h3>
     <p style="font-size:.82rem;color:var(--text-dim);margin-bottom:.75rem;">
@@ -3946,6 +3990,144 @@ async function saveCrossrefFixes() {
   }
   if (saved === 0 && errors.length === 0) {
     toast('No file sections found in crossref output', 'warn');
+  }
+}
+
+/* ==========================================================
+   Story Concept Builder
+   ========================================================== */
+let _conceptRunning = false;
+
+async function startConcept() {
+  const idea = document.getElementById('concept-idea').value.trim();
+  if (!idea) { alert('Please describe your story idea first.'); return; }
+
+  const btn = document.getElementById('btn-concept');
+  const statusEl = document.getElementById('concept-status');
+  const resultsDiv = document.getElementById('concept-results');
+  const streamDiv = document.getElementById('concept-stream');
+  const editorsDiv = document.getElementById('concept-editors');
+
+  btn.disabled = true;
+  btn.textContent = 'Building...';
+  statusEl.textContent = 'Connecting...';
+  resultsDiv.style.display = '';
+  streamDiv.style.display = '';
+  streamDiv.textContent = '';
+  editorsDiv.style.display = 'none';
+  _conceptRunning = true;
+
+  let fullText = '';
+  try {
+    const resp = await fetch('/api/concept', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({idea: idea}),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || resp.statusText);
+    }
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, {stream: true});
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+        if (ev.type === 'snapshot') {
+          fullText = ev.text;
+          streamDiv.textContent = fullText;
+        } else if (ev.type === 'chunk') {
+          fullText += ev.text;
+          streamDiv.textContent = fullText;
+        } else if (ev.type === 'done') {
+          break;
+        } else if (ev.type === 'error') {
+          throw new Error(ev.message || 'Generation failed');
+        }
+        streamDiv.scrollTop = streamDiv.scrollHeight;
+      }
+    }
+    statusEl.textContent = 'Done -- review and save below';
+    _parseConceptOutput(fullText);
+  } catch (e) {
+    statusEl.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Build Concept';
+    _conceptRunning = false;
+  }
+}
+
+function _parseConceptOutput(text) {
+  const editorsDiv = document.getElementById('concept-editors');
+  // Parse --- FILE: filename.yaml --- markers
+  const files = {};
+  const marker = /---\s*FILE:\s*(\S+\.ya?ml)\s*---/gi;
+  const parts = text.split(marker);
+  // parts: [preamble, filename1, content1, filename2, content2, ...]
+  for (let i = 1; i < parts.length; i += 2) {
+    const fname = parts[i].toLowerCase();
+    let content = (parts[i + 1] || '').trim();
+    // Strip wrapping code fences if present
+    content = content.replace(/^```ya?ml\s*/i, '').replace(/\s*```\s*$/i, '');
+    if (fname.includes('outline')) files.outline = content;
+    else if (fname.includes('character')) files.characters = content;
+    else if (fname.includes('location') || fname.includes('setting')) files.locations = content;
+  }
+
+  // If markers didn't work, try code fence blocks as fallback
+  if (!files.outline && !files.characters && !files.locations) {
+    const fences = text.match(/```ya?ml\s*\n([\s\S]*?)```/gi) || [];
+    for (const fence of fences) {
+      const content = fence.replace(/```ya?ml\s*\n/i, '').replace(/```\s*$/, '').trim();
+      if (content.match(/^story_title:|^chapters:/m) && !files.outline) files.outline = content;
+      else if (content.match(/^characters:/m) && !files.characters) files.characters = content;
+      else if (content.match(/^setting:|^locations:/m) && !files.locations) files.locations = content;
+    }
+  }
+
+  if (files.outline) document.getElementById('concept-yaml-outline').value = files.outline;
+  if (files.characters) document.getElementById('concept-yaml-characters').value = files.characters;
+  if (files.locations) document.getElementById('concept-yaml-locations').value = files.locations;
+
+  if (files.outline || files.characters || files.locations) {
+    editorsDiv.style.display = '';
+  }
+}
+
+async function saveConceptFile(role) {
+  const content = document.getElementById('concept-yaml-' + role).value.trim();
+  if (!content) { alert('No content to save for ' + role); return; }
+  try {
+    const resp = await fetch('/api/concept/save', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({role: role, content: content}),
+    });
+    const data = await resp.json();
+    if (!data.ok) { alert('Save failed: ' + (data.error || 'Unknown error')); return; }
+    addLogEntry('info', 'Saved ' + data.filename + ' from concept builder');
+    // Refresh the Plan tab file slots and parsed preview
+    await refreshFiles();
+    await refreshParsed();
+    toast(data.filename + ' saved', 'ok');
+  } catch (e) {
+    alert('Save failed: ' + e.message);
+  }
+}
+
+async function saveAllConceptFiles() {
+  for (const role of ['outline', 'characters', 'locations']) {
+    const content = document.getElementById('concept-yaml-' + role).value.trim();
+    if (content) await saveConceptFile(role);
   }
 }
 

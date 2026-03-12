@@ -2137,6 +2137,210 @@ def api_consult_clear():
 
 
 # ---------------------------------------------------------------------------
+# Story Concept Builder (AI-assisted YAML generation from ideas)
+# ---------------------------------------------------------------------------
+
+_concept_state = {"thread": None, "text": "", "status": "idle", "error": None}
+_concept_lock = threading.Lock()
+_concept_subs = []
+
+
+@app.route("/api/concept", methods=["POST"])
+def api_concept():
+    """Generate story YAML files from a user's story idea via SSE."""
+    from .concept import build_concept_prompt
+
+    data = request.get_json(silent=True) or {}
+    idea = (data.get("idea") or "").strip()
+    if not idea:
+        return jsonify({"ok": False, "error": "No story idea provided"}), 400
+
+    with _concept_lock:
+        t = _concept_state.get("thread")
+        if t is not None and t.is_alive():
+            pass  # Allow reconnection to existing run
+        else:
+            _concept_state["text"] = ""
+            _concept_state["status"] = "running"
+            _concept_state["error"] = None
+
+            cfg = _load_web_config()
+            host = _normalize_host(cfg.get("host", ""))
+            model = cfg.get("model", "gemma3:12b")
+            consult_ctx = int(cfg.get("consult_num_ctx", 32768))
+
+            if not host:
+                return jsonify({"ok": False, "error": "No Ollama host configured"}), 400
+
+            system_prompt, user_prompt = build_concept_prompt(idea)
+
+            def worker():
+                url = f"{host}/api/generate"
+                payload = {
+                    "model": model,
+                    "system": system_prompt,
+                    "prompt": user_prompt,
+                    "stream": True,
+                    "options": {
+                        "num_ctx": consult_ctx,
+                        "temperature": 0.7,
+                        "top_p": 0.9,
+                    },
+                }
+                state.emit("model_active", {"model": "consult", "name": model})
+                state.emit("log", {
+                    "message": f"[Concept] Building story concept with {model}",
+                    "level": "info",
+                    "time": time.time(),
+                })
+                try:
+                    resp = _requests.post(
+                        url, json=payload,
+                        timeout=(30, None),
+                        stream=True,
+                    )
+                    resp.raise_for_status()
+                    for line in resp.iter_lines():
+                        if not line:
+                            continue
+                        try:
+                            chunk = json.loads(line)
+                        except ValueError:
+                            continue
+                        token = chunk.get("response", "")
+                        if token:
+                            with _concept_lock:
+                                _concept_state["text"] += token
+                            for q in list(_concept_subs):
+                                try:
+                                    q.put_nowait({"type": "chunk", "text": token})
+                                except Exception:
+                                    pass
+                        if chunk.get("done"):
+                            break
+                    with _concept_lock:
+                        _concept_state["status"] = "done"
+                    for q in list(_concept_subs):
+                        try:
+                            q.put_nowait({"type": "done"})
+                        except Exception:
+                            pass
+                    state.emit("log", {
+                        "message": "[Concept] Story concept generation complete",
+                        "level": "info",
+                        "time": time.time(),
+                    })
+                except Exception as e:
+                    with _concept_lock:
+                        _concept_state["status"] = "error"
+                        _concept_state["error"] = str(e)
+                    for q in list(_concept_subs):
+                        try:
+                            q.put_nowait({"type": "error", "message": str(e)})
+                        except Exception:
+                            pass
+                    state.emit("log", {
+                        "message": f"[Concept] Error: {e}",
+                        "level": "error",
+                        "time": time.time(),
+                    })
+                finally:
+                    state.emit("model_active", {"model": "idle", "name": ""})
+
+            t = threading.Thread(target=worker, daemon=True, name="concept-builder")
+            t.start()
+            _concept_state["thread"] = t
+
+    # Subscribe to events
+    q = queue.Queue()
+    _concept_subs.append(q)
+
+    def stream():
+        try:
+            with _concept_lock:
+                if _concept_state["text"]:
+                    yield f"data: {json.dumps({'type': 'snapshot', 'text': _concept_state['text']})}\n\n"
+                if _concept_state["status"] == "done":
+                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                    return
+                if _concept_state["status"] == "error":
+                    yield f"data: {json.dumps({'type': 'error', 'message': _concept_state.get('error', '')})}\n\n"
+                    return
+
+            while True:
+                try:
+                    ev = q.get(timeout=15)
+                    yield f"data: {json.dumps(ev)}\n\n"
+                    if ev["type"] in ("done", "error"):
+                        break
+                except queue.Empty:
+                    yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            if q in _concept_subs:
+                _concept_subs.remove(q)
+
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.route("/api/concept/result")
+def api_concept_result():
+    """Return the current concept builder result snapshot."""
+    with _concept_lock:
+        return jsonify({
+            "status": _concept_state["status"],
+            "text": _concept_state["text"],
+            "error": _concept_state.get("error"),
+        })
+
+
+@app.route("/api/concept/save", methods=["POST"])
+def api_concept_save():
+    """Save a generated YAML file to the workspace.
+
+    Expects JSON: {"role": "outline|characters|locations", "content": "..."}
+    """
+    _ensure_workspace()
+
+    data = request.get_json(silent=True) or {}
+    role = data.get("role", "").strip()
+    content = data.get("content", "")
+    if not role or not content.strip():
+        return jsonify({"ok": False, "error": "Missing role or content"}), 400
+
+    if role not in FILE_ROLES:
+        return jsonify({"ok": False, "error": f"Unknown role: {role}"}), 400
+
+    # Validate YAML before saving
+    import yaml
+    try:
+        yaml.safe_load(content)
+    except yaml.YAMLError as e:
+        return jsonify({"ok": False, "error": f"Invalid YAML: {e}"}), 400
+
+    fname = FILE_ROLES[role]
+    path = os.path.join(WORKSPACE_DIR, fname)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    state.emit("log", {
+        "message": f"[Concept] Saved {fname}",
+        "level": "info",
+        "time": time.time(),
+    })
+    return jsonify({"ok": True, "filename": fname})
+
+
+# ---------------------------------------------------------------------------
 # Voice Casting (AI-assisted TTS voice recommendations)
 # ---------------------------------------------------------------------------
 

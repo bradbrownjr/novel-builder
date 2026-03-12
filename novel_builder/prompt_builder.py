@@ -485,6 +485,8 @@ def _build_character_block(scene, all_characters, heritage_defs,
             lines.append(f"  Species/form: {context['species']}")
         if context.get("appearance"):
             lines.append(f"  Appearance: {context['appearance']}")
+        if context.get("origin"):
+            lines.append(f"  Origin: {context['origin']}")
 
         # Vibe — always; phrased as a directive so the LLM treats it as a constraint
         if context.get("vibe"):

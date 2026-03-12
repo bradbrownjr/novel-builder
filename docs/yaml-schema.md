@@ -158,6 +158,7 @@ chapters:
 characters:
   silas_marsh:                           # Character ID (used for references)
     Name: Silas Marsh                    # REQUIRED — display name
+    origin: "American (Maine coast)"     # Optional — cultural/geographic origin
     heritage: [human, lightkeeper]       # Optional — list of heritage IDs
     summary: >                           # Recommended
       Reclusive lighthouse keeper in his late fifties. Weathered,
@@ -224,6 +225,7 @@ characters:
 | `vibe` | string | No | Always | Tonal anchor — never dropped |
 | `species` | string | No | Always | Physical anchor — prose must never contradict this |
 | `appearance` | string | No | Always | Visual description anchor — kept consistent across scenes |
+| `origin` | string | No | Always | Cultural/geographic origin — shapes dialect, slang, and TTS voice casting |
 | `voice` | string | No | Always | Shapes dialogue quality |
 | `habit` | string | No | Always | Included if present |
 | `catchphrase` | string | No | Probability-gated | When the frequency roll hits |

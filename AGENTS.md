@@ -46,6 +46,7 @@ Before any large file rewrite, verify every row in the affected file column is p
 | Character appearance tracking | characters.py, state.py | `character_appearances`, tiered context logic |
 | Voice catalog & descriptions | voice_catalog.py, web.py, templates/index.html | `KOKORO_VOICES`, `enrich_voice_list()`, `/api/tts/voices` (enriched), `/api/voice-catalog` |
 | Voice casting (AI) | consult.py, web.py, templates/index.html | `build_voice_casting_prompt()`, `/api/voice-cast`, `/api/voice-cast/result`, `startVoiceCast()`, `applyVoiceCast()` |
+| Story Concept Builder | concept.py, web.py, templates/index.html | `build_concept_prompt()`, `/api/concept`, `/api/concept/result`, `/api/concept/save`, `startConcept()`, `saveConceptFile()` |
 
 ## Project Conventions
 
@@ -77,7 +78,8 @@ novel_builder/
 ├── postprocess.py        # clean_scene_text(), apply_anti_patterns()
 ├── tts.py                # parse_span_segments(), _has_spoken_dialogue()
 ├── voice_catalog.py      # KOKORO_VOICES, enrich_voice_list(), get_voice_info(), get_catalog_summary()
-├── web.py                # Flask web UI, TTS proxy, /api/memory (GET+POST), /api/regenerate, /api/download (marker-stripped), /api/ollama-pull (model download), /api/consult (AI audit), /api/voice-cast (voice casting)
+├── web.py                # Flask web UI, TTS proxy, /api/memory (GET+POST), /api/regenerate, /api/download (marker-stripped), /api/ollama-pull (model download), /api/consult (AI audit), /api/voice-cast (voice casting), /api/concept (story concept builder)
+├── concept.py            # Story Concept Builder: build_concept_prompt()
 ├── consult.py            # AI-powered YAML audit: multi-pass analysis prompts, fix generation, voice casting prompts
 └── validator.py          # validate_all()
 ```
@@ -94,11 +96,12 @@ _(Update this tree when functions are added, renamed, or moved.)_
 
 | Context tier | When | Fields sent |
 |---|---|---|
-| **Full bio** | First appearance in story | Name, summary, role, personality, vibe, species, appearance, voice, habit + merged heritage traits |
-| **Reminder** | Subsequent appearances | Name, role, vibe, species, appearance, voice + evolution notes |
+| **Full bio** | First appearance in story | Name, summary, role, personality, vibe, species, appearance, origin, voice, habit + merged heritage traits |
+| **Reminder** | Subsequent appearances | Name, role, vibe, species, appearance, origin, voice + evolution notes |
 
 - `vibe` is the persistent tonal anchor — always included.
 - `voice` (speech patterns) is always included when present — shapes dialogue.
+- `origin` (cultural/geographic background) is always included when present — shapes dialect, slang, and TTS voice casting.
 - `personality` and `summary` are dropped after first appearance (now established in narrative).
 - `heritage` traits merged on first appearance, dropped after (established in narrative). Character fields override heritage.
 - `catchphrase` is probability-gated, not included every scene.
@@ -163,6 +166,7 @@ _(Track fixes here for reference.)_
 - TTS duplication postprocessing -- `clean_scene_text()` in `postprocess.py` now detects and collapses duplicated dialogue where the model writes a quote both untagged and span-tagged (e.g. `"Hello!" <span data-tts="X">"Hello!"</span>` becomes just the tagged version).
 - Voice catalog and descriptions -- `voice_catalog.py` provides metadata (description, accent, gender, tone, best-for) for 58 Kokoro TTS voices. `/api/tts/voices` now returns enriched voice data with descriptions. Voice selection dropdowns show descriptions alongside voice IDs.
 - Voice casting (AI) -- new card in Consult tab. Uses the generation model to analyze character traits (vibe, voice, personality, origin, role) against the voice catalog and recommend TTS voices. Streams recommendations via SSE. "Apply Recommendations" parses the YAML output block and writes voice assignments to character inputs. Route: `/api/voice-cast` (streaming SSE), `/api/voice-cast/result` (snapshot), `/api/voice-catalog` (catalog JSON).
+- Story Concept Builder -- Plan tab card that takes a free-form story idea and generates complete YAML files (outline, characters, locations) via the generation model. Streams output via SSE. Parsed output populates three editable YAML textareas. "Save to Plan" buttons write validated YAML to workspace files. Route: `/api/concept` (POST, streaming SSE), `/api/concept/result` (GET, snapshot), `/api/concept/save` (POST, validates + saves). Architecture mirrors voice cast pattern (_concept_state, _concept_lock, _concept_subs). Temperature 0.7 for creative output.
 
 ## Scene Marker Format
 
