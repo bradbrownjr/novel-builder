@@ -209,9 +209,19 @@ def _run_generation(config, args, event_callback=None):
 
             # Build system + scene prompts (system prompt is per-scene
             # because the character roster is scoped to known characters)
-            system_prompt = build_system_prompt(
-                config, state=state, scene_char_ids=present_ids,
-            )
+            try:
+                system_prompt = build_system_prompt(
+                    config, state=state, scene_char_ids=present_ids,
+                )
+            except Exception as e:
+                tb = traceback.format_exc()
+                emit("log",
+                     message=(
+                         f"Scene {scene_num}: system prompt build failed -- "
+                         f"{type(e).__name__}: {e}\n\n{tb}"
+                     ),
+                     level="error")
+                raise
             try:
                 user_prompt = build_scene_prompt(
                     config, chapter, scene, state, heritage_defs,
@@ -221,7 +231,7 @@ def _run_generation(config, args, event_callback=None):
                 tb = traceback.format_exc()
                 emit("log",
                      message=(
-                         f"Scene {scene_num}: prompt build failed — "
+                         f"Scene {scene_num}: prompt build failed -- "
                          f"{type(e).__name__}: {e}\n\n{tb}"
                      ),
                      level="error")

@@ -176,6 +176,8 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
             # would leak every character in the story into scene 1's roster.
             if char_id not in appeared_ids:
                 continue
+            if not isinstance(char_data, dict):
+                continue
             name = char_data.get("Name") or char_data.get("name", "")
             role = char_data.get("role", "")
             if name:
@@ -513,7 +515,9 @@ def _build_character_block(scene, all_characters, heritage_defs,
         relationships = get_relevant_relationships(char_data, present_ids)
         if relationships:
             for other_id, rel_desc in relationships.items():
-                other_name = present.get(other_id, {}).get("Name", other_id)
+                other_char = present.get(other_id, {})
+                other_name = (other_char.get("Name", other_id)
+                              if isinstance(other_char, dict) else other_id)
                 lines.append(f"  Relationship with {other_name}: {rel_desc}")
 
         # Evolution / character development

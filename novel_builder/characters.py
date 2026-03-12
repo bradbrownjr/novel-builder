@@ -207,6 +207,8 @@ def get_evolution_context(character, current_chapter):
 
     notes = []
     for entry in evolution:
+        if not isinstance(entry, dict):
+            continue
         after_ch = entry.get("after_chapter", 0)
         if after_ch < current_chapter:
             notes.append(entry.get("note", ""))
@@ -228,6 +230,8 @@ def should_include_catchphrase(character):
     if catchphrases:
         results = []
         for entry in catchphrases:
+            if not isinstance(entry, dict):
+                continue
             freq = entry.get("frequency", _DEFAULT_FREQUENCY)
             odds = _FREQUENCY_ODDS.get(freq, _FREQUENCY_ODDS[_DEFAULT_FREQUENCY])
             if random.random() < odds:
