@@ -4320,22 +4320,17 @@ async function applyVoiceCast() {
   // unless the AI already assigned the same voice (or narrator wasn't applied).
   const parsed = await api('/api/parse-yaml');
   const povCharName = parsed?.outline?.pov_character || '';
-  if (povCharName && !narrator) {
-    // AI didn't assign a narrator -- find the POV character's voice and use it
+  if (povCharName) {
+    // First-person story: narrator IS the POV character.
+    // Always sync narrator voice to the POV character's assigned voice,
+    // overriding whatever the AI recommended in its narrator section.
     const povInput = [...document.querySelectorAll('.tts-char-voice')]
       .find(el => el.dataset.character === povCharName || el.dataset.characterId === povCharName);
     if (povInput && povInput.value) {
       document.getElementById('cfg-tts-narrator-voice').value = povInput.value;
       onNarratorVoiceChange();
-      toast('Narrator synced to ' + povCharName + ' (first-person POV)', 'info');
       await saveTTSConfig();
-    }
-  } else if (povCharName && narrator) {
-    // AI assigned a narrator -- check if it differs from the POV character's voice
-    const povInput = [...document.querySelectorAll('.tts-char-voice')]
-      .find(el => el.dataset.character === povCharName || el.dataset.characterId === povCharName);
-    if (povInput && povInput.value && povInput.value !== narrator) {
-      toast('Note: narrator voice differs from ' + povCharName + ' (POV character). Use "Recast Voices" if you want them matched.', 'info');
+      toast('Narrator set to ' + povCharName + '\'s voice (first-person POV)', 'info');
     }
   }
 
