@@ -2384,7 +2384,25 @@ def api_voice_cast():
             if not os.path.exists(char_path):
                 return jsonify({"ok": False, "error": "No characters.yaml found"}), 400
             with open(char_path, "r", encoding="utf-8") as f:
-                char_yaml = f.read()
+                char_raw = f.read()
+
+            # Strip existing tts_voice assignments so the model does
+            # genuine casting instead of echoing the author's old picks.
+            try:
+                char_parsed = _yaml.safe_load(char_raw) or {}
+                chars = char_parsed.get("characters", char_parsed)
+                if isinstance(chars, dict):
+                    for cdata in chars.values():
+                        if isinstance(cdata, dict):
+                            cdata.pop("tts_voice", None)
+                    char_yaml = _yaml.dump(
+                        {"characters": chars} if "characters" in char_parsed else chars,
+                        default_flow_style=False, allow_unicode=True,
+                    )
+                else:
+                    char_yaml = char_raw
+            except Exception:
+                char_yaml = char_raw
 
             catalog_text = get_catalog_summary()
 
