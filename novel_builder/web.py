@@ -2419,6 +2419,20 @@ def api_voice_cast():
                 except Exception:
                     pass
 
+            pov_log = outline_context.get("pov_character", "")
+            if pov_log:
+                state.emit("log", {
+                    "message": f"[Voice Cast] First-person POV detected: narrator = {pov_log}",
+                    "level": "info",
+                    "time": time.time(),
+                })
+            else:
+                state.emit("log", {
+                    "message": "[Voice Cast] No pov_character set -- narrator will be cast independently",
+                    "level": "info",
+                    "time": time.time(),
+                })
+
             # Get available voices from TTS server (best-effort)
             available = []
             tts_host = _normalize_tts_host(cfg.get("tts_host", ""))
@@ -2455,6 +2469,17 @@ def api_voice_cast():
             system_prompt, user_prompt = build_voice_casting_prompt(
                 char_yaml, catalog_text, sorted(available), outline_context
             )
+
+            pov_name = outline_context.get("pov_character", "")
+            pov_desc = outline_context.get("pov", "")
+            state.emit("log", {
+                "message": (
+                    f"[Voice Cast] Outline context: pov_character={pov_name!r}, "
+                    f"pov={pov_desc!r}"
+                ),
+                "level": "info",
+                "time": time.time(),
+            })
 
             def worker():
                 url = f"{host}/api/generate"
