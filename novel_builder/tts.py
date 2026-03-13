@@ -47,21 +47,53 @@ def _has_spoken_dialogue(paragraph):
     return False
 
 
-def _filter_markdown_headers(text):
-    """Remove markdown header lines from text, preserving paragraph structure.
+def _split_on_headers(text):
+    """Split narration text into alternating title and narration segments.
 
-    Strips lines that are purely markdown headers (e.g., "# Title", "## Subtitle").
-    Used to prevent headers from being included in TTS narration output.
+    Separates markdown header lines (e.g., "# Chapter 1") from body text
+    so they can be emitted as distinct TTS segments with a post-title pause.
+    Header `#` symbols are stripped; only the clean title text is kept.
 
     Args:
         text: Multi-line text possibly containing markdown headers.
 
     Returns:
-        Text with header lines removed, maintaining blank lines for spacing.
+        List of (is_title: bool, text: str) pairs. Empty strings are excluded.
     """
-    lines = text.split('\n')
-    filtered = [line for line in lines if not _MARKDOWN_HEADER_RE.match(line)]
-    return '\n'.join(filtered)
+    parts = []
+    current_lines = []
+    for line in text.split('\n'):
+        if _MARKDOWN_HEADER_RE.match(line):
+            if current_lines:
+                block = '\n'.join(current_lines)
+                if block.strip():
+                    parts.append((False, block))
+                current_lines = []
+            # Strip leading # symbols and surrounding whitespace
+            title_text = _MARKDOWN_HEADER_RE.sub('', line).strip()
+            if title_text:
+                parts.append((True, title_text))
+        else:
+            current_lines.append(line)
+    if current_lines:
+        block = '\n'.join(current_lines)
+        if block.strip():
+            parts.append((False, block))
+    return parts
+
+
+def _text_to_segments(text):
+    """Convert a narration text block into one or more segment dicts.
+
+    Headers become type="title" segments. Remaining text becomes type="narration".
+    Yields each segment dict in document order.
+    """
+    for is_title, part in _split_on_headers(text):
+        yield {
+            "type": "title" if is_title else "narration",
+            "text": part,
+            "character": None,
+        }
 
 
 def parse_span_segments(text):
@@ -71,14 +103,18 @@ def parse_span_segments(text):
     generation.  This function extracts them into a list usable by the TTS
     playback pipeline.
 
+    Markdown header lines (e.g., "# Chapter Title") are extracted as
+    type="title" segments so the playback layer can insert a dramatic pause
+    after speaking the title before the scene content begins.
+
     Args:
         text: Scene text potentially containing data-tts spans.
 
     Returns:
         List of segment dicts with keys:
-            type: "narration" or "dialogue"
+            type: "title", "narration", or "dialogue"
             text: The segment text (span inner text for dialogue).
-            character: Character name string, or None for narration.
+            character: Character name string, or None for title/narration.
         Returns an empty list if no spans are found.
     """
     if not text or '<span data-tts="' not in text:
@@ -88,16 +124,11 @@ def parse_span_segments(text):
     last_end = 0
 
     for m in _SPAN_RE.finditer(text):
-        # Text before this span is narration (filter out markdown headers)
+        # Text before this span may contain headers -- emit as title/narration sub-segments
         before = text[last_end:m.start()]
-        before = _filter_markdown_headers(before)
-        if before.strip():
-            segments.append({
-                "type": "narration",
-                "text": before,
-                "character": None,
-            })
-        # The span itself is dialogue
+        segments.extend(_text_to_segments(before))
+
+        # The span itself is attributed dialogue
         character = m.group(1) or None
         segments.append({
             "type": "dialogue",
@@ -106,14 +137,9 @@ def parse_span_segments(text):
         })
         last_end = m.end()
 
-    # Text after the last span (filter out markdown headers)
+    # Text after the last span may also contain headers
     after = text[last_end:]
-    after = _filter_markdown_headers(after)
-    if after.strip():
-        segments.append({
-            "type": "narration",
-            "text": after,
-            "character": None,
-        })
+    segments.extend(_text_to_segments(after))
 
     return segments
+
