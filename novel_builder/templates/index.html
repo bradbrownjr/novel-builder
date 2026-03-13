@@ -4217,15 +4217,15 @@ async function startVoiceCast() {
           textEl.textContent += ev.text;
           textEl.scrollTop = textEl.scrollHeight;
         } else if (ev.type === 'done') {
-          statusEl.textContent = 'Applying voice assignments...';
+          statusEl.textContent = 'Auditing recommendations...';
           try {
-            await applyVoiceCast();
-            statusEl.textContent = 'Voice casting complete';
+            await _auditVoiceCast();
+            statusEl.textContent = 'Recommendations ready';
           } catch (e) {
-            statusEl.textContent = 'Auto-apply failed';
-            statusEl.style.color = 'var(--red)';
+            statusEl.textContent = 'Audit failed -- review manually before applying';
+            statusEl.style.color = 'var(--orange)';
           }
-          applyBtn.textContent = 'Re-apply';
+          applyBtn.textContent = 'Apply Recommendations';
           applyBtn.style.display = '';
         } else if (ev.type === 'error') {
           statusEl.textContent = 'Error: ' + (ev.message || 'unknown');
@@ -4243,14 +4243,41 @@ async function startVoiceCast() {
   _voiceCastRunning = false;
 }
 
-async function applyVoiceCast() {
+// Parse YAML assignments out of the voice-cast text area.
+// Returns { narrator, assignments } where assignments is charId -> voice.
+function _parseVoiceCastYaml(text) {
+  const yamlMatch = text.match(/```yaml\s*\n([\s\S]*?)```/);
+  if (!yamlMatch) return null;
+  const lines = yamlMatch[1].split('\n');
+  let narrator = '';
+  const assignments = {};
+  let inCharacters = false;
+  let currentChar = '';
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const nm = trimmed.match(/^narrator:\s*(.+)$/);
+    if (nm) { narrator = nm[1].trim().replace(/^["'(]|["')]$/g, ''); inCharacters = false; continue; }
+    if (trimmed === 'characters:') { inCharacters = true; continue; }
+    if (inCharacters) {
+      const cm = trimmed.match(/^(\w+):$/);
+      if (cm) { currentChar = cm[1]; continue; }
+      const vm = trimmed.match(/^tts_voice:\s*(\S+)/);
+      if (vm && currentChar) assignments[currentChar] = vm[1];
+    }
+  }
+  return { narrator, assignments };
+}
+
+// Audit the current text-area output: detect violations, call correction API if
+// needed, and rewrite the YAML block in-place with any corrected IDs so the user
+// sees clean recommendations before clicking Apply.
+async function _auditVoiceCast() {
   const textEl = document.getElementById('voice-cast-text');
   const text = textEl.textContent || '';
 
-  // Fetch character metadata first: gender map + POV character
   const parsed = await api('/api/parse-yaml');
-  const povCharName = parsed?.outline?.pov_character || '';
-  const genderMap = {}; // charId/charNameId -> 'male'|'female'|'nonbinary'
+  const genderMap = {};
   for (const ch of (parsed?.characters?.characters || [])) {
     if (ch.gender) {
       const g = ch.gender.toLowerCase();
@@ -4259,49 +4286,20 @@ async function applyVoiceCast() {
     }
   }
 
-  // Parse the YAML block from the voice casting output
-  const yamlMatch = text.match(/```yaml\s*\n([\s\S]*?)```/);
-  if (!yamlMatch) {
-    toast('No YAML voice assignments found in output', 'warn');
-    return;
-  }
+  const result = _parseVoiceCastYaml(text);
+  if (!result) return; // no YAML block -- nothing to audit
 
-  const lines = yamlMatch[1].split('\n');
-  let narrator = '';
-  const assignments = {};
-  let inCharacters = false;
-  let currentChar = '';
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-
-    const narratorMatch = trimmed.match(/^narrator:\s*(.+)$/);
-    if (narratorMatch) {
-      narrator = narratorMatch[1].trim().replace(/^["'(]|["')]$/g, '');
-      inCharacters = false;
-      continue;
-    }
-    if (trimmed === 'characters:') { inCharacters = true; continue; }
-    if (inCharacters) {
-      const charMatch = trimmed.match(/^(\w+):$/);
-      if (charMatch) { currentChar = charMatch[1]; continue; }
-      const voiceMatch = trimmed.match(/^tts_voice:\s*(\S+)/);
-      if (voiceMatch && currentChar) assignments[currentChar] = voiceMatch[1];
-    }
-  }
-
+  const { assignments } = result;
   const BLOCKED = ['jf_', 'jm_', 'zf_', 'zm_', 'kf_', 'km_'];
   const VALID_ID = /^[a-z][fm]_\w+$/;
 
-  // Resolve voice for each character input using fuzzy ID matching
+  // Check each resolved assignment for violations
+  const allViolations = [];
   const inputs = document.querySelectorAll('.tts-char-voice');
-  const resolvedMap = {}; // charId -> {input, charName, voice, violations[]}
   for (const input of inputs) {
     const charName = input.dataset.character;
     const charId = input.dataset.characterId || charName.toLowerCase().replace(/\s+/g, '_');
     const charNameId = charName.toLowerCase().replace(/\s+/g, '_');
-
     let voice = assignments[charId] || assignments[charNameId];
     if (!voice) {
       const k = Object.keys(assignments).find(k =>
@@ -4311,57 +4309,77 @@ async function applyVoiceCast() {
       if (k) voice = assignments[k];
     }
     if (!voice) continue;
-
-    const violations = [];
     if (!VALID_ID.test(voice)) {
-      violations.push(`"${voice}" is not a valid voice ID (must look like af_name or bm_name)`);
+      allViolations.push({ char_id: charId, char_name: charName, assigned_voice: voice,
+        reason: `"${voice}" is not a valid voice ID (must look like af_name or bm_name)` });
     } else {
       if (BLOCKED.some(p => voice.startsWith(p))) {
         const lang = voice.startsWith('j') ? 'Japanese' : voice.startsWith('z') ? 'Chinese' : 'Korean';
-        violations.push(`"${voice}" is a ${lang} voice that produces unintelligible English -- use an English-capable voice (af_*, am_*, bf_*, bm_*, etc.)`);
+        allViolations.push({ char_id: charId, char_name: charName, assigned_voice: voice,
+          reason: `"${voice}" is a ${lang} voice that produces unintelligible English` });
       }
       const gender = genderMap[charId] || genderMap[charNameId];
       if (gender === 'male' && /^[a-z]f_/.test(voice)) {
-        violations.push(`"${voice}" is a FEMALE voice (second letter 'f') but ${charName} is male -- use a *m_ voice (am_*, bm_*, etc.)`);
+        allViolations.push({ char_id: charId, char_name: charName, assigned_voice: voice,
+          reason: `"${voice}" is a FEMALE voice but ${charName} is male -- use a *m_ voice` });
       } else if ((gender === 'female' || gender === 'nonbinary') && /^[a-z]m_/.test(voice)) {
-        violations.push(`"${voice}" is a MALE voice (second letter 'm') but ${charName} is ${gender} -- use a *f_ voice (af_*, bf_*, etc.)`);
+        allViolations.push({ char_id: charId, char_name: charName, assigned_voice: voice,
+          reason: `"${voice}" is a MALE voice but ${charName} is ${gender} -- use a *f_ voice` });
       }
     }
-    resolvedMap[charId] = { input, charName, voice, violations };
   }
 
-  // Collect all violations and request AI correction if needed
-  const allViolations = [];
-  for (const [, entry] of Object.entries(resolvedMap)) {
-    for (const reason of entry.violations) {
-      allViolations.push({
-        char_id: Object.keys(resolvedMap).find(k => resolvedMap[k] === entry),
-        char_name: entry.charName, assigned_voice: entry.voice, reason
-      });
+  if (allViolations.length === 0) return; // all clean
+
+  // Fetch corrected IDs from the server and rewrite the YAML block in-place
+  const corrResult = await apiPost('/api/voice-cast/correct', { violations: allViolations });
+  if (!corrResult?.ok || !corrResult.assignments) return;
+
+  const corrected = corrResult.assignments; // charId -> corrected voice
+  const yamlMatch = text.match(/(```yaml\s*\n)([\s\S]*?)(```)/);
+  if (!yamlMatch) return;
+
+  // Rewrite tts_voice lines for corrected characters
+  let yamlBody = yamlMatch[2];
+  let currentChar = '';
+  const newLines = yamlBody.split('\n').map(line => {
+    const trimmed = line.trim();
+    const cm = trimmed.match(/^(\w+):$/);
+    if (cm) { currentChar = cm[1]; return line; }
+    const vm = trimmed.match(/^(tts_voice:\s*)(\S+)/);
+    if (vm && currentChar && corrected[currentChar]) {
+      const old = corrected[currentChar] !== vm[2] ? vm[2] : null;
+      const indent = line.match(/^\s*/)[0];
+      return indent + 'tts_voice: ' + corrected[currentChar]
+        + (old ? '  # corrected from ' + old : '');
     }
-  }
+    return line;
+  });
 
-  let correctedAssignments = {};
-  if (allViolations.length > 0) {
-    toast(`Correcting ${allViolations.length} assignment error(s)...`, 'info');
-    try {
-      const corrResult = await apiPost('/api/voice-cast/correct', { violations: allViolations });
-      if (corrResult?.ok) {
-        correctedAssignments = corrResult.assignments || {};
-        if (corrResult.raw) {
-          textEl.textContent += '\n\n--- Auto-correction ---\n' + corrResult.raw;
-        }
-      } else {
-        toast('Auto-correction failed: ' + (corrResult?.error || 'unknown'), 'warn');
-      }
-    } catch (e) {
-      toast('Auto-correction request failed', 'warn');
-    }
-  }
+  const correctedYaml = yamlMatch[1] + newLines.join('\n') + yamlMatch[3];
+  textEl.textContent = text.slice(0, yamlMatch.index) + correctedYaml
+    + text.slice(yamlMatch.index + yamlMatch[0].length)
+    + '\n\n(Audited: ' + allViolations.length + ' issue(s) corrected before recommendations were finalised.)';
+}
 
-  // Apply narrator from AI recommendation, but only when there is no pov_character.
-  // If pov_character is set, the narrator IS that character and must match their voice
-  // exactly -- the POV sync below is the sole source of truth.
+async function applyVoiceCast() {
+  const textEl = document.getElementById('voice-cast-text');
+  const text = textEl.textContent || '';
+
+  const parsed = await api('/api/parse-yaml');
+  const povCharName = parsed?.outline?.pov_character || '';
+
+  const result = _parseVoiceCastYaml(text);
+  if (!result) {
+    toast('No YAML voice assignments found in output', 'warn');
+    return;
+  }
+  const { narrator, assignments } = result;
+
+  const BLOCKED = ['jf_', 'jm_', 'zf_', 'zm_', 'kf_', 'km_'];
+  const VALID_ID = /^[a-z][fm]_\w+$/;
+
+  // Apply narrator (only when no pov_character -- POV sync below takes precedence)
   let narratorApplied = false;
   if (!povCharName && narrator && VALID_ID.test(narrator) && !BLOCKED.some(p => narrator.startsWith(p))) {
     document.getElementById('cfg-tts-narrator-voice').value = narrator;
@@ -4369,20 +4387,30 @@ async function applyVoiceCast() {
     narratorApplied = true;
   }
 
-  // Apply character voices (corrected takes priority over initial)
+  // Apply character voices
+  const inputs = document.querySelectorAll('.tts-char-voice');
   let applied = 0;
-  for (const [cid, entry] of Object.entries(resolvedMap)) {
-    const finalVoice = correctedAssignments[cid]
-      || (entry.violations.length === 0 ? entry.voice : null);
-    if (!finalVoice || !VALID_ID.test(finalVoice) || BLOCKED.some(p => finalVoice.startsWith(p))) continue;
-    entry.input.value = finalVoice;
-    onVoiceInputChange(entry.input);
+  for (const input of inputs) {
+    const charName = input.dataset.character;
+    const charId = input.dataset.characterId || charName.toLowerCase().replace(/\s+/g, '_');
+    const charNameId = charName.toLowerCase().replace(/\s+/g, '_');
+    let voice = assignments[charId] || assignments[charNameId];
+    if (!voice) {
+      const k = Object.keys(assignments).find(k =>
+        k.startsWith(charId) || charId.startsWith(k)
+        || k.startsWith(charNameId) || charNameId.startsWith(k)
+      );
+      if (k) voice = assignments[k];
+    }
+    if (!voice || !VALID_ID.test(voice) || BLOCKED.some(p => voice.startsWith(p))) continue;
+    input.value = voice;
+    onVoiceInputChange(input);
     applied++;
   }
 
   await saveTTSConfig();
 
-  // Sync narrator to POV character for first-person stories
+  // Sync narrator = POV character voice for first-person stories
   if (povCharName) {
     const povInput = [...document.querySelectorAll('.tts-char-voice')]
       .find(el => el.dataset.character === povCharName || el.dataset.characterId === povCharName);
@@ -4418,9 +4446,9 @@ async function restoreVoiceCast() {
     textEl.textContent = r.text;
   }
   if (r.status === 'done') {
-    statusEl.textContent = 'Voice casting complete';
+    statusEl.textContent = 'Recommendations ready';
     btn.textContent = 'Recast Voices';
-    applyBtn.textContent = 'Re-apply';
+    applyBtn.textContent = 'Apply Recommendations';
     applyBtn.style.display = '';
   } else if (r.status === 'error') {
     statusEl.textContent = 'Error: ' + (r.error || 'unknown');
