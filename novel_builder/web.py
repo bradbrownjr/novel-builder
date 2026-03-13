@@ -2372,8 +2372,8 @@ def api_voice_cast():
 
             cfg = _load_web_config()
             host = _normalize_host(cfg.get("host", ""))
-            model = cfg.get("summary_model", "gemma3:4b")
-            cast_ctx = int(cfg.get("generation_num_ctx", 8192))
+            model = cfg.get("model", "gemma3:12b")
+            cast_ctx = int(cfg.get("consult_num_ctx", cfg.get("generation_num_ctx", 8192)))
             timeout_s = max(int(cfg.get("timeout", 900)), 1800)
 
             if not host:
