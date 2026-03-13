@@ -89,6 +89,27 @@ def clean_scene_text(text):
         text,
     )
 
+    # Fix unclosed <span data-tts> tags. An unclosed span causes the TTS
+    # parser's regex to capture everything from that opening tag to the
+    # NEXT </span> in the text, which may be many sentences later and
+    # belong to a different character -- playing all that narration and
+    # other characters' dialogue in the wrong voice.
+    # Strategy: walk all span open/close tags as a stack; any open tags
+    # still on the stack at the end had no matching close -- strip them.
+    tag_re = re.compile(
+        r'(<span\s+data-tts="[^"]*">)|(</span>)',
+        re.IGNORECASE,
+    )
+    stack = []  # (start, end) of unclosed opening tags
+    for m in tag_re.finditer(text):
+        if m.group(1):          # opening tag
+            stack.append((m.start(), m.end()))
+        elif stack:             # closing tag -- pops the most recent open
+            stack.pop()
+    # Remove unclosed opens from right to left to preserve positions
+    for start, end in reversed(stack):
+        text = text[:start] + text[end:]
+
     return text.strip()
 
 

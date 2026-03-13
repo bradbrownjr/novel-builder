@@ -251,9 +251,14 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
             if isinstance(cdata, dict):
                 known_names.add(cdata.get("Name") or cdata.get("name", cid))
 
+        # Exclude the POV narrator from tagging -- their own dialogue IS the
+        # narration voice; wrapping it in a span causes it to be treated as
+        # a separate character rather than the narrator's own voice.
+        pov_name = (config.get("pov_character") or "").strip()
         tagged_names = [
             n for n in tts_voice_map
             if n.lower() != "narrator" and n in known_names
+            and n != pov_name
         ]
         if tagged_names:
             names_str = ", ".join(tagged_names)
@@ -275,6 +280,9 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
                 "without a voice assignment"
                 "\n- Place the span around the quotation marks"
                 "\n- Leave all narration and action untagged"
+                "\n- CRITICAL: Always close every span tag you open. Every"
+                " <span data-tts=\"Name\"> MUST have a corresponding </span>"
+                " on the same line. Never leave a span unclosed."
             )
 
     return "\n".join(parts)

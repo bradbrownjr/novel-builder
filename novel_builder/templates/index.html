@@ -2316,6 +2316,7 @@ const tts = {
   yamlVoiceMap: {},   // sourced from characters.yaml tts_voice field (takes precedence)
   voiceCatalog: {},   // enriched voice metadata from voice_catalog.py
   narratorVoice: '',
+  povCharacter: '',   // pov_character from outline -- their spans always use narrator voice
   model: '',
   speed: 1.0,
   availableModels: [],
@@ -2618,6 +2619,11 @@ function parseOutputIntoChaptersForAudio(text) {
 }
 
 function getVoiceForSegment(seg) {
+  // POV narrator's own tagged speech always uses the narrator voice, not the
+  // character voice map. The narrator IS the character; no separate voice needed.
+  if (seg.character && tts.povCharacter && seg.character === tts.povCharacter) {
+    return tts.narratorVoice;
+  }
   if (seg.character) {
     if (tts.yamlVoiceMap[seg.character]) return tts.yamlVoiceMap[seg.character];
     if (tts.voiceMap[seg.character]) return tts.voiceMap[seg.character];
@@ -2691,6 +2697,7 @@ async function playAllScenes() {
   const _playChars = parsed?.characters?.characters || [];
   const charNames = _playChars.map(c => c.name);
   const povCharacter = parsed?.outline?.pov_character || '';
+  tts.povCharacter = povCharacter;
   tts.yamlVoiceMap = {};
   for (const ch of _playChars) {
     if (ch.tts_voice) tts.yamlVoiceMap[ch.name] = ch.tts_voice;
@@ -2769,6 +2776,7 @@ async function downloadAudiobook() {
   const characters = parsed?.characters?.characters || [];
   const charNames = characters.map(c => c.name);
   const povCharacter = parsed?.outline?.pov_character || '';
+  tts.povCharacter = povCharacter;
   tts.yamlVoiceMap = {};
   for (const ch of characters) {
     if (ch.tts_voice) tts.yamlVoiceMap[ch.name] = ch.tts_voice;
