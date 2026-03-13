@@ -130,6 +130,7 @@ class GenerationState:
         self.output_scenes = []
         self.error = None
         self.start_time = None
+        self.throughput = {"generation": None, "summary": None}
         self._thread = None
         self._event_queues = []
         self._lock = threading.Lock()
@@ -173,6 +174,13 @@ class GenerationState:
                 self.logs.append(entry)
                 if len(self.logs) > 500:
                     self.logs = self.logs[-500:]
+            elif event_type == "throughput":
+                role = data.get("model_role")
+                if role in self.throughput:
+                    self.throughput[role] = {
+                        "tok_per_min": data.get("tok_per_min", 0),
+                        "updated_at": time.time(),
+                    }
 
             # Push to all SSE subscriber queues
             dead = []
@@ -218,6 +226,7 @@ class GenerationState:
                 "is_alive": (
                     self._thread is not None and self._thread.is_alive()
                 ),
+                "throughput": dict(self.throughput),
             }
 
     def reset(self):
@@ -233,6 +242,7 @@ class GenerationState:
             self.output_scenes = []
             self.error = None
             self.start_time = None
+            self.throughput = {"generation": None, "summary": None}
 
 
 state = GenerationState()

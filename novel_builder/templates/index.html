@@ -759,6 +759,10 @@ textarea {
       <span class="dot" id="dot-model"></span>
       <span id="lbl-model">No model active</span>
     </div>
+    <div class="indicator" id="ind-throughput" style="display:none;">
+      <span class="dot" id="dot-throughput"></span>
+      <span id="lbl-throughput"></span>
+    </div>
     <div class="indicator" id="ind-tts" style="display:none;">
       <span class="dot" id="dot-tts"></span>
       <span id="lbl-tts">TTS: ?</span>
@@ -1956,6 +1960,37 @@ function updateModelIndicator(info) {
   }
 }
 
+/* Throughput chip -- tok/m rates for generation and summary models */
+const _throughput = {
+  generation: { rate: 0, updatedAt: 0 },
+  summary: { rate: 0, updatedAt: 0 },
+};
+
+function updateThroughputChip() {
+  const chip = document.getElementById('ind-throughput');
+  const dot  = document.getElementById('dot-throughput');
+  const lbl  = document.getElementById('lbl-throughput');
+  const hasGen = _throughput.generation.rate > 0;
+  const hasSum = _throughput.summary.rate > 0;
+  if (!hasGen && !hasSum) { chip.style.display = 'none'; return; }
+  chip.style.display = '';
+  const now = Date.now() / 1000;
+  const FRESH = 65; // slightly over 2x the 30s watchdog interval
+  const genFresh = hasGen && (now - _throughput.generation.updatedAt) < FRESH;
+  const sumFresh = hasSum && (now - _throughput.summary.updatedAt) < FRESH;
+  dot.className = 'dot ' + ((genFresh || sumFresh) ? 'blue pulse' : 'blue');
+  const parts = [];
+  if (hasGen) {
+    const dim = genFresh ? '' : ' style="opacity:.45"';
+    parts.push('<span' + dim + '>Gen: ' + _throughput.generation.rate + '\u202ftok/m</span>');
+  }
+  if (hasSum) {
+    const dim = sumFresh ? '' : ' style="opacity:.45"';
+    parts.push('<span' + dim + '>Sum: ' + _throughput.summary.rate + '\u202ftok/m</span>');
+  }
+  lbl.innerHTML = parts.join(' <span style="opacity:.35">\u00b7</span> ');
+}
+
 function updateProgress(p) {
   const pct = p.percent || 0;
   document.getElementById('progress-fill').style.width = pct + '%';
@@ -2209,6 +2244,16 @@ function connectSSE() {
       case 'scene_regenerated':
         _handleSceneRegenerated(event.data);
         break;
+
+      case 'throughput': {
+        const role = event.data.model_role;
+        if (role === 'generation' || role === 'summary') {
+          _throughput[role].rate = event.data.tok_per_min;
+          _throughput[role].updatedAt = Date.now() / 1000;
+          updateThroughputChip();
+        }
+        break;
+      }
 
       case 'log':
         addLogEntry(event.data);
@@ -2991,6 +3036,18 @@ async function init() {
   updateUIForStatus(snap.status, snap.status === 'error' ? snap.error : null);
   if (snap.active_model) updateModelIndicator(snap.active_model);
   if (snap.progress) updateProgress(snap.progress);
+
+  // Throughput (restore last known rates)
+  if (snap.throughput) {
+    for (const role of ['generation', 'summary']) {
+      const t = snap.throughput[role];
+      if (t && t.tok_per_min > 0) {
+        _throughput[role].rate = t.tok_per_min;
+        _throughput[role].updatedAt = t.updated_at || 0;
+      }
+    }
+    updateThroughputChip();
+  }
 
   // Logs (replay)
   if (snap.logs) {
