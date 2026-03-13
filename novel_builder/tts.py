@@ -16,6 +16,10 @@ _SPAN_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Regex for markdown header lines (e.g., "# Title", "## Subtitle")
+# Matches: optional whitespace, one or more #, whitespace, then anything to end of line
+_MARKDOWN_HEADER_RE = re.compile(r'^\s*#+\s')
+
 
 def _has_spoken_dialogue(paragraph):
     """True if the paragraph contains actual spoken dialogue, not scare quotes.
@@ -43,6 +47,23 @@ def _has_spoken_dialogue(paragraph):
     return False
 
 
+def _filter_markdown_headers(text):
+    """Remove markdown header lines from text, preserving paragraph structure.
+
+    Strips lines that are purely markdown headers (e.g., "# Title", "## Subtitle").
+    Used to prevent headers from being included in TTS narration output.
+
+    Args:
+        text: Multi-line text possibly containing markdown headers.
+
+    Returns:
+        Text with header lines removed, maintaining blank lines for spacing.
+    """
+    lines = text.split('\n')
+    filtered = [line for line in lines if not _MARKDOWN_HEADER_RE.match(line)]
+    return '\n'.join(filtered)
+
+
 def parse_span_segments(text):
     """Parse inline <span data-tts="Name"> tags into TTS segment dicts.
 
@@ -67,8 +88,9 @@ def parse_span_segments(text):
     last_end = 0
 
     for m in _SPAN_RE.finditer(text):
-        # Text before this span is narration
+        # Text before this span is narration (filter out markdown headers)
         before = text[last_end:m.start()]
+        before = _filter_markdown_headers(before)
         if before.strip():
             segments.append({
                 "type": "narration",
@@ -84,8 +106,9 @@ def parse_span_segments(text):
         })
         last_end = m.end()
 
-    # Text after the last span
+    # Text after the last span (filter out markdown headers)
     after = text[last_end:]
+    after = _filter_markdown_headers(after)
     if after.strip():
         segments.append({
             "type": "narration",
