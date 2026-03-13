@@ -2588,6 +2588,16 @@ async function testVoice(nameOrNarrator) {
 
 /* --- Playback engine --- */
 function parseOutputIntoScenes(text) {
+  // Use <!-- scene:X.Y --> / <!-- /scene:X.Y --> markers when present.
+  // These are written by story_processor for every generated scene and let us
+  // isolate each scene as its own TTS unit.  This matters for span parsing:
+  // an unclosed <span data-tts> in one scene must not bleed into the next.
+  const sceneMarkerRe = /<!--\s*scene:[\d.]+\s*-->([\s\S]*?)<!--\s*\/scene:[\d.]+\s*-->/g;
+  const markerMatches = [...text.matchAll(sceneMarkerRe)];
+  if (markerMatches.length) {
+    return markerMatches.map(m => m[1].trim()).filter(s => s.length > 0);
+  }
+  // Fallback for output files that pre-date scene markers: split on headings.
   const SCENE_SPLIT = /(?=\n#{2,3} (?:Chapter|Scene) |^#{2,3} (?:Chapter|Scene) )/m;
   return text.split(SCENE_SPLIT).map(p => p.trim()).filter(p => p.length > 0);
 }
