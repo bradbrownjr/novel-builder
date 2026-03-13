@@ -4239,6 +4239,18 @@ async function applyVoiceCast() {
   const textEl = document.getElementById('voice-cast-text');
   const text = textEl.textContent || '';
 
+  // Fetch character metadata first: gender map + POV character
+  const parsed = await api('/api/parse-yaml');
+  const povCharName = parsed?.outline?.pov_character || '';
+  const genderMap = {}; // charId/charNameId -> 'male'|'female'|'nonbinary'
+  for (const ch of (parsed?.characters?.characters || [])) {
+    if (ch.gender) {
+      const g = ch.gender.toLowerCase();
+      genderMap[ch.id] = g;
+      genderMap[ch.name.toLowerCase().replace(/\s+/g, '_')] = g;
+    }
+  }
+
   // Parse the YAML block from the voice casting output
   const yamlMatch = text.match(/```yaml\s*\n([\s\S]*?)```/);
   if (!yamlMatch) {
@@ -4246,9 +4258,7 @@ async function applyVoiceCast() {
     return;
   }
 
-  const yamlBlock = yamlMatch[1];
-  // Parse narrator and character voice assignments
-  const lines = yamlBlock.split('\n');
+  const lines = yamlMatch[1].split('\n');
   let narrator = '';
   const assignments = {};
   let inCharacters = false;
@@ -4258,112 +4268,127 @@ async function applyVoiceCast() {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
 
-    const narratorMatch = trimmed.match(/^narrator:\s*(\S+)/);
+    const narratorMatch = trimmed.match(/^narrator:\s*(.+)$/);
     if (narratorMatch) {
-      narrator = narratorMatch[1];
+      narrator = narratorMatch[1].trim().replace(/^["'(]|["')]$/g, '');
       inCharacters = false;
       continue;
     }
-
-    if (trimmed === 'characters:') {
-      inCharacters = true;
-      continue;
-    }
-
+    if (trimmed === 'characters:') { inCharacters = true; continue; }
     if (inCharacters) {
       const charMatch = trimmed.match(/^(\w+):$/);
-      if (charMatch) {
-        currentChar = charMatch[1];
-        continue;
-      }
+      if (charMatch) { currentChar = charMatch[1]; continue; }
       const voiceMatch = trimmed.match(/^tts_voice:\s*(\S+)/);
-      if (voiceMatch && currentChar) {
-        assignments[currentChar] = voiceMatch[1];
-      }
+      if (voiceMatch && currentChar) assignments[currentChar] = voiceMatch[1];
     }
   }
 
-  // Apply narrator voice
-  if (narrator) {
-    document.getElementById('cfg-tts-narrator-voice').value = narrator;
-    onNarratorVoiceChange();
-  }
+  const BLOCKED = ['jf_', 'jm_', 'zf_', 'zm_', 'kf_', 'km_'];
+  const VALID_ID = /^[a-z][fm]_\w+$/;
 
-  // Now we need to map character IDs to display names for the voice map
-  // The voice map inputs use data-character with display names
+  // Resolve voice for each character input using fuzzy ID matching
   const inputs = document.querySelectorAll('.tts-char-voice');
-  let applied = 0;
-
-  // Blocked voice prefixes: CJK voices speak their native language, not English
-  const BLOCKED_PREFIXES = ['jf_', 'jm_', 'zf_', 'zm_', 'kf_', 'km_'];
-
+  const resolvedMap = {}; // charId -> {input, charName, voice, violations[]}
   for (const input of inputs) {
     const charName = input.dataset.character;
-
-    // Prefer the stored character ID (set in updateVoiceMapUI via data-character-id).
-    // Fall back to deriving an ID from the display name for backward compatibility.
-    const charId = input.dataset.characterId
-      || charName.toLowerCase().replace(/\s+/g, '_');
+    const charId = input.dataset.characterId || charName.toLowerCase().replace(/\s+/g, '_');
     const charNameId = charName.toLowerCase().replace(/\s+/g, '_');
 
-    // Try multiple matching strategies:
-    // 1. Exact match on character ID
-    // 2. Exact match on name-derived ID
-    // 3. Prefix match (assignment key starts with charId or vice versa)
-    // 4. Name substring match (for models that shorten or suffix IDs)
     let voice = assignments[charId] || assignments[charNameId];
     if (!voice) {
-      const matchKey = Object.keys(assignments).find(k =>
+      const k = Object.keys(assignments).find(k =>
         k.startsWith(charId) || charId.startsWith(k)
         || k.startsWith(charNameId) || charNameId.startsWith(k)
       );
-      if (matchKey) voice = assignments[matchKey];
+      if (k) voice = assignments[k];
     }
+    if (!voice) continue;
 
-    if (voice) {
-      // Reject any voice ID that doesn't look like a real Kokoro voice
-      // (e.g. hallucinated names like "sky"). Valid pattern: af_*, am_*, bf_*, bm_*, etc.
-      if (!/^[a-z][fm]_\w+$/.test(voice)) {
-        toast(`Skipped invalid voice "${voice}" for ${charName} -- not a valid voice ID`, 'warn');
-        continue;
+    const violations = [];
+    if (!VALID_ID.test(voice)) {
+      violations.push(`"${voice}" is not a valid voice ID (must look like af_name or bm_name)`);
+    } else {
+      if (BLOCKED.some(p => voice.startsWith(p))) {
+        const lang = voice.startsWith('j') ? 'Japanese' : voice.startsWith('z') ? 'Chinese' : 'Korean';
+        violations.push(`"${voice}" is a ${lang} voice that produces unintelligible English -- use an English-capable voice (af_*, am_*, bf_*, bm_*, etc.)`);
       }
-      // Block CJK voices (they speak their native language, not English)
-      if (BLOCKED_PREFIXES.some(p => voice.startsWith(p))) {
-        toast(`Blocked non-English voice "${voice}" for ${charName} -- CJK voices cannot speak English`, 'warn');
-        continue;
+      const gender = genderMap[charId] || genderMap[charNameId];
+      if (gender === 'male' && /^[a-z]f_/.test(voice)) {
+        violations.push(`"${voice}" is a FEMALE voice (second letter 'f') but ${charName} is male -- use a *m_ voice (am_*, bm_*, etc.)`);
+      } else if ((gender === 'female' || gender === 'nonbinary') && /^[a-z]m_/.test(voice)) {
+        violations.push(`"${voice}" is a MALE voice (second letter 'm') but ${charName} is ${gender} -- use a *f_ voice (af_*, bf_*, etc.)`);
       }
-      input.value = voice;
-      onVoiceInputChange(input);
-      applied++;
+    }
+    resolvedMap[charId] = { input, charName, voice, violations };
+  }
+
+  // Collect all violations and request AI correction if needed
+  const allViolations = [];
+  for (const [, entry] of Object.entries(resolvedMap)) {
+    for (const reason of entry.violations) {
+      allViolations.push({
+        char_id: Object.keys(resolvedMap).find(k => resolvedMap[k] === entry),
+        char_name: entry.charName, assigned_voice: entry.voice, reason
+      });
     }
   }
 
-  // Save TTS config
+  let correctedAssignments = {};
+  if (allViolations.length > 0) {
+    toast(`Correcting ${allViolations.length} assignment error(s)...`, 'info');
+    try {
+      const corrResult = await apiPost('/api/voice-cast/correct', { violations: allViolations });
+      if (corrResult?.ok) {
+        correctedAssignments = corrResult.assignments || {};
+        if (corrResult.raw) {
+          textEl.textContent += '\n\n--- Auto-correction ---\n' + corrResult.raw;
+        }
+      } else {
+        toast('Auto-correction failed: ' + (corrResult?.error || 'unknown'), 'warn');
+      }
+    } catch (e) {
+      toast('Auto-correction request failed', 'warn');
+    }
+  }
+
+  // Apply narrator (only if it looks like a real, English-capable voice ID)
+  let narratorApplied = false;
+  if (narrator && VALID_ID.test(narrator) && !BLOCKED.some(p => narrator.startsWith(p))) {
+    document.getElementById('cfg-tts-narrator-voice').value = narrator;
+    onNarratorVoiceChange();
+    narratorApplied = true;
+  }
+
+  // Apply character voices (corrected takes priority over initial)
+  let applied = 0;
+  for (const [cid, entry] of Object.entries(resolvedMap)) {
+    const finalVoice = correctedAssignments[cid]
+      || (entry.violations.length === 0 ? entry.voice : null);
+    if (!finalVoice || !VALID_ID.test(finalVoice) || BLOCKED.some(p => finalVoice.startsWith(p))) continue;
+    entry.input.value = finalVoice;
+    onVoiceInputChange(entry.input);
+    applied++;
+  }
+
   await saveTTSConfig();
 
-  // If the outline defines a pov_character, the narrator IS that character.
-  // Auto-sync narrator voice to match the POV character's assigned voice,
-  // unless the AI already assigned the same voice (or narrator wasn't applied).
-  const parsed = await api('/api/parse-yaml');
-  const povCharName = parsed?.outline?.pov_character || '';
+  // Sync narrator to POV character for first-person stories
   if (povCharName) {
-    // First-person story: narrator IS the POV character.
-    // Always sync narrator voice to the POV character's assigned voice,
-    // overriding whatever the AI recommended in its narrator section.
     const povInput = [...document.querySelectorAll('.tts-char-voice')]
       .find(el => el.dataset.character === povCharName || el.dataset.characterId === povCharName);
-    if (povInput && povInput.value) {
+    if (povInput?.value) {
       document.getElementById('cfg-tts-narrator-voice').value = povInput.value;
       onNarratorVoiceChange();
       await saveTTSConfig();
       toast('Narrator set to ' + povCharName + '\'s voice (first-person POV)', 'info');
+      narratorApplied = true;
     }
   }
 
-  if (applied > 0 || narrator) {
+  if (applied > 0 || narratorApplied) {
     const parts = [];
     if (applied > 0) parts.push(applied + ' character voice(s)');
-    if (narrator) parts.push('narrator voice');
+    if (narratorApplied) parts.push('narrator voice');
     toast('Applied: ' + parts.join(' + '), 'ok');
   } else {
     toast('No voice assignments could be matched to characters', 'warn');

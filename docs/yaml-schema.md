@@ -234,6 +234,7 @@ characters:
 | `catchphrase_frequency` | string | No | (internal) | Controls probability gate |
 | `catchphrases` | list | No | Probability-gated | Alternative list format (see below) |
 | `tts_voice` | string | No | (TTS only) | Voice ID used by the Read Aloud feature e.g. `af_heart` |
+| `gender` | string | No | (TTS only) | Character gender: `male`, `female`, or `nonbinary`. When set, TTS voice casting validates that the assigned voice gender matches (second letter of voice ID: `f`=female, `m`=male). Mismatches are automatically corrected via AI before applying. |
 | `secret` | string | No | Conditional | Included when scene notes reference tension/subtext |
 | `relationships` | map | No | Conditional | Included for scenes where both characters are present |
 | `evolution` | list | No | Accumulated | All notes up to current chapter |
