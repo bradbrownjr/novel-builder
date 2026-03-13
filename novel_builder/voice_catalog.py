@@ -11,9 +11,10 @@ match characters to voices by personality, age, and speaking style.
 # Kokoro voice catalog
 # ---------------------------------------------------------------------------
 # Naming convention:  {lang}{gender}_{name}
-#   lang:   a = American English, b = British English, j = Japanese,
-#           z = Chinese, k = Korean, f = French, h = Hindi,
-#           i = Italian, p = Portuguese, e = Spanish
+#   lang:   a = American English, b = British English,  -- speak English natively
+#           f = French, h = Hindi, i = Italian,          -- speak English with accent
+#           p = Portuguese, e = Spanish,                  -- speak English with accent
+#           j = Japanese, z = Chinese, k = Korean         -- speak NATIVE LANGUAGE only
 #   gender: f = female, m = male
 #
 # Source: Kokoro v1.0 by Hexgrad (MIT license).
