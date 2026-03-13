@@ -1138,7 +1138,7 @@ textarea {
     </p>
     <div style="display:flex; gap:.5rem; align-items:center; flex-wrap:wrap;">
       <button class="btn btn-sm" id="btn-voice-cast" onclick="startVoiceCast()">Cast Voices</button>
-      <button class="btn btn-sm" id="btn-voice-cast-apply" onclick="applyVoiceCast()" style="display:none;">Apply Recommendations</button>
+      <button class="btn btn-sm" id="btn-voice-cast-apply" onclick="applyVoiceCast()" style="display:none;">Re-apply</button>
       <span id="voice-cast-status" style="font-size:.78rem;color:var(--text-dim);"></span>
     </div>
     <pre class="consult-text" id="voice-cast-text" style="display:none;"></pre>
@@ -4217,7 +4217,15 @@ async function startVoiceCast() {
           textEl.textContent += ev.text;
           textEl.scrollTop = textEl.scrollHeight;
         } else if (ev.type === 'done') {
-          statusEl.textContent = 'Voice casting complete';
+          statusEl.textContent = 'Applying voice assignments...';
+          try {
+            await applyVoiceCast();
+            statusEl.textContent = 'Voice casting complete';
+          } catch (e) {
+            statusEl.textContent = 'Auto-apply failed';
+            statusEl.style.color = 'var(--red)';
+          }
+          applyBtn.textContent = 'Re-apply';
           applyBtn.style.display = '';
         } else if (ev.type === 'error') {
           statusEl.textContent = 'Error: ' + (ev.message || 'unknown');
@@ -4351,9 +4359,11 @@ async function applyVoiceCast() {
     }
   }
 
-  // Apply narrator (only if it looks like a real, English-capable voice ID)
+  // Apply narrator from AI recommendation, but only when there is no pov_character.
+  // If pov_character is set, the narrator IS that character and must match their voice
+  // exactly -- the POV sync below is the sole source of truth.
   let narratorApplied = false;
-  if (narrator && VALID_ID.test(narrator) && !BLOCKED.some(p => narrator.startsWith(p))) {
+  if (!povCharName && narrator && VALID_ID.test(narrator) && !BLOCKED.some(p => narrator.startsWith(p))) {
     document.getElementById('cfg-tts-narrator-voice').value = narrator;
     onNarratorVoiceChange();
     narratorApplied = true;
@@ -4410,6 +4420,7 @@ async function restoreVoiceCast() {
   if (r.status === 'done') {
     statusEl.textContent = 'Voice casting complete';
     btn.textContent = 'Recast Voices';
+    applyBtn.textContent = 'Re-apply';
     applyBtn.style.display = '';
   } else if (r.status === 'error') {
     statusEl.textContent = 'Error: ' + (r.error || 'unknown');
