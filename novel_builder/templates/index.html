@@ -759,9 +759,13 @@ textarea {
       <span class="dot" id="dot-model"></span>
       <span id="lbl-model">No model active</span>
     </div>
-    <div class="indicator" id="ind-throughput" style="display:none;">
-      <span class="dot" id="dot-throughput"></span>
-      <span id="lbl-throughput"></span>
+    <div class="indicator" id="ind-throughput-gen" style="display:none;">
+      <span class="dot" id="dot-throughput-gen"></span>
+      <span id="lbl-throughput-gen"></span>
+    </div>
+    <div class="indicator" id="ind-throughput-sum" style="display:none;">
+      <span class="dot" id="dot-throughput-sum"></span>
+      <span id="lbl-throughput-sum"></span>
     </div>
     <div class="indicator" id="ind-tts" style="display:none;">
       <span class="dot" id="dot-tts"></span>
@@ -1967,28 +1971,34 @@ const _throughput = {
 };
 
 function updateThroughputChip() {
-  const chip = document.getElementById('ind-throughput');
-  const dot  = document.getElementById('dot-throughput');
-  const lbl  = document.getElementById('lbl-throughput');
-  const hasGen = _throughput.generation.rate > 0;
-  const hasSum = _throughput.summary.rate > 0;
-  if (!hasGen && !hasSum) { chip.style.display = 'none'; return; }
-  chip.style.display = '';
   const now = Date.now() / 1000;
   const FRESH = 65; // slightly over 2x the 30s watchdog interval
-  const genFresh = hasGen && (now - _throughput.generation.updatedAt) < FRESH;
-  const sumFresh = hasSum && (now - _throughput.summary.updatedAt) < FRESH;
-  dot.className = 'dot ' + ((genFresh || sumFresh) ? 'blue pulse' : 'blue');
-  const parts = [];
-  if (hasGen) {
-    const dim = genFresh ? '' : ' style="opacity:.45"';
-    parts.push('<span' + dim + '>Gen: ' + _throughput.generation.rate + '\u202ftok/m</span>');
+
+  const genChip = document.getElementById('ind-throughput-gen');
+  const genDot  = document.getElementById('dot-throughput-gen');
+  const genLbl  = document.getElementById('lbl-throughput-gen');
+  if (_throughput.generation.rate > 0) {
+    genChip.style.display = '';
+    const fresh = (now - _throughput.generation.updatedAt) < FRESH;
+    genDot.className = 'dot blue' + (fresh ? ' pulse' : '');
+    genLbl.style.opacity = fresh ? '' : '.45';
+    genLbl.textContent = 'Gen: ' + _throughput.generation.rate + '\u202ftok/m';
+  } else {
+    genChip.style.display = 'none';
   }
-  if (hasSum) {
-    const dim = sumFresh ? '' : ' style="opacity:.45"';
-    parts.push('<span' + dim + '>Sum: ' + _throughput.summary.rate + '\u202ftok/m</span>');
+
+  const sumChip = document.getElementById('ind-throughput-sum');
+  const sumDot  = document.getElementById('dot-throughput-sum');
+  const sumLbl  = document.getElementById('lbl-throughput-sum');
+  if (_throughput.summary.rate > 0) {
+    sumChip.style.display = '';
+    const fresh = (now - _throughput.summary.updatedAt) < FRESH;
+    sumDot.className = 'dot yellow' + (fresh ? ' pulse' : '');
+    sumLbl.style.opacity = fresh ? '' : '.45';
+    sumLbl.textContent = 'Sum: ' + _throughput.summary.rate + '\u202ftok/m';
+  } else {
+    sumChip.style.display = 'none';
   }
-  lbl.innerHTML = parts.join(' <span style="opacity:.35">\u00b7</span> ');
 }
 
 function updateProgress(p) {
