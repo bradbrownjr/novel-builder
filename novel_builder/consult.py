@@ -722,18 +722,37 @@ def build_voice_casting_prompt(char_yaml, voice_catalog_text, available_voices, 
             "installed."
         )
 
+    # Build narrator-specific task instruction for the user prompt
+    if first_person and pov_character:
+        narrator_task = (
+            f"IMPORTANT: This story is first-person from {pov_character}'s "
+            f"perspective. The narrator IS {pov_character}. Cast {pov_character} "
+            f"first, then set the narrator to the SAME voice.\n\n"
+        )
+        narrator_example = (
+            f"### Narrator\n"
+            f"**Voice:** `(same as {pov_character})`\n"
+            f"**Why:** First-person narrator IS {pov_character}.\n\n"
+        )
+    else:
+        narrator_task = ""
+        narrator_example = (
+            f"### Narrator\n"
+            f"**Voice:** `voice_id`\n"
+            f"**Why:** explanation\n\n"
+        )
+
     user = (
         f"## Available TTS Voices\n\n{voice_catalog_text}\n"
         f"{available_note}\n\n"
         f"## Characters to Cast\n\n```yaml\n{char_yaml}\n```\n\n"
         f"## Your Task\n\n"
+        f"{narrator_task}"
         f"For each character, recommend a TTS voice. For each recommendation, "
         f"explain WHY that voice fits the character (1-2 sentences referencing "
         f"specific character traits). Also recommend a narrator voice.\n\n"
         f"Format your response as:\n\n"
-        f"### Narrator\n"
-        f"**Voice:** `voice_id`\n"
-        f"**Why:** explanation\n\n"
+        f"{narrator_example}"
         f"### Character Name\n"
         f"**Voice:** `voice_id`\n"
         f"**Why:** explanation\n\n"
