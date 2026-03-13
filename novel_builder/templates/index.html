@@ -4415,7 +4415,7 @@ async function restoreVoiceCast() {
     statusEl.textContent = 'Error: ' + (r.error || 'unknown');
     statusEl.style.color = 'var(--red)';
   } else if (r.status === 'running') {
-    startVoiceCast(); // Reconnect to running stream
+    if (!_voiceCastRunning) startVoiceCast(); // Reconnect only if no active stream
   }
 }
 
@@ -4442,7 +4442,7 @@ async function restoreConcept() {
     statusEl.textContent = 'Error: ' + (r.error || 'unknown');
     statusEl.style.color = 'var(--red)';
   } else if (r.status === 'running') {
-    startConcept(); // Reconnect to running stream
+    if (!_conceptRunning) startConcept(); // Reconnect only if no active stream
   }
 }
 
