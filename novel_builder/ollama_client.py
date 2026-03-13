@@ -29,11 +29,12 @@ class _OllamaWatchdog:
     TOKEN_ACTIVE_WINDOW = 60  # seconds -- tokens within this window = alive
 
     def __init__(self, host, model, response, emit_callback=None,
-                 request_start_time=None):
+                 request_start_time=None, model_role="generation"):
         self._host = host
         self._model = model
         self._response = response
         self._emit = emit_callback
+        self._model_role = model_role
         self._abort = threading.Event()
         self._model_gone = False
         # request_start_time captures wall-clock before requests.post() so
@@ -135,6 +136,18 @@ class _OllamaWatchdog:
                         f"Generating -- {self._token_count} tokens, "
                         f"{elapsed} elapsed",
                     )
+                    _elapsed_s = time.time() - self._request_start
+                    if _elapsed_s > 0 and self._emit:
+                        try:
+                            self._emit(
+                                "throughput",
+                                tok_per_min=round(
+                                    (self._token_count / _elapsed_s) * 60, 1
+                                ),
+                                model_role=self._model_role,
+                            )
+                        except Exception:
+                            pass
                 else:
                     # Pre-first-token but idle < 60s means we just started;
                     # fall through to /api/ps check for a proper heartbeat.
@@ -185,7 +198,8 @@ class _OllamaWatchdog:
 
 
 def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
-                temperature=0.9, num_ctx=12288, emit_callback=None):
+                temperature=0.9, num_ctx=12288, emit_callback=None,
+                model_role="generation"):
     """Make a single streaming call to the Ollama /api/generate endpoint.
 
     Uses stream=True with no read timeout to prevent false timeouts on
@@ -245,6 +259,7 @@ def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
         watchdog = _OllamaWatchdog(
             host, model, response, emit_callback,
             request_start_time=request_start,
+            model_role=model_role,
         )
         watchdog.start()
 
@@ -343,7 +358,8 @@ def unload_model(host, model, emit_callback=None):
 
 def call_ollama_with_retry(host, model, system_prompt, user_prompt,
                            timeout=900, retries=5, temperature=0.9,
-                           num_ctx=12288, emit_callback=None):
+                           num_ctx=12288, emit_callback=None,
+                           model_role="generation"):
     """Call Ollama with exponential backoff retry logic.
 
     Args:
@@ -375,7 +391,7 @@ def call_ollama_with_retry(host, model, system_prompt, user_prompt,
             result = call_ollama(
                 host, model, system_prompt, user_prompt,
                 timeout=timeout, temperature=temperature, num_ctx=num_ctx,
-                emit_callback=_emit_callback,
+                emit_callback=_emit_callback, model_role=model_role,
             )
             return result
         except OllamaError as e:
@@ -400,7 +416,8 @@ def call_ollama_with_retry(host, model, system_prompt, user_prompt,
     )
 
 
-def call_summary_model(host, model, text, timeout=300, scene_meta=None):
+def call_summary_model(host, model, text, timeout=300, scene_meta=None,
+                       emit_callback=None):
     """Call the summary model to summarize a scene and extract story memory.
 
     Uses a combined prompt that produces both a scene summary and
@@ -486,6 +503,7 @@ def call_summary_model(host, model, text, timeout=300, scene_meta=None):
         result = call_ollama_with_retry(
             host, model, system_prompt, user_prompt,
             timeout=timeout, retries=2, temperature=0.3, num_ctx=8192,
+            emit_callback=emit_callback, model_role="summary",
         )
         summary, extraction = _parse_summary_response(result)
 

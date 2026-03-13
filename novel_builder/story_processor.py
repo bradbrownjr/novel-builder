@@ -329,7 +329,7 @@ def _run_generation(config, args, event_callback=None):
                 }
                 summary, extraction = call_summary_model(
                     args.host, summary_model, text,
-                    scene_meta=scene_meta,
+                    scene_meta=scene_meta, emit_callback=emit,
                 )
                 print(f"    Summary: {summary[:100]}...")
                 emit("log", message=f"Summary: {summary[:120]}", level="info")
@@ -726,7 +726,7 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
         }
         summary, extraction = call_summary_model(
             args.host, args.summary_model, text,
-            scene_meta=scene_meta,
+            scene_meta=scene_meta, emit_callback=emit,
         )
         emit("model_active", model="idle", name="")
     except Exception as e:
@@ -918,7 +918,7 @@ def rebuild_memories(config, args, event_callback=None):
         try:
             summary, extraction = call_summary_model(
                 args.host, args.summary_model, scene_text,
-                scene_meta=scene_meta,
+                scene_meta=scene_meta, emit_callback=emit,
             )
         except OllamaError as e:
             emit("log", message=f"  Scene {scene_id} summary failed: {e}", level="warn")
