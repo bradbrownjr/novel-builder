@@ -4293,6 +4293,10 @@ async function applyVoiceCast() {
   // The voice map inputs use data-character with display names
   const inputs = document.querySelectorAll('.tts-char-voice');
   let applied = 0;
+
+  // Blocked voice prefixes: CJK voices speak their native language, not English
+  const BLOCKED_PREFIXES = ['jf_', 'jm_', 'zf_', 'zm_', 'kf_', 'km_'];
+
   for (const input of inputs) {
     const charName = input.dataset.character;
 
@@ -4300,16 +4304,32 @@ async function applyVoiceCast() {
     // Fall back to deriving an ID from the display name for backward compatibility.
     const charId = input.dataset.characterId
       || charName.toLowerCase().replace(/\s+/g, '_');
+    const charNameId = charName.toLowerCase().replace(/\s+/g, '_');
 
-    // Direct match first; then try any assignment key that starts with charId
-    // to handle suffixed IDs like chrissy_display matching "chrissy_display".
-    const voice = assignments[charId]
-      || assignments[Object.keys(assignments).find(k => k === charId) || ''];
+    // Try multiple matching strategies:
+    // 1. Exact match on character ID
+    // 2. Exact match on name-derived ID
+    // 3. Prefix match (assignment key starts with charId or vice versa)
+    // 4. Name substring match (for models that shorten or suffix IDs)
+    let voice = assignments[charId] || assignments[charNameId];
+    if (!voice) {
+      const matchKey = Object.keys(assignments).find(k =>
+        k.startsWith(charId) || charId.startsWith(k)
+        || k.startsWith(charNameId) || charNameId.startsWith(k)
+      );
+      if (matchKey) voice = assignments[matchKey];
+    }
+
     if (voice) {
       // Reject any voice ID that doesn't look like a real Kokoro voice
       // (e.g. hallucinated names like "sky"). Valid pattern: af_*, am_*, bf_*, bm_*, etc.
       if (!/^[a-z][fm]_\w+$/.test(voice)) {
-        toast(`Skipped invented voice ID "${voice}" for ${charName} -- not in catalog`, 'warn');
+        toast(`Skipped invalid voice "${voice}" for ${charName} -- not a valid voice ID`, 'warn');
+        continue;
+      }
+      // Block CJK voices (they speak their native language, not English)
+      if (BLOCKED_PREFIXES.some(p => voice.startsWith(p))) {
+        toast(`Blocked non-English voice "${voice}" for ${charName} -- CJK voices cannot speak English`, 'warn');
         continue;
       }
       input.value = voice;
