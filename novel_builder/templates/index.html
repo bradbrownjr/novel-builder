@@ -2261,6 +2261,30 @@ function getFirstVisibleSceneIdx() {
    NOTE: tag text lives as literal characters in DOM textContent --
    we scan for the literal angle-bracket strings, not parsed nodes.
 */
+// Splits a narration text block into title and narration sub-segments.
+// Headers (lines starting with #) become {type:'title'} segments so the
+// playback layer can insert a dramatic pause after the title is spoken.
+function _textToSegments(text) {
+  const headerRe = /^\s*#+\s/;
+  const lines = text.split('\n');
+  const parts = [];
+  let current = [];
+  for (const line of lines) {
+    if (headerRe.test(line)) {
+      const block = current.join('\n');
+      if (block.trim()) parts.push({ type: 'narration', text: block, character: null });
+      current = [];
+      const titleText = line.replace(/^\s*#+\s*/, '').trim();
+      if (titleText) parts.push({ type: 'title', text: titleText, character: null });
+    } else {
+      current.push(line);
+    }
+  }
+  const remaining = current.join('\n');
+  if (remaining.trim()) parts.push({ type: 'narration', text: remaining, character: null });
+  return parts;
+}
+
 function parseSpanSegments(text) {
   if (!text.includes('<span data-tts="')) return null;
   const spanRe = /<span data-tts="([^"]*)">([\s\S]*?)<\/span>/g;
@@ -2269,13 +2293,14 @@ function parseSpanSegments(text) {
   let m;
   while ((m = spanRe.exec(text)) !== null) {
     const before = text.slice(lastIdx, m.index);
-    if (before.trim()) segments.push({ type: 'narration', text: before, character: null });
+    // Emit narration/title sub-segments for text before this span
+    segments.push(..._textToSegments(before));
     // The inner text of the span is the attributed quote
     segments.push({ type: 'dialogue', text: m[2], character: m[1] || null });
     lastIdx = m.index + m[0].length;
   }
   const after = text.slice(lastIdx);
-  if (after.trim()) segments.push({ type: 'narration', text: after, character: null });
+  segments.push(..._textToSegments(after));
   return segments.length ? segments : null;
 }
 
@@ -2700,6 +2725,10 @@ async function playAllScenes() {
       try {
         const blob = await fetchTTSAudio(seg.text, voice);
         await playAudioBlob(blob);
+        // Pregnant pause after chapter/scene title before content begins
+        if (seg.type === 'title') {
+          await new Promise(r => setTimeout(r, 1200));
+        }
       } catch (e) {
         console.error('TTS segment error:', e);
       }
