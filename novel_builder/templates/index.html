@@ -4306,6 +4306,12 @@ async function applyVoiceCast() {
     const voice = assignments[charId]
       || assignments[Object.keys(assignments).find(k => k === charId) || ''];
     if (voice) {
+      // Reject any voice ID that doesn't look like a real Kokoro voice
+      // (e.g. hallucinated names like "sky"). Valid pattern: af_*, am_*, bf_*, bm_*, etc.
+      if (!/^[a-z][fm]_\w+$/.test(voice)) {
+        toast(`Skipped invented voice ID "${voice}" for ${charName} -- not in catalog`, 'warn');
+        continue;
+      }
       input.value = voice;
       onVoiceInputChange(input);
       applied++;
