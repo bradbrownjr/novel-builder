@@ -797,3 +797,53 @@ def build_voice_casting_prompt(char_yaml, voice_catalog_text, available_voices, 
     )
 
     return system, user
+
+
+def build_voice_correction_prompt(violations, voice_catalog_text):
+    """Build a concise targeted prompt to correct specific voice casting errors.
+
+    Args:
+        violations: List of dicts with keys:
+            char_id, char_name, assigned_voice, reason
+        voice_catalog_text: Compact voice catalog summary.
+
+    Returns:
+        Tuple of (system_prompt, user_prompt).
+    """
+    system = (
+        "You are correcting specific TTS voice casting errors. Rules:\n"
+        "1. ONLY use voice IDs that appear verbatim in the catalog -- never invent IDs.\n"
+        "2. Voice gender is the SECOND letter of the ID: 'f' = female, 'm' = male.\n"
+        "   Male characters MUST get *m_ voices (am_*, bm_*, fm_*, em_*, hm_*, im_*, pm_*).\n"
+        "   Female characters MUST get *f_ voices (af_*, bf_*, ff_*, ef_*, hf_*, if_*, pf_*).\n"
+        "3. BLOCKED voices (speak native language, not English): "
+        "jf_*, jm_*, zf_*, zm_*, kf_*, km_*. Never use these.\n"
+        "4. English-capable voices: af_*, am_*, bf_*, bm_*, ff_*, fm_*, "
+        "ef_*, em_*, hf_*, hm_*, if_*, im_*, pf_*, pm_*.\n"
+        "5. Each character must get a DISTINCT voice -- no duplicates.\n\n"
+        "Output ONLY the corrected YAML block. No explanations, no commentary."
+    )
+
+    error_lines = []
+    char_ids = []
+    for i, v in enumerate(violations, 1):
+        error_lines.append(
+            f"{i}. {v['char_id']} ({v['char_name']}): "
+            f"assigned \"{v['assigned_voice']}\" -- ERROR: {v['reason']}"
+        )
+        char_ids.append(v["char_id"])
+
+    char_stubs = "".join(f"  {cid}:\n    tts_voice: ???\n" for cid in char_ids)
+
+    user = (
+        f"## Voice Catalog\n\n{voice_catalog_text}\n\n"
+        f"## Errors to Fix\n\n"
+        + "\n".join(error_lines)
+        + f"\n\nReplace each ??? with the correct voice ID:\n\n"
+        f"```yaml\n"
+        f"characters:\n"
+        f"{char_stubs}"
+        f"```"
+    )
+
+    return system, user

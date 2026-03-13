@@ -1487,6 +1487,7 @@ def api_parse_yaml():
                     "id": cid,
                     "name": cdata.get("Name") or cdata.get("name", cid),
                     "role": cdata.get("role", ""),
+                    "gender": cdata.get("gender", ""),
                     "vibe": cdata.get("vibe", ""),
                     "heritage": cdata.get("heritage", []),
                     "has_catchphrase": bool(cdata.get("catchphrase") or cdata.get("catchphrases")),
@@ -2372,7 +2373,7 @@ def api_voice_cast():
 
             cfg = _load_web_config()
             host = _normalize_host(cfg.get("host", ""))
-            model = cfg.get("model", "gemma3:12b")
+            model = cfg.get("summary_model", "gemma3:4b")
             cast_ctx = int(cfg.get("consult_num_ctx", cfg.get("generation_num_ctx", 8192)))
             timeout_s = max(int(cfg.get("timeout", 900)), 1800)
 
@@ -2614,6 +2615,78 @@ def api_voice_cast_result():
             "text": _voice_cast_state["text"],
             "error": _voice_cast_state.get("error"),
         })
+
+
+@app.route("/api/voice-cast/correct", methods=["POST"])
+def api_voice_cast_correct():
+    """Request AI correction for specific voice casting violations.
+
+    Sends a concise, targeted prompt to the summary model describing each
+    violation and asks only for corrected assignments.
+
+    Body:
+        {"violations": [{"char_id": str, "char_name": str,
+                          "assigned_voice": str, "reason": str}]}
+    Returns:
+        {"ok": True, "assignments": {char_id: voice_id}, "raw": str}
+    """
+    from .consult import build_voice_correction_prompt
+    from .voice_catalog import get_catalog_summary
+
+    data = request.get_json(force=True) or {}
+    violations = data.get("violations", [])
+    if not violations:
+        return jsonify({"ok": True, "assignments": {}, "raw": ""})
+
+    cfg = _load_web_config()
+    host = _normalize_host(cfg.get("host", ""))
+    if not host:
+        return jsonify({"ok": False, "error": "No Ollama host configured"}), 400
+
+    model = cfg.get("summary_model", "gemma3:4b")
+    cast_ctx = int(cfg.get("consult_num_ctx", cfg.get("generation_num_ctx", 8192)))
+    catalog_text = get_catalog_summary()
+    system_p, user_p = build_voice_correction_prompt(violations, catalog_text)
+
+    payload = {
+        "model": model,
+        "system": system_p,
+        "prompt": user_p,
+        "stream": False,
+        "options": {"num_ctx": cast_ctx, "temperature": 0.2},
+    }
+
+    try:
+        resp = _requests.post(
+            f"{host}/api/generate", json=payload, timeout=(30, 120)
+        )
+        resp.raise_for_status()
+        raw = resp.json().get("response", "")
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    # Parse the YAML assignments block from the response
+    assignments = {}
+    yaml_match = re.search(r"```yaml\s*\n([\s\S]*?)```", raw)
+    if yaml_match:
+        try:
+            block = _yaml.safe_load(yaml_match.group(1)) or {}
+            chars = block.get("characters", block)
+            if isinstance(chars, dict):
+                for cid, cdata in chars.items():
+                    if isinstance(cdata, dict) and cdata.get("tts_voice"):
+                        assignments[str(cid)] = str(cdata["tts_voice"])
+                    elif isinstance(cdata, str):
+                        assignments[str(cid)] = cdata
+        except Exception:
+            pass
+
+    state.emit("log", {
+        "message": f"[Voice Cast] Correction: fixed {len(assignments)} assignment(s)",
+        "level": "info",
+        "time": time.time(),
+    })
+    return jsonify({"ok": True, "assignments": assignments, "raw": raw})
 
 
 @app.route("/api/voice-catalog")
