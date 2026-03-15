@@ -109,6 +109,58 @@ def _normalize_tts_host(host):
     return host
 
 
+def _preprocess_tts_text(text):
+    """Preprocess text for TTS to handle stutters and hesitations.
+
+    Converts patterns like "H-hello" or "W-what" into forms that
+    TTS engines pronounce as natural stutters rather than spelling
+    out the leading letter.
+
+    Examples:
+        "H-hello"   -> "heh hello"
+        "W-what"    -> "wuh what"
+        "I-I don't" -> "I... I don't"
+        "N-no"      -> "nuh no"
+    """
+    # Map leading consonants to phonetic stutter sounds
+    _STUTTER_SOUNDS = {
+        "b": "buh", "c": "kuh", "d": "duh", "f": "fuh", "g": "guh",
+        "h": "heh", "j": "juh", "k": "kuh", "l": "luh", "m": "muh",
+        "n": "nuh", "p": "puh", "q": "kuh", "r": "ruh", "s": "suh",
+        "t": "tuh", "v": "vuh", "w": "wuh", "x": "ex", "y": "yuh",
+        "z": "zuh",
+    }
+
+    def _replace_stutter(m):
+        letter = m.group(1)
+        word = m.group(2)
+        lower = letter.lower()
+        # Same letter repeated (I-I, I-I-I) -> ellipsis pause
+        if lower == word.lower():
+            return f"{letter}... {word}"
+        sound = _STUTTER_SOUNDS.get(lower, lower)
+        return f"{sound} {word}"
+
+    # Match stutter pattern: single letter + hyphen + word where the
+    # word starts with the same letter (case-insensitive).
+    # This avoids false positives on normal hyphenated words like
+    # "e-mail" or "co-worker" that don't share the leading letter.
+    # Also match same-letter repetition like "I-I".
+    def _is_stutter(m):
+        letter = m.group(1).lower()
+        word = m.group(2)
+        # Same starting letter = stutter (H-hello, S-stop, I-I)
+        if word[0].lower() == letter:
+            return _replace_stutter(m)
+        return m.group(0)  # Not a stutter, leave unchanged
+
+    return re.sub(
+        r"\b([A-Za-z])-([A-Za-z]{1,})\b",
+        _is_stutter,
+        text,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Server-side generation state
 # ---------------------------------------------------------------------------
@@ -3242,6 +3294,8 @@ def api_tts_speak():
         return jsonify({"ok": False, "error": "No voice selected"}), 400
     if not text:
         return jsonify({"ok": False, "error": "No text provided"}), 400
+
+    text = _preprocess_tts_text(text)
 
     try:
         resp = _requests.post(

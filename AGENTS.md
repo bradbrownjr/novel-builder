@@ -44,6 +44,7 @@ Before any large file rewrite, verify every row in the affected file column is p
 | YAML validator | validator.py, web.py | `validate_all()`, `/api/validate` |
 | Scene markers in output | story_processor.py, web.py | `<!-- scene:X.Y -->`, `/api/download` (strips markers) |
 | Character appearance tracking | characters.py, state.py | `character_appearances`, tiered context logic |
+| Explicit character exclusion | prompt_builder.py, characters.py | `auto_detect_characters()`, absent character naming in exclusion directive |
 | Voice catalog & descriptions | voice_catalog.py, web.py, templates/index.html | `KOKORO_VOICES`, `enrich_voice_list()`, `/api/tts/voices` (enriched), `/api/voice-catalog` |
 | Voice casting (AI) | consult.py, web.py, templates/index.html | `build_voice_casting_prompt()`, `/api/voice-cast`, `/api/voice-cast/result`, `startVoiceCast()`, `applyVoiceCast()` |
 | Story Concept Builder | concept.py, web.py, templates/index.html | `build_concept_prompt()`, `/api/concept`, `/api/concept/result`, `/api/concept/save`, `startConcept()`, `saveConceptFile()` |
@@ -176,6 +177,10 @@ _(Track fixes here for reference.)_
 - Location spatial accuracy directive -- `build_scene_prompt()` appends a directive after the Setting block instructing the model to use spatial details exactly as described, preventing invented access routes or layouts (e.g. "staircase behind the counter" when YAML says "behind the stockroom").
 - TTS playback speed -- Full pipeline: UI speed dropdown (0.75x-1.25x) in Setup tab, `tts.speed` on JS object, speed passed in `fetchTTSAudio()` body, `/api/tts/speak` in `web.py` extracts `speed` and forwards to Speaches API `"speed"` parameter, speed saved/loaded in TTS config.
 - MP3 title and chapter header speaking -- `downloadAudiobook()` in `index.html` now injects the story title as a spoken segment at the start of the audiobook, and each chapter title as a spoken segment before its first scene. Both use narrator voice.
+- MP3 title/chapter pause -- title and chapter header segments in `downloadAudiobook()` now append ` . . .` to text so TTS generates a natural trailing pause before scene audio begins. Fixes abrupt transition from title speech to scene speech in downloaded audiobooks.
+- TTS speed single application -- removed `audio.playbackRate` from `playAudioBlob()` in `index.html`. Speed is now applied server-side only (via `/api/tts/speak` speed parameter). Previously speed was applied twice (server + client), effectively squaring the speed factor.
+- Explicit character exclusion -- `build_scene_prompt()` in `prompt_builder.py` now detects characters mentioned in scene events/notes who are NOT in the explicit character list, and names them in an exclusion directive ("must NOT appear on-stage, speak dialogue, or take any visible action"). Prevents the model from writing off-stage characters into scenes just because they're mentioned in event descriptions (e.g. Morty appearing in scenes where only Elias and Chrissy are listed).
+- TTS stutter preprocessing -- `_preprocess_tts_text()` in `web.py` converts stutter patterns (e.g. "H-hello", "S-stop") to phonetic forms ("heh hello", "suh stop") before sending text to the TTS engine. Only triggers when the letter and word share the same starting letter, avoiding false positives on normal hyphenated words. Same-letter repetition ("I-I") converts to ellipsis pause ("I... I"). Applied in `/api/tts/speak` route.
 
 ## Scene Marker Format
 

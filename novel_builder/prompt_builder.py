@@ -415,11 +415,44 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
     )
     if char_block:
         parts.append(f"\nCharacters in this scene:\n{char_block}")
-        parts.append(
-            "Only the characters listed above are present and active in this scene. "
-            "Any other people referenced in the notes are background context only -- "
-            "do not write them as present, speaking, or taking action in the scene."
-        )
+
+        # Detect characters mentioned in events/notes but NOT present in scene.
+        # Explicitly name them as off-stage to prevent the model from writing
+        # them in, even when scene events reference them for context.
+        explicit_chars = scene.get("characters", [])
+        if isinstance(explicit_chars, str):
+            explicit_chars = [explicit_chars] if explicit_chars else []
+        present_set = set(explicit_chars)
+        scan_text = f"{scene_events} {scene_notes}"
+        mentioned_ids = auto_detect_characters(scan_text, all_characters)
+        absent_mentioned = [
+            cid for cid in mentioned_ids if cid not in present_set
+        ]
+        if absent_mentioned:
+            absent_names = []
+            for cid in absent_mentioned:
+                cdata = all_characters.get(cid, {})
+                if isinstance(cdata, dict):
+                    name = cdata.get("Name") or cdata.get("name", cid)
+                else:
+                    name = cid
+                absent_names.append(name)
+            parts.append(
+                "Only the characters listed above are present and active in "
+                "this scene. The following characters are mentioned in the "
+                "scene notes for context only and must NOT appear on-stage, "
+                "speak dialogue, or take any visible action in this scene: "
+                + ", ".join(absent_names) + ". "
+                "They exist in the story world but are OFF-STAGE for this "
+                "scene. Do not write them as present."
+            )
+        else:
+            parts.append(
+                "Only the characters listed above are present and active in "
+                "this scene. Any other people referenced in the notes are "
+                "background context only -- do not write them as present, "
+                "speaking, or taking action in the scene."
+            )
 
     # -- Narrative hooks --
     hook_text = _get_relevant_hook(config, scene)
