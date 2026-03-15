@@ -416,21 +416,28 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
     if char_block:
         parts.append(f"\nCharacters in this scene:\n{char_block}")
 
-        # Detect characters mentioned in events/notes but NOT present in scene.
-        # Explicitly name them as off-stage to prevent the model from writing
-        # them in, even when scene events reference them for context.
+        # Build exclusion list: ALL characters the model knows about
+        # who are NOT in this scene's character list.  This covers:
+        #  - Characters that appeared earlier (in the system-prompt roster)
+        #  - Characters mentioned in events/notes for context only
         explicit_chars = scene.get("characters", [])
         if isinstance(explicit_chars, str):
             explicit_chars = [explicit_chars] if explicit_chars else []
         present_set = set(explicit_chars)
+
+        absent_ids = set()
+        # 1) Every character that has appeared in the story so far
+        appeared = state.get("character_appearances", {})
+        absent_ids.update(appeared.keys())
+        # 2) Characters mentioned by name in events/notes text
         scan_text = f"{scene_events} {scene_notes}"
-        mentioned_ids = auto_detect_characters(scan_text, all_characters)
-        absent_mentioned = [
-            cid for cid in mentioned_ids if cid not in present_set
-        ]
-        if absent_mentioned:
+        absent_ids.update(auto_detect_characters(scan_text, all_characters))
+        # Remove characters that ARE present in this scene
+        absent_ids -= present_set
+
+        if absent_ids:
             absent_names = []
-            for cid in absent_mentioned:
+            for cid in sorted(absent_ids):
                 cdata = all_characters.get(cid, {})
                 if isinstance(cdata, dict):
                     name = cdata.get("Name") or cdata.get("name", cid)
@@ -439,10 +446,9 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
                 absent_names.append(name)
             parts.append(
                 "Only the characters listed above are present and active in "
-                "this scene. The following characters are mentioned in the "
-                "scene notes for context only and must NOT appear on-stage, "
-                "speak dialogue, or take any visible action in this scene: "
-                + ", ".join(absent_names) + ". "
+                "this scene. The following characters must NOT appear "
+                "on-stage, speak dialogue, or take any visible action in "
+                "this scene: " + ", ".join(absent_names) + ". "
                 "They exist in the story world but are OFF-STAGE for this "
                 "scene. Do not write them as present."
             )
@@ -615,6 +621,10 @@ def _build_character_block(scene, all_characters, heritage_defs,
         # Habit
         if context.get("habit"):
             lines.append(f"  Habit: {context['habit']}")
+
+        # Status — behavioral/situational info (always when present)
+        if context.get("status"):
+            lines.append(f"  Status/behavior: {context['status']}")
 
         # Catch phrase — probability gated
         include_phrase, phrase = should_include_catchphrase(char_data)

@@ -97,13 +97,14 @@ _(Update this tree when functions are added, renamed, or moved.)_
 
 | Context tier | When | Fields sent |
 |---|---|---|
-| **Full bio** | First appearance in story | Name, summary, role, personality, vibe, species, appearance, origin, voice, habit + merged heritage traits |
-| **Reminder** | Subsequent appearances | Name, role, vibe, species, appearance, origin, voice + evolution notes |
+| **Full bio** | First appearance in story | Name, summary, role, personality, vibe, species, appearance, origin, voice, habit, status + merged heritage traits |
+| **Reminder** | Subsequent appearances | Name, role, vibe, species, appearance, origin, voice, status + evolution notes |
 
 - `vibe` is the persistent tonal anchor — always included.
 - `voice` (speech patterns) is always included when present — shapes dialogue.
 - `origin` (cultural/geographic background) is always included when present — shapes dialect, slang, and TTS voice casting.
 - `personality` and `summary` are dropped after first appearance (now established in narrative).
+- `status` (behavioral/situational info) is always included when present -- captures constraints like "inanimate unless alone with trusted human."
 - `heritage` traits merged on first appearance, dropped after (established in narrative). Character fields override heritage.
 - `catchphrase` is probability-gated, not included every scene.
 - `secret` is only included when the scene's notes reference tension or subtext.
@@ -179,7 +180,7 @@ _(Track fixes here for reference.)_
 - MP3 title and chapter header speaking -- `downloadAudiobook()` in `index.html` now injects the story title as a spoken segment at the start of the audiobook, and each chapter title as a spoken segment before its first scene. Both use narrator voice.
 - MP3 title/chapter pause -- title and chapter header segments in `downloadAudiobook()` now append ` . . .` to text so TTS generates a natural trailing pause before scene audio begins. Fixes abrupt transition from title speech to scene speech in downloaded audiobooks.
 - TTS speed single application -- removed `audio.playbackRate` from `playAudioBlob()` in `index.html`. Speed is now applied server-side only (via `/api/tts/speak` speed parameter). Previously speed was applied twice (server + client), effectively squaring the speed factor.
-- Explicit character exclusion -- `build_scene_prompt()` in `prompt_builder.py` now detects characters mentioned in scene events/notes who are NOT in the explicit character list, and names them in an exclusion directive ("must NOT appear on-stage, speak dialogue, or take any visible action"). Prevents the model from writing off-stage characters into scenes just because they're mentioned in event descriptions (e.g. Morty appearing in scenes where only Elias and Chrissy are listed).
+- Explicit character exclusion -- `build_scene_prompt()` in `prompt_builder.py` now detects characters mentioned in scene events/notes who are NOT in the explicit character list, and names them in an exclusion directive ("must NOT appear on-stage, speak dialogue, or take any visible action"). Also excludes ALL characters who have appeared in the story so far but are not in the current scene's character list, preventing the model from pulling in known characters from the system prompt roster (e.g. Morty appearing in scenes where only Elias and Chrissy are listed, even when Morty isn't mentioned in events).
 - TTS stutter preprocessing -- `_preprocess_tts_text()` in `web.py` converts stutter patterns (e.g. "H-hello", "S-stop") to phonetic forms ("heh hello", "suh stop") before sending text to the TTS engine. Only triggers when the letter and word share the same starting letter, avoiding false positives on normal hyphenated words. Same-letter repetition ("I-I") converts to ellipsis pause ("I... I"). Applied in `/api/tts/speak` route.
 
 ## Scene Marker Format
