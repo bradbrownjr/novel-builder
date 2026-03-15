@@ -161,6 +161,8 @@ def build_character_context(char_id, character, heritage_defs,
             context["voice"] = merged["voice"]
         if merged.get("habit"):
             context["habit"] = merged["habit"]
+        if merged.get("status"):
+            context["status"] = merged["status"]
 
         # Heritage traits (first appearance only)
         if merged.get("traits"):
@@ -194,6 +196,8 @@ def build_character_context(char_id, character, heritage_defs,
             context["voice"] = character["voice"]
         if character.get("habit"):
             context["habit"] = character["habit"]
+        if character.get("status"):
+            context["status"] = character["status"]
 
     # Evolution notes — accumulated up to current chapter
     evolution = get_evolution_context(character, current_chapter)
