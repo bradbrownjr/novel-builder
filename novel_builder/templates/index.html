@@ -2697,10 +2697,11 @@ function getVoiceForSegment(seg) {
 }
 
 async function fetchTTSAudio(text, voice) {
+  const speed = tts.speed || 1.0;
   const resp = await fetch('/api/tts/speak', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ text, host: tts.host, model: tts.model, voice }),
+    body: JSON.stringify({ text, host: tts.host, model: tts.model, voice, speed }),
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({error: 'Unknown error'}));
@@ -2850,7 +2851,18 @@ async function downloadAudiobook() {
   toast('Building segment list...', 'info');
   // allSegments tracks which chapter each segment belongs to for byte-offset accounting
   const allSegments = [];
+
+  // Inject story title as a spoken segment at the start
+  const storyTitle = snap?.config?.story_title || '';
+  if (storyTitle) {
+    allSegments.push({ seg: { type: 'title', text: storyTitle, character: null }, chapterIdx: 0 });
+  }
+
   for (let ci = 0; ci < chapters.length; ci++) {
+    // Inject chapter title as a spoken segment before the chapter's scenes
+    if (chapters[ci].title) {
+      allSegments.push({ seg: { type: 'title', text: chapters[ci].title, character: null }, chapterIdx: ci });
+    }
     for (const scene of chapters[ci].scenes) {
       // Use pre-baked span attribution if available; otherwise call the model
       const preTagged = parseSpanSegments(scene);
