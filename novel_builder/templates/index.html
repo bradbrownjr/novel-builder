@@ -2714,7 +2714,6 @@ function playAudioBlob(blob) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
-    audio.playbackRate = tts.speed || 1.0;
     tts.currentAudio = audio;
     audio.onended = () => { URL.revokeObjectURL(url); tts.currentAudio = null; resolve(); };
     audio.onerror = () => { URL.revokeObjectURL(url); tts.currentAudio = null; reject(new Error('Playback error')); };
@@ -2852,16 +2851,17 @@ async function downloadAudiobook() {
   // allSegments tracks which chapter each segment belongs to for byte-offset accounting
   const allSegments = [];
 
-  // Inject story title as a spoken segment at the start
+  // Inject story title as a spoken segment at the start.
+  // Trailing " . . . " produces a natural pause before scene audio begins.
   const storyTitle = snap?.config?.story_title || '';
   if (storyTitle) {
-    allSegments.push({ seg: { type: 'title', text: storyTitle, character: null }, chapterIdx: 0 });
+    allSegments.push({ seg: { type: 'title', text: storyTitle + ' . . .', character: null }, chapterIdx: 0 });
   }
 
   for (let ci = 0; ci < chapters.length; ci++) {
     // Inject chapter title as a spoken segment before the chapter's scenes
     if (chapters[ci].title) {
-      allSegments.push({ seg: { type: 'title', text: chapters[ci].title, character: null }, chapterIdx: ci });
+      allSegments.push({ seg: { type: 'title', text: chapters[ci].title + ' . . .', character: null }, chapterIdx: ci });
     }
     for (const scene of chapters[ci].scenes) {
       // Use pre-baked span attribution if available; otherwise call the model
