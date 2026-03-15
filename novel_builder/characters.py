@@ -142,6 +142,10 @@ def build_character_context(char_id, character, heritage_defs,
         context["role"] = merged.get("role", "")
         context["vibe"] = merged.get("vibe", "")
 
+        # Gender -- always, so the LLM never misidentifies pronouns
+        if merged.get("gender"):
+            context["gender"] = merged["gender"]
+
         # First appearance extras
         context["summary"] = merged.get("summary", "")
         context["personality"] = merged.get("personality", [])
@@ -174,6 +178,10 @@ def build_character_context(char_id, character, heritage_defs,
         context["Name"] = character.get("Name") or character.get("name", char_id)
         context["role"] = character.get("role", "")
         context["vibe"] = character.get("vibe", "")
+
+        # Gender -- always, so the LLM never misidentifies pronouns
+        if character.get("gender"):
+            context["gender"] = character["gender"]
 
         # Always — physical/nature facts that must never drift
         if character.get("species"):
@@ -285,6 +293,12 @@ def should_include_secret(character, scene_notes):
 def get_relevant_relationships(character, present_ids):
     """Get relationships between this character and others present in scene.
 
+    Supports two formats:
+    - Dict keyed by character ID (standard): only includes relationships
+      where both characters are present.
+    - String (legacy/freeform): always returned as-is under the key
+      '_general' so the LLM sees general relationship context.
+
     Args:
         character: Character data dict.
         present_ids: List of character IDs present in the scene.
@@ -293,7 +307,14 @@ def get_relevant_relationships(character, present_ids):
         Dict of character_id -> relationship description, or empty dict.
     """
     relationships = character.get("relationships", {})
-    if not relationships or not isinstance(relationships, dict):
+    if not relationships:
+        return {}
+
+    # String-format relationships: always include as general context
+    if isinstance(relationships, str):
+        return {"_general": relationships}
+
+    if not isinstance(relationships, dict):
         return {}
 
     return {k: v for k, v in relationships.items() if k in present_ids}

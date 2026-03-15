@@ -3232,6 +3232,7 @@ def api_tts_speak():
     model = data.get("model") or cfg.get("tts_model", "")
     voice = data.get("voice") or cfg.get("tts_narrator_voice", "")
     text = data.get("text", "").strip()
+    speed = float(data.get("speed", 1.0))
 
     if not host:
         return jsonify({"ok": False, "error": "No TTS host configured"}), 400
@@ -3249,6 +3250,7 @@ def api_tts_speak():
                 "model": model,
                 "input": text,
                 "voice": voice,
+                "speed": speed,
                 "response_format": "mp3",
             },
             timeout=120,

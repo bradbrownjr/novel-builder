@@ -321,13 +321,48 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
     if ch_summary:
         parts.append(f"Chapter arc: {ch_summary}")
 
+    # -- Chapter transition directive --
+    # When this is the first scene of a chapter after chapter 1, signal
+    # that a new narrative beat has started so the LLM doesn't repeat
+    # actions from the previous chapter.
+    scene_num = scene.get("scene_number", "")
+    scene_num_str = str(scene_num)
+    is_first_scene = scene_num_str.endswith(".1") or scene_num_str == str(chapter_num)
+    has_prior_content = bool(state.get("story_so_far", ""))
+    if is_first_scene and has_prior_content and chapter_num > 1:
+        parts.append(
+            "\nCHAPTER TRANSITION: This is the start of a new chapter. "
+            "The previous chapter's events have concluded. Do NOT re-narrate "
+            "actions, routines, or descriptions that already appeared in "
+            "earlier scenes (waking up, getting dressed, making coffee, "
+            "describing the apartment, etc.). Pick up the story at the "
+            "new chapter's starting point. Move forward, not backward."
+        )
+
     # Per-chapter style override
     ch_style = chapter.get("style_override", "")
     if ch_style:
         parts.append(f"Style for this chapter: {ch_style}")
 
+    # -- Scene continuation directive --
+    # When multiple scenes share a chapter, signal that this is a
+    # continuation so the LLM doesn't re-establish what just happened.
+    if not is_first_scene and has_prior_content:
+        recent = state.get("recent_scenes", [])
+        if recent:
+            prev = recent[-1]
+            prev_scene = prev.get("scene", "")
+            # Check if previous scene is in the same chapter
+            prev_ch = prev_scene.split(".")[0] if "." in prev_scene else ""
+            if prev_ch == str(chapter_num):
+                parts.append(
+                    "\nSCENE CONTINUATION: This scene continues directly from "
+                    f"the previous scene ({prev_scene}). Do NOT re-narrate the "
+                    "setup, departure, or events from the previous scene. "
+                    "Continue the narrative flow seamlessly from where it left off."
+                )
+
     # -- Scene description --
-    scene_num = scene.get("scene_number", "")
     scene_events = scene.get("events", "")
     scene_notes = scene.get("notes", "")
     scene_pov = scene.get("pov", "")
@@ -366,6 +401,11 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
             loc_parts.append(f"Specific area: {setting_detail}")
         if loc_parts:
             parts.append(f"\nSetting:\n" + "\n".join(loc_parts))
+            parts.append(
+                "Use the setting details above exactly as described. "
+                "Do not invent, relocate, or alter spatial details such as "
+                "access routes, room layouts, or building features."
+            )
 
     # -- Character context --
     char_block = _build_character_block(
@@ -497,6 +537,10 @@ def _build_character_block(scene, all_characters, heritage_defs,
         role = context.get("role", "")
         lines.append(f"**{name}** ({role})" if role else f"**{name}**")
 
+        # Gender — always, so the LLM never misidentifies pronouns or sex
+        if context.get("gender"):
+            lines.append(f"  Gender: {context['gender']}")
+
         # Species / appearance — always, so the LLM never invents a different form
         if context.get("species"):
             lines.append(f"  Species/form: {context['species']}")
@@ -558,10 +602,14 @@ def _build_character_block(scene, all_characters, heritage_defs,
         relationships = get_relevant_relationships(char_data, present_ids)
         if relationships:
             for other_id, rel_desc in relationships.items():
-                other_char = present.get(other_id, {})
-                other_name = (other_char.get("Name", other_id)
-                              if isinstance(other_char, dict) else other_id)
-                lines.append(f"  Relationship with {other_name}: {rel_desc}")
+                if other_id == "_general":
+                    # Freeform string relationships -- include as general context
+                    lines.append(f"  Relationships: {rel_desc}")
+                else:
+                    other_char = present.get(other_id, {})
+                    other_name = (other_char.get("Name", other_id)
+                                  if isinstance(other_char, dict) else other_id)
+                    lines.append(f"  Relationship with {other_name}: {rel_desc}")
 
         # Evolution / character development
         if context.get("character_development"):

@@ -26,6 +26,9 @@ full_story.md
 *_output.md
 web_config.json
 
+# Sample data (user story files)
+sample_data/
+
 # OS
 .DS_Store
 Thumbs.db
