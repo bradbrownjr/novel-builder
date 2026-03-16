@@ -301,6 +301,58 @@ state = GenerationState()
 
 
 # ---------------------------------------------------------------------------
+# Audiobook compilation state (server-side TTS  --  survives browser close)
+# ---------------------------------------------------------------------------
+
+class AudiobookState:
+    """Thread-safe state for server-side audiobook compilation."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.status = "idle"  # idle | compiling | converting | completed | error | cancelled
+        self.done = 0
+        self.total = 0
+        self.phase = ""  # "synthesizing" | "converting" | ""
+        self.error = ""
+        self.format = "mp3"
+        self.output_file = ""  # path to completed file
+        self._cancel = False
+        self._thread = None
+
+    def reset(self):
+        with self._lock:
+            self.status = "idle"
+            self.done = 0
+            self.total = 0
+            self.phase = ""
+            self.error = ""
+            self.format = "mp3"
+            self.output_file = ""
+            self._cancel = False
+            self._thread = None
+
+    def snapshot(self):
+        with self._lock:
+            return {
+                "status": self.status,
+                "done": self.done,
+                "total": self.total,
+                "phase": self.phase,
+                "error": self.error,
+                "format": self.format,
+                "has_file": bool(self.output_file and os.path.exists(self.output_file)),
+                "file_size": (
+                    os.path.getsize(self.output_file)
+                    if self.output_file and os.path.exists(self.output_file)
+                    else 0
+                ),
+            }
+
+
+audiobook_state = AudiobookState()
+
+
+# ---------------------------------------------------------------------------
 # Consult state (AI analysis results  --  survives browser refresh)
 # ---------------------------------------------------------------------------
 
@@ -780,6 +832,7 @@ def api_status():
 
     snap["config"] = _load_web_config()
     snap["files"] = _list_workspace_files()
+    snap["audiobook"] = audiobook_state.snapshot()
     return jsonify(snap)
 
 
@@ -1415,6 +1468,14 @@ def api_new_story():
             os.remove(path)
             removed.append(extra)
 
+    # Remove compiled audiobook files
+    for ab_name in ["audiobook.mp3", "audiobook.m4b"]:
+        ab_path = os.path.join(WORKSPACE_DIR, ab_name)
+        if os.path.exists(ab_path):
+            os.remove(ab_path)
+            removed.append(ab_name)
+    audiobook_state.reset()
+
     # Clear consult cache file and in-memory state
     consult_cache_path = os.path.join(WORKSPACE_DIR, "consult_cache.json")
     if os.path.exists(consult_cache_path):
@@ -1453,6 +1514,14 @@ def api_reset_generation():
         if os.path.exists(path):
             os.remove(path)
             removed.append(filename)
+
+    # Remove compiled audiobook files
+    for ab_name in ["audiobook.mp3", "audiobook.m4b"]:
+        ab_path = os.path.join(WORKSPACE_DIR, ab_name)
+        if os.path.exists(ab_path):
+            os.remove(ab_path)
+            removed.append(ab_name)
+    audiobook_state.reset()
 
     state.reset()
     return jsonify({"ok": True, "removed": removed})
@@ -3349,236 +3418,391 @@ def api_tts_segments():
     return jsonify({"ok": True, "segments": segments})
 
 
-@app.route("/api/tts/add-chapters", methods=["POST"])
-def api_tts_add_chapters():
-    """Tag an MP3 with ID3v2 chapter markers (CHAP/CTOC frames).
+# ---------------------------------------------------------------------------
+# Server-side audiobook compilation
+# ---------------------------------------------------------------------------
 
-    Accepts multipart/form-data:
-      - mp3: binary MP3 file
-      - chapters: JSON string [{title, byte_offset}, ...]
+def _parse_chapters_for_audio(text):
+    """Parse full_story.md into chapters with scene text.
 
-    Returns the ID3-tagged MP3 as audio/mpeg. Falls back to the
-    unmodified MP3 if fewer than two chapters are provided.
+    Returns: [{title: str, scenes: [str, ...]}, ...]
     """
-    import io
-    import json as _json
+    chapter_re = re.compile(r"<!--\s*chapter:\d+\s*-->")
+    scene_re = re.compile(
+        r"<!--\s*scene:[\d.]+\s*-->([\s\S]*?)<!--\s*/scene:[\d.]+\s*-->"
+    )
+    heading_re = re.compile(r"^#+\s+(.+)", re.MULTILINE)
+
+    blocks = chapter_re.split(text)
+    chapters = []
+    for block in blocks:
+        if not block.strip():
+            continue
+        title_m = heading_re.search(block)
+        title = title_m.group(1).strip() if title_m else "Chapter"
+        scene_matches = scene_re.findall(block)
+        scenes = [s.strip() for s in scene_matches if s.strip()]
+        if not scenes:
+            fallback = heading_re.sub("", block).strip()
+            if fallback:
+                scenes.append(fallback)
+        if scenes:
+            chapters.append({"title": title, "scenes": scenes})
+    return chapters
+
+
+def _compile_audiobook_worker(fmt, cfg, story_title, chapters, voice_map,
+                              narrator_voice, pov_character, tts_host,
+                              tts_model, tts_speed):
+    """Background worker for server-side audiobook compilation."""
+    from .tts import parse_span_segments
+
+    mp3_path = os.path.join(WORKSPACE_DIR, "audiobook.mp3")
 
     try:
-        from mutagen.mp3 import MP3
-        from mutagen.id3 import ID3, CHAP, CTOC, TIT2, ID3NoHeaderError
-    except ImportError:
-        return jsonify({"ok": False, "error": "mutagen not installed -- run pip install mutagen"}), 500
+        # Build segment list
+        all_segments = []
+        if story_title:
+            all_segments.append({
+                "seg": {"type": "title", "text": story_title + " . . .", "character": None},
+                "chapter_idx": 0,
+            })
 
-    if "mp3" not in request.files:
-        return jsonify({"ok": False, "error": "No mp3 file provided"}), 400
+        for ci, chapter in enumerate(chapters):
+            if chapter["title"]:
+                all_segments.append({
+                    "seg": {"type": "title", "text": chapter["title"] + " . . .", "character": None},
+                    "chapter_idx": ci,
+                })
+            for scene_text in chapter["scenes"]:
+                segs = parse_span_segments(scene_text)
+                if not segs:
+                    segs = [{"type": "narration", "text": scene_text, "character": None}]
+                for seg in segs:
+                    all_segments.append({"seg": seg, "chapter_idx": ci})
 
-    try:
-        mp3_bytes = request.files["mp3"].read()
-        chapters = _json.loads(request.form.get("chapters", "[]"))
+        total = len(all_segments)
+        audiobook_state.total = total
+        audiobook_state.phase = "synthesizing"
+        state.emit("log", {
+            "message": f"Audiobook: synthesizing {total} segments as {fmt.upper()}",
+            "level": "info",
+        })
+        state.emit("audiobook_progress", audiobook_state.snapshot())
 
-        if not chapters or len(chapters) < 2:
-            return Response(
-                mp3_bytes,
-                mimetype="audio/mpeg",
-                headers={"Content-Disposition": "attachment; filename=audiobook.mp3"},
-            )
+        # Resolve voice for each segment
+        def get_voice(seg):
+            if seg.get("character"):
+                if pov_character and seg["character"] == pov_character:
+                    return narrator_voice
+                if seg["character"] in voice_map:
+                    return voice_map[seg["character"]]
+            return narrator_voice
 
-        total_bytes = len(mp3_bytes)
-        chapters = sorted(chapters, key=lambda c: c["byte_offset"])
+        # Synthesize each segment and write MP3 bytes to disk
+        chapter_byte_offsets = [None] * len(chapters)
+        cumulative_bytes = 0
 
-        # Get total duration (TTS output is typically CBR, so this is accurate)
-        bio = io.BytesIO(mp3_bytes)
-        mp3_info = MP3(bio)
-        total_ms = int((mp3_info.info.length or 0) * 1000)
+        with open(mp3_path, "wb") as mp3_file:
+            for i, entry in enumerate(all_segments):
+                if audiobook_state._cancel:
+                    audiobook_state.status = "cancelled"
+                    state.emit("log", {"message": "Audiobook compilation cancelled", "level": "warn"})
+                    state.emit("audiobook_progress", audiobook_state.snapshot())
+                    return
 
-        # Load or create ID3 tag, note where the old header ends
-        bio.seek(0)
-        try:
-            tags = ID3(bio)
-            audio_start = tags._size
-        except ID3NoHeaderError:
-            tags = ID3()
-            audio_start = 0
+                seg = entry["seg"]
+                ci = entry["chapter_idx"]
+                if chapter_byte_offsets[ci] is None:
+                    chapter_byte_offsets[ci] = cumulative_bytes
 
-        # Build CHAP frames
-        chap_ids = []
-        for i, chap in enumerate(chapters):
-            start_off = chap["byte_offset"]
-            end_off = (
-                chapters[i + 1]["byte_offset"] if i + 1 < len(chapters) else total_bytes
-            )
-            # Linear interpolation: safe for CBR output from TTS engines
-            start_ms = int(start_off / total_bytes * total_ms) if total_bytes else 0
-            end_ms = int(end_off / total_bytes * total_ms) if total_bytes else total_ms
-            chap_id = f"ch{i}"
-            chap_ids.append(chap_id)
-            tags.add(CHAP(
-                element_id=chap_id,
-                start_time=start_ms,
-                end_time=end_ms,
-                start_offset=start_off,
-                end_offset=end_off,
-                sub_frames=[TIT2(encoding=3, text=chap["title"])],
-            ))
+                voice = get_voice(seg)
+                text = _preprocess_tts_text(seg.get("text", "").strip())
+                if not text:
+                    audiobook_state.done = i + 1
+                    continue
 
-        # CTOC table of contents -- flags=3 means TOP_LEVEL | ORDERED
-        tags.add(CTOC(
-            element_id="toc",
-            flags=3,
-            child_element_ids=chap_ids,
-            sub_frames=[TIT2(encoding=3, text="Contents")],
-        ))
+                try:
+                    resp = _requests.post(
+                        f"{tts_host}/v1/audio/speech",
+                        json={
+                            "model": tts_model,
+                            "input": text,
+                            "voice": voice,
+                            "speed": tts_speed,
+                            "response_format": "mp3",
+                        },
+                        timeout=120,
+                        stream=True,
+                    )
+                    resp.raise_for_status()
+                    for chunk in resp.iter_content(chunk_size=8192):
+                        mp3_file.write(chunk)
+                        cumulative_bytes += len(chunk)
+                except Exception as e:
+                    state.emit("log", {
+                        "message": f"Audiobook: segment {i + 1}/{total} failed: {e}",
+                        "level": "warn",
+                    })
 
-        # Write new ID3 header into a fresh buffer, then append raw audio body
-        tag_out = io.BytesIO()
-        tags.save(tag_out, v2_version=3)
-        result_bytes = tag_out.getvalue() + mp3_bytes[audio_start:]
+                audiobook_state.done = i + 1
+                if (i + 1) % 10 == 0 or i + 1 == total:
+                    state.emit("audiobook_progress", audiobook_state.snapshot())
 
-        return Response(
-            result_bytes,
-            mimetype="audio/mpeg",
-            headers={"Content-Disposition": "attachment; filename=audiobook.mp3"},
-        )
+        state.emit("log", {
+            "message": f"Audiobook: synthesis complete -- {cumulative_bytes / 1024 / 1024:.1f} MB MP3",
+            "level": "info",
+        })
+
+        # Build chapter list
+        chapter_list = []
+        for ci, chapter in enumerate(chapters):
+            if chapter_byte_offsets[ci] is not None:
+                chapter_list.append({
+                    "title": chapter["title"],
+                    "byte_offset": chapter_byte_offsets[ci],
+                })
+
+        # Convert to M4B if requested
+        if fmt == "m4b":
+            _convert_mp3_to_m4b(mp3_path, chapter_list, story_title or "Audiobook")
+        else:
+            audiobook_state.output_file = mp3_path
+
+        audiobook_state.status = "completed"
+        audiobook_state.phase = ""
+        state.emit("log", {
+            "message": f"Audiobook: {fmt.upper()} ready for download",
+            "level": "info",
+        })
+        state.emit("audiobook_progress", audiobook_state.snapshot())
 
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        audiobook_state.status = "error"
+        audiobook_state.error = str(e)
+        state.emit("log", {
+            "message": f"Audiobook compilation error: {e}",
+            "level": "error",
+        })
+        state.emit("audiobook_progress", audiobook_state.snapshot())
 
 
-@app.route("/api/tts/convert-m4b", methods=["POST"])
-def api_tts_convert_m4b():
-    """Convert an MP3 to M4B audiobook with chapter markers using FFmpeg.
-
-    Accepts multipart/form-data:
-      - mp3: binary MP3 file
-      - chapters: JSON string [{title, byte_offset}, ...]
-      - title: story title string (optional)
-
-    Returns the M4B file as audio/mp4, or an error if FFmpeg is unavailable.
-    """
-    import io
-    import json as _json
+def _convert_mp3_to_m4b(mp3_path, chapter_list, book_title):
+    """Convert a cached MP3 file to M4B with chapter markers."""
     import shutil
     import subprocess
-    import tempfile
+
+    audiobook_state.phase = "converting"
+    state.emit("audiobook_progress", audiobook_state.snapshot())
+    state.emit("log", {"message": "Audiobook: converting to M4B with chapters...", "level": "info"})
 
     ffmpeg_path = shutil.which("ffmpeg")
     if not ffmpeg_path:
-        return jsonify({
-            "ok": False,
-            "error": "FFmpeg is not installed. Install it with: sudo apt install ffmpeg",
-        }), 500
+        audiobook_state.status = "error"
+        audiobook_state.error = "FFmpeg is not installed. Install it with: sudo apt install ffmpeg"
+        return
 
-    if "mp3" not in request.files:
-        return jsonify({"ok": False, "error": "No mp3 file provided"}), 400
+    m4b_path = os.path.join(WORKSPACE_DIR, "audiobook.m4b")
+    meta_path = os.path.join(WORKSPACE_DIR, "_audiobook_meta.txt")
 
     try:
-        mp3_bytes = request.files["mp3"].read()
-        chapters = _json.loads(request.form.get("chapters", "[]"))
-        book_title = request.form.get("title", "Audiobook")
+        # Probe duration
+        probe = subprocess.run(
+            [ffmpeg_path, "-i", mp3_path, "-f", "null", "-"],
+            capture_output=True, text=True, timeout=120,
+        )
+        duration_ms = 0
+        for line in probe.stderr.splitlines():
+            if "Duration:" in line:
+                part = line.split("Duration:")[1].split(",")[0].strip()
+                h, m, s = part.split(":")
+                duration_ms = int((int(h) * 3600 + int(m) * 60 + float(s)) * 1000)
+                break
 
-        # Get total duration from FFmpeg probe
-        tmp_dir = tempfile.mkdtemp(prefix="nb_m4b_")
-        mp3_path = os.path.join(tmp_dir, "input.mp3")
-        m4b_path = os.path.join(tmp_dir, "output.m4b")
-        meta_path = os.path.join(tmp_dir, "metadata.txt")
+        total_bytes = os.path.getsize(mp3_path)
 
-        try:
-            with open(mp3_path, "wb") as f:
-                f.write(mp3_bytes)
+        # Build FFmpeg metadata
+        meta_lines = [";FFMETADATA1", f"title={book_title}"]
+        if chapter_list:
+            sorted_chapters = sorted(chapter_list, key=lambda c: c["byte_offset"])
+            for i, chap in enumerate(sorted_chapters):
+                start_off = chap["byte_offset"]
+                end_off = (
+                    sorted_chapters[i + 1]["byte_offset"]
+                    if i + 1 < len(sorted_chapters)
+                    else total_bytes
+                )
+                start_ms = int(start_off / total_bytes * duration_ms) if total_bytes else 0
+                end_ms = int(end_off / total_bytes * duration_ms) if total_bytes else duration_ms
+                meta_lines.append("[CHAPTER]")
+                meta_lines.append("TIMEBASE=1/1000")
+                meta_lines.append(f"START={start_ms}")
+                meta_lines.append(f"END={end_ms}")
+                meta_lines.append(f"title={chap['title']}")
 
-            # Probe duration in milliseconds
-            probe = subprocess.run(
-                [ffmpeg_path, "-i", mp3_path, "-f", "null", "-"],
-                capture_output=True, text=True, timeout=120,
-            )
-            duration_ms = 0
-            for line in probe.stderr.splitlines():
-                if "Duration:" in line:
-                    # Parse "Duration: HH:MM:SS.xx"
-                    part = line.split("Duration:")[1].split(",")[0].strip()
-                    h, m, s = part.split(":")
-                    duration_ms = int(
-                        (int(h) * 3600 + int(m) * 60 + float(s)) * 1000
-                    )
-                    break
+        with open(meta_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(meta_lines) + "\n")
 
-            total_bytes = len(mp3_bytes)
+        cmd = [
+            ffmpeg_path,
+            "-i", mp3_path,
+            "-i", meta_path,
+            "-map_metadata", "1",
+            "-map", "0:a",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-movflags", "+faststart",
+            "-f", "mp4",
+            "-y", m4b_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode != 0:
+            audiobook_state.status = "error"
+            audiobook_state.error = f"FFmpeg conversion failed: {result.stderr[-500:]}"
+            return
 
-            # Build FFmpeg metadata file
-            meta_lines = [";FFMETADATA1", f"title={book_title}"]
-
-            if chapters and len(chapters) >= 1:
-                sorted_chapters = sorted(chapters, key=lambda c: c["byte_offset"])
-                for i, chap in enumerate(sorted_chapters):
-                    start_off = chap["byte_offset"]
-                    end_off = (
-                        sorted_chapters[i + 1]["byte_offset"]
-                        if i + 1 < len(sorted_chapters)
-                        else total_bytes
-                    )
-                    start_ms = (
-                        int(start_off / total_bytes * duration_ms)
-                        if total_bytes
-                        else 0
-                    )
-                    end_ms = (
-                        int(end_off / total_bytes * duration_ms)
-                        if total_bytes
-                        else duration_ms
-                    )
-                    meta_lines.append("[CHAPTER]")
-                    meta_lines.append("TIMEBASE=1/1000")
-                    meta_lines.append(f"START={start_ms}")
-                    meta_lines.append(f"END={end_ms}")
-                    meta_lines.append(f"title={chap['title']}")
-
-            with open(meta_path, "w", encoding="utf-8") as f:
-                f.write("\n".join(meta_lines) + "\n")
-
-            # Convert MP3 to M4B (AAC in MP4 container) with chapter metadata
-            cmd = [
-                ffmpeg_path,
-                "-i", mp3_path,
-                "-i", meta_path,
-                "-map_metadata", "1",
-                "-map", "0:a",
-                "-c:a", "aac",
-                "-b:a", "128k",
-                "-movflags", "+faststart",
-                "-f", "mp4",
-                "-y", m4b_path,
-            ]
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=600,
-            )
-            if result.returncode != 0:
-                return jsonify({
-                    "ok": False,
-                    "error": f"FFmpeg conversion failed: {result.stderr[-500:]}",
-                }), 500
-
-            with open(m4b_path, "rb") as f:
-                m4b_bytes = f.read()
-
-            safe_title = "".join(
-                c if c.isalnum() or c in " _-" else "_" for c in book_title
-            ).strip() or "audiobook"
-
-            return Response(
-                m4b_bytes,
-                mimetype="audio/mp4",
-                headers={
-                    "Content-Disposition": f'attachment; filename="{safe_title}.m4b"',
-                },
-            )
-
-        finally:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
+        audiobook_state.output_file = m4b_path
 
     except subprocess.TimeoutExpired:
-        return jsonify({"ok": False, "error": "FFmpeg conversion timed out"}), 500
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        audiobook_state.status = "error"
+        audiobook_state.error = "FFmpeg conversion timed out"
+    finally:
+        if os.path.exists(meta_path):
+            os.remove(meta_path)
+
+
+@app.route("/api/tts/compile", methods=["POST"])
+def api_tts_compile():
+    """Start server-side audiobook compilation."""
+    if audiobook_state._thread is not None and audiobook_state._thread.is_alive():
+        return jsonify({"ok": False, "error": "Audiobook compilation already running"}), 400
+
+    data = request.get_json(force=True) if request.is_json else {}
+    fmt = data.get("format", "m4b")
+    if fmt not in ("mp3", "m4b"):
+        fmt = "m4b"
+
+    # Read the story output
+    output_path = os.path.join(WORKSPACE_DIR, "full_story.md")
+    if not os.path.exists(output_path):
+        return jsonify({"ok": False, "error": "No story output found. Generate the story first."}), 404
+
+    with open(output_path, "r", encoding="utf-8") as f:
+        story_text = f.read()
+
+    chapters = _parse_chapters_for_audio(story_text)
+    if not chapters:
+        return jsonify({"ok": False, "error": "No chapters/scenes found in output"}), 400
+
+    # Load TTS config
+    cfg = _load_web_config()
+    tts_host = _normalize_tts_host(cfg.get("tts_host", ""))
+    tts_model = cfg.get("tts_model", "")
+    narrator_voice = cfg.get("tts_narrator_voice", "")
+    tts_speed = float(cfg.get("tts_speed", 1.0))
+
+    if not tts_host or not tts_model or not narrator_voice:
+        return jsonify({"ok": False, "error": "Configure TTS host, model and narrator voice first"}), 400
+
+    # Build voice map from YAML + saved config
+    voice_map = {}
+    outline_path = os.path.join(WORKSPACE_DIR, FILE_ROLES["outline"])
+    char_path = os.path.join(WORKSPACE_DIR, FILE_ROLES["characters"])
+
+    story_title = ""
+    pov_character = ""
+
+    if os.path.exists(outline_path):
+        try:
+            with open(outline_path, "r", encoding="utf-8") as f:
+                outline = _yaml.safe_load(f) or {}
+            story_title = outline.get("story_title", "")
+            pov_character = outline.get("pov_character", "")
+        except Exception:
+            pass
+
+    if os.path.exists(char_path):
+        try:
+            with open(char_path, "r", encoding="utf-8") as f:
+                char_data = _yaml.safe_load(f) or {}
+            chars = char_data.get("characters", char_data)
+            if isinstance(chars, dict):
+                for cid, cval in chars.items():
+                    if isinstance(cval, dict) and cval.get("tts_voice"):
+                        name = cval.get("Name") or cval.get("name", cid)
+                        voice_map[name] = cval["tts_voice"]
+        except Exception:
+            pass
+
+    # Saved voice map from web config overrides YAML
+    saved_map = cfg.get("tts_voice_map") or {}
+    voice_map.update(saved_map)
+
+    # Reset state and start worker
+    audiobook_state.reset()
+    audiobook_state.status = "compiling"
+    audiobook_state.format = fmt
+
+    thread = threading.Thread(
+        target=_compile_audiobook_worker,
+        args=(fmt, cfg, story_title, chapters, voice_map, narrator_voice,
+              pov_character, tts_host, tts_model, tts_speed),
+        daemon=True,
+        name="audiobook-compile",
+    )
+    thread.start()
+    audiobook_state._thread = thread
+
+    return jsonify({"ok": True, "message": f"Audiobook compilation started ({fmt.upper()})"})
+
+
+@app.route("/api/tts/compile-status")
+def api_tts_compile_status():
+    """Get current audiobook compilation progress."""
+    return jsonify(audiobook_state.snapshot())
+
+
+@app.route("/api/tts/compile-cancel", methods=["POST"])
+def api_tts_compile_cancel():
+    """Cancel a running audiobook compilation."""
+    if audiobook_state._thread is None or not audiobook_state._thread.is_alive():
+        return jsonify({"ok": False, "error": "No compilation running"}), 400
+    audiobook_state._cancel = True
+    return jsonify({"ok": True, "message": "Cancellation requested"})
+
+
+@app.route("/api/tts/compile-download")
+def api_tts_compile_download():
+    """Download the compiled audiobook file."""
+    snap = audiobook_state.snapshot()
+    if not snap["has_file"]:
+        return jsonify({"ok": False, "error": "No audiobook file available"}), 404
+
+    path = audiobook_state.output_file
+    ext = os.path.splitext(path)[1]  # .mp3 or .m4b
+    mimetype = "audio/mp4" if ext == ".m4b" else "audio/mpeg"
+
+    # Get story title for filename
+    story_title = "audiobook"
+    outline_path = os.path.join(WORKSPACE_DIR, FILE_ROLES["outline"])
+    if os.path.exists(outline_path):
+        try:
+            with open(outline_path, "r", encoding="utf-8") as f:
+                outline = _yaml.safe_load(f) or {}
+            story_title = outline.get("story_title", "audiobook") or "audiobook"
+        except Exception:
+            pass
+
+    safe_title = "".join(
+        c if c.isalnum() or c in " _-" else "_" for c in story_title
+    ).strip() or "audiobook"
+
+    return send_file(
+        path,
+        mimetype=mimetype,
+        as_attachment=True,
+        download_name=f"{safe_title}{ext}",
+    )
 
 
 # ---------------------------------------------------------------------------
