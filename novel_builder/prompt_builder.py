@@ -34,6 +34,11 @@ _DEFAULT_PROMPT_ANTI_PATTERNS = [
     '"time seemed to stop" or "time stood still"',
     '"sent shivers down" or "a chill ran down"',
     '"whispered softly" or other redundant adverbs',
+    '"cleared throat" as a dialogue beat -- use varied transitions',
+    '"couldn\'t quite" or "couldn\'t quite name" -- find direct expressions',
+    '"dust motes dancing" or "dust motes" as atmospheric filler',
+    '"grime coated windows" or "grime-coated" -- vary window/light descriptions',
+    '"something else entirely" or "something else" as vague descriptions',
 ]
 
 
@@ -841,6 +846,8 @@ def _inject_word_variety_nudge(parts, state):
         "atmosphere": "Atmosphere words",
         "action": "Action/gesture words",
         "dialogue": "Dialogue tags",
+        "hedge": "Hedge/filler words",
+        "modifier": "Overused modifiers",
     }
 
     lines = ["Word variety \u2014 these words have appeared often in the story already. "
