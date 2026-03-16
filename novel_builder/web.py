@@ -3588,13 +3588,18 @@ def _compile_audiobook_worker(fmt, cfg, story_title, chapters, voice_map,
 
 
 def _convert_mp3_to_m4b(mp3_path, chapter_list, book_title):
-    """Convert a cached MP3 file to M4B with chapter markers."""
+    """Convert a cached MP3 file to M4B (AAC in MP4 container).
+
+    Creates a clean M4B without embedded chapter markers, which can cause
+    compatibility issues with some audiobook players. The title is embedded
+    in the file metadata.
+    """
     import shutil
     import subprocess
 
     audiobook_state.phase = "converting"
     state.emit("audiobook_progress", audiobook_state.snapshot())
-    state.emit("log", {"message": "Audiobook: converting to M4B with chapters...", "level": "info"})
+    state.emit("log", {"message": "Audiobook: converting to M4B...", "level": "info"})
 
     ffmpeg_path = shutil.which("ffmpeg")
     if not ffmpeg_path:
@@ -3603,56 +3608,18 @@ def _convert_mp3_to_m4b(mp3_path, chapter_list, book_title):
         return
 
     m4b_path = os.path.join(WORKSPACE_DIR, "audiobook.m4b")
-    meta_path = os.path.join(WORKSPACE_DIR, "_audiobook_meta.txt")
 
     try:
-        # Probe duration
-        probe = subprocess.run(
-            [ffmpeg_path, "-i", mp3_path, "-f", "null", "-"],
-            capture_output=True, text=True, timeout=120,
-        )
-        duration_ms = 0
-        for line in probe.stderr.splitlines():
-            if "Duration:" in line:
-                part = line.split("Duration:")[1].split(",")[0].strip()
-                h, m, s = part.split(":")
-                duration_ms = int((int(h) * 3600 + int(m) * 60 + float(s)) * 1000)
-                break
-
-        total_bytes = os.path.getsize(mp3_path)
-
-        # Build FFmpeg metadata
-        meta_lines = [";FFMETADATA1", f"title={book_title}"]
-        if chapter_list:
-            sorted_chapters = sorted(chapter_list, key=lambda c: c["byte_offset"])
-            for i, chap in enumerate(sorted_chapters):
-                start_off = chap["byte_offset"]
-                end_off = (
-                    sorted_chapters[i + 1]["byte_offset"]
-                    if i + 1 < len(sorted_chapters)
-                    else total_bytes
-                )
-                start_ms = int(start_off / total_bytes * duration_ms) if total_bytes else 0
-                end_ms = int(end_off / total_bytes * duration_ms) if total_bytes else duration_ms
-                meta_lines.append("[CHAPTER]")
-                meta_lines.append("TIMEBASE=1/1000")
-                meta_lines.append(f"START={start_ms}")
-                meta_lines.append(f"END={end_ms}")
-                meta_lines.append(f"title={chap['title']}")
-
-        with open(meta_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(meta_lines) + "\n")
-
+        # Convert MP3 to M4B (AAC in MP4 container) -- clean conversion without chapter metadata
+        # Embedded chapter markers can cause "source files deleted/moved" errors in some players
         cmd = [
             ffmpeg_path,
             "-i", mp3_path,
-            "-i", meta_path,
-            "-map_metadata", "1",
-            "-map", "0:a",
             "-c:a", "aac",
             "-b:a", "128k",
+            "-metadata", f"title={book_title}",
+            "-metadata", "album=Audiobook",
             "-movflags", "+faststart",
-            "-f", "mp4",
             "-y", m4b_path,
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
@@ -3666,9 +3633,6 @@ def _convert_mp3_to_m4b(mp3_path, chapter_list, book_title):
     except subprocess.TimeoutExpired:
         audiobook_state.status = "error"
         audiobook_state.error = "FFmpeg conversion timed out"
-    finally:
-        if os.path.exists(meta_path):
-            os.remove(meta_path)
 
 
 @app.route("/api/tts/compile", methods=["POST"])
