@@ -11,6 +11,8 @@ _FREQUENCY_ODDS = {
     "frequent": 1 / 2,
 }
 _DEFAULT_FREQUENCY = "occasional"
+_CATCHPHRASE_COOLDOWN = 2  # minimum scenes between catchphrase inclusions
+_HABIT_ODDS = 1 / 3        # ~33% chance habit appears in any given scene
 
 
 def load_characters(config):
@@ -232,15 +234,28 @@ def get_evolution_context(character, current_chapter):
     return " ".join(notes) if notes else ""
 
 
-def should_include_catchphrase(character):
+def should_include_catchphrase(character, char_id=None, state=None):
     """Roll probability check for catch phrase inclusion.
+
+    Includes streak prevention: if this character's catchphrase was
+    included within the last _CATCHPHRASE_COOLDOWN scenes, skip it
+    regardless of the probability roll.
 
     Args:
         character: Character data dict.
+        char_id: Character ID string (for streak tracking).
+        state: Checkpoint state dict (for streak tracking).
 
     Returns:
         Tuple of (include: bool, phrase: str or None).
     """
+    # Streak prevention: check cooldown
+    if char_id and state:
+        last_scene = state.get("catchphrase_last_scene", {}).get(char_id, -999)
+        current_scene = state.get("scenes_completed", 0)
+        if current_scene - last_scene < _CATCHPHRASE_COOLDOWN:
+            return False, None
+
     # Check for list format first
     catchphrases = character.get("catchphrases", [])
     if catchphrases:
@@ -266,6 +281,40 @@ def should_include_catchphrase(character):
 
     if random.random() < odds:
         return True, phrase
+    return False, None
+
+
+def record_catchphrase_used(char_id, state):
+    """Record that a character's catchphrase was included in a scene.
+
+    Called by the prompt builder after including a catchphrase so the
+    cooldown tracking stays current.
+
+    Args:
+        char_id: Character ID string.
+        state: Checkpoint state dict (mutated).
+    """
+    tracker = state.setdefault("catchphrase_last_scene", {})
+    tracker[char_id] = state.get("scenes_completed", 0)
+
+
+def should_include_habit(character):
+    """Roll probability check for habit inclusion.
+
+    Habits are injected with ~33% probability per scene to prevent
+    the model from treating them as constant behavior directives.
+
+    Args:
+        character: Character data dict.
+
+    Returns:
+        Tuple of (include: bool, habit: str or None).
+    """
+    habit = character.get("habit", "")
+    if not habit:
+        return False, None
+    if random.random() < _HABIT_ODDS:
+        return True, habit
     return False, None
 
 

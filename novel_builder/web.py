@@ -3445,6 +3445,107 @@ def api_tts_add_chapters():
 
 
 # ---------------------------------------------------------------------------
+# Text analysis
+# ---------------------------------------------------------------------------
+
+# Common English stop words filtered from text analysis results
+_STOP_WORDS = frozenset(
+    "a an the and but or nor for yet so is am are was were be been being "
+    "have has had do does did will would shall should may might can could "
+    "i me my mine myself you your yours yourself he him his himself she her "
+    "hers herself it its itself we us our ours ourselves they them their "
+    "theirs themselves what which who whom this that these those to of in "
+    "for on with at by from as into through during before after above below "
+    "between out off over under again further then once here there where "
+    "when how why all each every both few more most other some such no not "
+    "only own same than too very just about up if also back even still also "
+    "well much now new like one two way get go got know see make take come "
+    "think look want give use find tell ask seem feel try leave call need "
+    "become keep let begin show hear play run move live believe bring happen "
+    "must write provide sit stand lose pay meet include continue set learn "
+    "change lead understand watch follow stop create speak read allow add "
+    "spend grow open walk win offer remember love consider appear buy wait "
+    "serve die send expect build stay fall cut reach kill remain".split()
+)
+
+_STRIP_HTML_RE = re.compile(r"<[^>]+>")
+_STRIP_MARKER_RE = re.compile(
+    r"<!--\s*(?:/?scene:[\d.]+|chapter:\d+|speaker:[^>]*|/speaker:[^>]*)\s*-->",
+    re.IGNORECASE,
+)
+_WORD_TOKEN_RE = re.compile(r"[a-z]+(?:'[a-z]+)?")
+
+
+def _analyze_text(text: str, top_n: int = 80):
+    """Analyze text for most common words and phrases (bigrams/trigrams).
+
+    Returns dict with 'words' and 'phrases' lists sorted by frequency.
+    """
+    import collections
+
+    # Strip HTML tags and scene markers
+    clean = _STRIP_HTML_RE.sub(" ", text)
+    clean = _STRIP_MARKER_RE.sub(" ", clean)
+    # Strip markdown headers
+    clean = re.sub(r"^#{1,6}\s.*$", "", clean, flags=re.MULTILINE)
+
+    tokens = _WORD_TOKEN_RE.findall(clean.lower())
+    # Filter stop words and very short tokens
+    filtered = [t for t in tokens if t not in _STOP_WORDS and len(t) > 2]
+
+    # Single word counts
+    word_counts = collections.Counter(filtered)
+    words = [{"word": w, "count": c} for w, c in word_counts.most_common(top_n)]
+
+    # Bigrams and trigrams (phrases)
+    bigrams = collections.Counter()
+    trigrams = collections.Counter()
+    for i in range(len(filtered) - 1):
+        bigrams[f"{filtered[i]} {filtered[i + 1]}"] += 1
+    for i in range(len(filtered) - 2):
+        trigrams[f"{filtered[i]} {filtered[i + 1]} {filtered[i + 2]}"] += 1
+
+    # Merge bigrams and trigrams, keep only phrases appearing 2+ times
+    phrases = {}
+    for phrase, cnt in bigrams.items():
+        if cnt >= 2:
+            phrases[phrase] = cnt
+    for phrase, cnt in trigrams.items():
+        if cnt >= 2:
+            phrases[phrase] = cnt
+    sorted_phrases = sorted(phrases.items(), key=lambda x: -x[1])[:top_n]
+    phrase_list = [{"phrase": p, "count": c} for p, c in sorted_phrases]
+
+    return {
+        "words": words,
+        "phrases": phrase_list,
+        "total_words": len(tokens),
+        "unique_words": len(set(tokens)),
+    }
+
+
+@app.route("/api/text-analysis")
+def api_text_analysis():
+    """Analyze the generated story text for word and phrase frequency."""
+    output_path = os.path.join(WORKSPACE_DIR, "full_story.md")
+    if not os.path.exists(output_path):
+        return jsonify({"ok": False, "error": "No output file found."})
+
+    try:
+        with open(output_path, "r", encoding="utf-8") as f:
+            text = f.read()
+    except OSError as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+    if not text.strip():
+        return jsonify({"ok": False, "error": "Output file is empty."})
+
+    result = _analyze_text(text)
+    result["ok"] = True
+    return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
 # Server launcher
 # ---------------------------------------------------------------------------
 

@@ -1267,6 +1267,7 @@ textarea {
       <button class="btn btn-sm" onclick="switchTab('memory')">&#8249; Back: Memory</button>
       <button class="btn btn-sm" onclick="refreshOutput()">Refresh</button>
       <button class="btn btn-sm" onclick="location.href='/api/download'">Download .md</button>
+    <button class="btn btn-sm" onclick="showTextAnalysis()">Text Analysis</button>
     <label style="display:flex; align-items:center; gap:.3rem; font-size:.78rem; color:var(--text-dim);">
       <input type="checkbox" id="chk-autoscroll" checked> Auto-scroll
     </label>
@@ -1307,6 +1308,31 @@ textarea {
     </div>
   </div>
 </div>
+
+<!-- ==================== TEXT ANALYSIS MODAL ==================== -->
+<div class="modal-overlay" id="modal-text-analysis">
+  <div class="modal" style="max-width:800px;max-height:85vh;display:flex;flex-direction:column;">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <h3 style="margin:0;">Text Analysis</h3>
+      <button class="btn btn-sm" onclick="closeTextAnalysis()">&times; Close</button>
+    </div>
+    <p style="font-size:.82rem;color:var(--text-dim);margin:.5rem 0;">
+      Most common words and phrases in your story, sorted by frequency. Stop words filtered out.
+    </p>
+    <div id="text-analysis-stats" style="font-size:.82rem;color:var(--text-dim);margin-bottom:.5rem;"></div>
+    <div style="display:flex;gap:.75rem;margin-bottom:.5rem;">
+      <button class="btn btn-sm btn-primary" id="ta-tab-words" onclick="taShowTab('words')">Words</button>
+      <button class="btn btn-sm" id="ta-tab-phrases" onclick="taShowTab('phrases')">Phrases</button>
+    </div>
+    <div style="overflow-y:auto;flex:1;min-height:0;">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem;" id="ta-table">
+        <thead><tr><th style="text-align:left;padding:.35rem .5rem;border-bottom:1px solid var(--border);">#</th><th style="text-align:left;padding:.35rem .5rem;border-bottom:1px solid var(--border);">Term</th><th style="text-align:right;padding:.35rem .5rem;border-bottom:1px solid var(--border);">Count</th></tr></thead>
+        <tbody id="ta-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 </div><!-- /.page-body -->
 
 <!-- ==================== TOAST CONTAINER ==================== -->
@@ -5030,6 +5056,56 @@ async function saveMemory() {
   const r = await apiPost('/api/memory', { story_memory: _memoryData });
   if (r && r.ok) toast('Memory saved to checkpoint', 'ok');
   else toast(r?.error || 'Save failed', 'error');
+}
+
+/* ==========================================================
+   Text Analysis
+   ========================================================== */
+let _taData = null;
+let _taActiveTab = 'words';
+
+async function showTextAnalysis() {
+  document.getElementById('modal-text-analysis').classList.add('show');
+  const tbody = document.getElementById('ta-tbody');
+  tbody.innerHTML = '<tr><td colspan="3" style="padding:.5rem;color:var(--text-dim);">Analyzing...</td></tr>';
+  document.getElementById('text-analysis-stats').textContent = '';
+
+  const r = await api('/api/text-analysis');
+  if (!r || !r.ok) {
+    tbody.innerHTML = '<tr><td colspan="3" style="padding:.5rem;color:var(--danger);">' +
+      (r?.error || 'Analysis failed') + '</td></tr>';
+    return;
+  }
+  _taData = r;
+  document.getElementById('text-analysis-stats').textContent =
+    'Total words: ' + r.total_words.toLocaleString() + ' | Unique: ' + r.unique_words.toLocaleString();
+  _taActiveTab = 'words';
+  taShowTab('words');
+}
+
+function closeTextAnalysis() {
+  document.getElementById('modal-text-analysis').classList.remove('show');
+}
+
+function taShowTab(tab) {
+  _taActiveTab = tab;
+  document.getElementById('ta-tab-words').className = 'btn btn-sm' + (tab === 'words' ? ' btn-primary' : '');
+  document.getElementById('ta-tab-phrases').className = 'btn btn-sm' + (tab === 'phrases' ? ' btn-primary' : '');
+  if (!_taData) return;
+
+  const tbody = document.getElementById('ta-tbody');
+  const items = tab === 'words' ? _taData.words : _taData.phrases;
+  if (!items || items.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" style="padding:.5rem;color:var(--text-dim);">No results</td></tr>';
+    return;
+  }
+  const rows = items.map((it, i) => {
+    const term = tab === 'words' ? it.word : it.phrase;
+    return '<tr><td style="padding:.25rem .5rem;color:var(--text-dim);">' + (i + 1) + '</td>' +
+      '<td style="padding:.25rem .5rem;">' + term + '</td>' +
+      '<td style="padding:.25rem .5rem;text-align:right;font-variant-numeric:tabular-nums;">' + it.count + '</td></tr>';
+  });
+  tbody.innerHTML = rows.join('');
 }
 
 /* ==========================================================

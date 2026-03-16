@@ -10,7 +10,9 @@ from .characters import (
     build_character_context,
     filter_for_scene,
     get_relevant_relationships,
+    record_catchphrase_used,
     should_include_catchphrase,
+    should_include_habit,
     should_include_secret,
 )
 from .locations import resolve_location, format_location_for_prompt
@@ -411,7 +413,7 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
     char_block = _build_character_block(
         scene, all_characters, heritage_defs,
         state.get("character_appearances", {}),
-        chapter_num,
+        chapter_num, state=state,
     )
     if char_block:
         parts.append(f"\nCharacters in this scene:\n{char_block}")
@@ -529,7 +531,7 @@ def build_summary_prompt(scene_text):
 # ---------------------------------------------------------------------------
 
 def _build_character_block(scene, all_characters, heritage_defs,
-                           appearance_history, chapter_num):
+                           appearance_history, chapter_num, state=None):
     """Build the character context section for a scene prompt.
 
     Args:
@@ -618,20 +620,25 @@ def _build_character_block(scene, all_characters, heritage_defs,
         if context.get("voice"):
             lines.append(f"  Voice: {context['voice']}")
 
-        # Habit
-        if context.get("habit"):
-            lines.append(f"  Habit: {context['habit']}")
+        # Habit -- probability gated (~33% per scene)
+        include_habit, habit_text = should_include_habit(char_data)
+        if include_habit and habit_text:
+            lines.append(f"  Habit: {habit_text}")
 
         # Status — behavioral/situational info (always when present)
         if context.get("status"):
             lines.append(f"  Status/behavior: {context['status']}")
 
-        # Catch phrase — probability gated
-        include_phrase, phrase = should_include_catchphrase(char_data)
+        # Catch phrase -- probability gated with streak prevention
+        include_phrase, phrase = should_include_catchphrase(
+            char_data, char_id=char_id, state=state,
+        )
         if include_phrase and phrase:
             lines.append(
                 f"  Catch phrase (use naturally, max once): \"{phrase}\""
             )
+            if state is not None:
+                record_catchphrase_used(char_id, state)
 
         # Secret — only when scene has tension/subtext
         secret = should_include_secret(char_data, scene_notes)
@@ -734,7 +741,9 @@ def _format_story_memory(memory):
                 continue
             detail = action.get("detail", "")
             if detail:
-                parts.append(f"  - Action taken: {detail}")
+                parts.append(
+                    f"  - Already narrated (do NOT re-narrate): {detail}"
+                )
 
     commitments = memory.get("commitments", [])
     if isinstance(commitments, list):
@@ -830,6 +839,8 @@ def _inject_word_variety_nudge(parts, state):
         "smell": "Smell words",
         "touch": "Touch/texture words",
         "atmosphere": "Atmosphere words",
+        "action": "Action/gesture words",
+        "dialogue": "Dialogue tags",
     }
 
     lines = ["Word variety \u2014 these words have appeared often in the story already. "

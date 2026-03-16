@@ -48,6 +48,7 @@ Before any large file rewrite, verify every row in the affected file column is p
 | Voice catalog & descriptions | voice_catalog.py, web.py, templates/index.html | `KOKORO_VOICES`, `enrich_voice_list()`, `/api/tts/voices` (enriched), `/api/voice-catalog` |
 | Voice casting (AI) | consult.py, web.py, templates/index.html | `build_voice_casting_prompt()`, `/api/voice-cast`, `/api/voice-cast/result`, `startVoiceCast()`, `applyVoiceCast()` |
 | Story Concept Builder | concept.py, web.py, templates/index.html | `build_concept_prompt()`, `/api/concept`, `/api/concept/result`, `/api/concept/save`, `startConcept()`, `saveConceptFile()` |
+| Text analysis | web.py, templates/index.html | `_analyze_text()`, `/api/text-analysis`, `showTextAnalysis()`, `taShowTab()` |
 
 ## Project Conventions
 
@@ -182,6 +183,12 @@ _(Track fixes here for reference.)_
 - TTS speed single application -- removed `audio.playbackRate` from `playAudioBlob()` in `index.html`. Speed is now applied server-side only (via `/api/tts/speak` speed parameter). Previously speed was applied twice (server + client), effectively squaring the speed factor.
 - Explicit character exclusion -- `build_scene_prompt()` in `prompt_builder.py` now detects characters mentioned in scene events/notes who are NOT in the explicit character list, and names them in an exclusion directive ("must NOT appear on-stage, speak dialogue, or take any visible action"). Also excludes ALL characters who have appeared in the story so far but are not in the current scene's character list, preventing the model from pulling in known characters from the system prompt roster (e.g. Morty appearing in scenes where only Elias and Chrissy are listed, even when Morty isn't mentioned in events).
 - TTS stutter preprocessing -- `_preprocess_tts_text()` in `web.py` converts stutter patterns (e.g. "H-hello", "S-stop") to phonetic forms ("heh hello", "suh stop") before sending text to the TTS engine. Only triggers when the letter and word share the same starting letter, avoiding false positives on normal hyphenated words. Same-letter repetition ("I-I") converts to ellipsis pause ("I... I"). Applied in `/api/tts/speak` route.
+- Habit probability gating -- `should_include_habit()` in `characters.py` rolls ~33% odds per scene. Habit field no longer injected every prompt, reducing repetitive behavioral tics. Called from `_build_character_block()` in `prompt_builder.py`.
+- Catchphrase streak prevention -- `should_include_catchphrase()` in `characters.py` now accepts `char_id` and `state`, enforcing a 2-scene cooldown via `catchphrase_last_scene` tracker. `record_catchphrase_used()` updates the tracker after inclusion. Prevents back-to-back catchphrase injection.
+- Expanded word frequency watch list -- `_SENSORY_WATCH_WORDS` in `state.py` expanded with "action" (36 verbs: nodded, shrugged, sighed, etc.) and "dialogue" (21 verbs: murmured, whispered, stammered, etc.) categories. Total ~150+ tracked words.
+- Story memory action suppression -- Actions in prompt injection changed from "Action taken:" to "Already narrated (do NOT re-narrate):" in `prompt_builder.py`, making the directive explicitly suppressive rather than informational.
+- Word frequency windowed decay -- `update_word_frequency()` in `state.py` rewritten to use rolling `word_frequency_log` (15-scene window via `_WORD_FREQ_WINDOW`). Aggregate `word_frequency` rebuilt from window each update, so old usage naturally drops off. Prevents permanent word flagging.
+- Text analysis -- `/api/text-analysis` in `web.py` analyzes `full_story.md` for most common words and phrases (bigrams/trigrams), filtered by comprehensive stop word list. UI modal in Output tab shows tabbed results (Words/Phrases) with counts, total/unique word stats.
 
 ## Scene Marker Format
 
