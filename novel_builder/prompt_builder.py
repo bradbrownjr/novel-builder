@@ -294,6 +294,10 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
                 "segment separately. Example:"
                 '\n  <span data-tts="Morty">"First line."</span> He paused. '
                 '<span data-tts="Morty">"Second line."</span>'
+                "\n- NEVER tag the narrator's own dialogue. If the story "
+                "is first-person, lines followed by 'I said', 'I replied', "
+                "'I whispered', 'I muttered', etc. belong to the narrator "
+                "and must NOT be wrapped in any character's span."
                 "\n- CRITICAL: Always close every span tag you open. Every"
                 " <span data-tts=\"Name\"> MUST have a corresponding </span>"
                 " on the same line. Never leave a span unclosed."

@@ -89,6 +89,24 @@ def clean_scene_text(text):
         text,
     )
 
+    # Fix mis-tagged narrator dialogue -- when the model wraps first-person
+    # narrator speech in another character's span.  Detected by the span
+    # being immediately followed by first-person attribution like
+    # "I said", "I replied", "I whispered", etc.
+    text = re.sub(
+        r'<span\s+data-tts="[^"]*">("[^"]*")</span>'
+        r'(?=\s*(?:,\s*)?I\s+(?:'
+        r'said|replied|answered|responded|whispered|murmured|muttered|'
+        r'stammered|stuttered|admitted|offered|added|continued|finished|'
+        r'agreed|asked|called|shouted|yelled|cried|exclaimed|began|managed|'
+        r'started|tried|suggested|explained|insisted|pointed out|confirmed|'
+        r'conceded|countered|protested|objected|interrupted|cut in|chimed in'
+        r')\b)',
+        r'\1',
+        text,
+        flags=re.IGNORECASE,
+    )
+
     # Fix unclosed <span data-tts> tags. An unclosed span causes the TTS
     # parser's regex to capture everything from that opening tag to the
     # NEXT </span> in the text, which may be many sentences later and
