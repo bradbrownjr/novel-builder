@@ -1469,7 +1469,7 @@ def api_new_story():
             removed.append(extra)
 
     # Remove compiled audiobook files
-    for ab_name in ["audiobook.mp3", "audiobook.m4b"]:
+    for ab_name in ["audiobook.mp3", "audiobook.m4b", "audiobook_chapters.json"]:
         ab_path = os.path.join(WORKSPACE_DIR, ab_name)
         if os.path.exists(ab_path):
             os.remove(ab_path)
@@ -1516,7 +1516,7 @@ def api_reset_generation():
             removed.append(filename)
 
     # Remove compiled audiobook files
-    for ab_name in ["audiobook.mp3", "audiobook.m4b"]:
+    for ab_name in ["audiobook.mp3", "audiobook.m4b", "audiobook_chapters.json"]:
         ab_path = os.path.join(WORKSPACE_DIR, ab_name)
         if os.path.exists(ab_path):
             os.remove(ab_path)
@@ -3456,10 +3456,33 @@ def _compile_audiobook_worker(fmt, cfg, story_title, chapters, voice_map,
                               tts_model, tts_speed):
     """Background worker for server-side audiobook compilation."""
     from .tts import parse_span_segments
+    import json as _json_mod
 
     mp3_path = os.path.join(WORKSPACE_DIR, "audiobook.mp3")
+    chapters_json_path = os.path.join(WORKSPACE_DIR, "audiobook_chapters.json")
 
     try:
+        # If M4B requested and MP3 + chapter metadata already cached, skip synthesis
+        if fmt == "m4b" and os.path.exists(mp3_path) and os.path.exists(chapters_json_path):
+            try:
+                with open(chapters_json_path, "r", encoding="utf-8") as f:
+                    cached_chapters = _json_mod.load(f)
+                state.emit("log", {
+                    "message": "Audiobook: using cached MP3, skipping synthesis",
+                    "level": "info",
+                })
+                _convert_mp3_to_m4b(mp3_path, cached_chapters, story_title or "Audiobook")
+                audiobook_state.status = "completed"
+                audiobook_state.phase = ""
+                state.emit("log", {"message": "Audiobook: M4B ready for download", "level": "info"})
+                state.emit("audiobook_progress", audiobook_state.snapshot())
+                return
+            except Exception as e:
+                state.emit("log", {
+                    "message": f"Audiobook: cached chapter data invalid ({e}), re-synthesizing",
+                    "level": "warn",
+                })
+
         # Build segment list
         all_segments = []
         if story_title:
@@ -3554,7 +3577,7 @@ def _compile_audiobook_worker(fmt, cfg, story_title, chapters, voice_map,
             "level": "info",
         })
 
-        # Build chapter list
+        # Build chapter list and save for re-use
         chapter_list = []
         for ci, chapter in enumerate(chapters):
             if chapter_byte_offsets[ci] is not None:
@@ -3562,6 +3585,11 @@ def _compile_audiobook_worker(fmt, cfg, story_title, chapters, voice_map,
                     "title": chapter["title"],
                     "byte_offset": chapter_byte_offsets[ci],
                 })
+        try:
+            with open(chapters_json_path, "w", encoding="utf-8") as f:
+                _json_mod.dump(chapter_list, f)
+        except Exception:
+            pass
 
         # Convert to M4B if requested
         if fmt == "m4b":
@@ -3587,12 +3615,152 @@ def _compile_audiobook_worker(fmt, cfg, story_title, chapters, voice_map,
         state.emit("audiobook_progress", audiobook_state.snapshot())
 
 
-def _convert_mp3_to_m4b(mp3_path, chapter_list, book_title):
-    """Convert a cached MP3 file to M4B (AAC in MP4 container).
+def _probe_duration_ms(ffmpeg_path, audio_path):
+    """Get audio duration in milliseconds using ffprobe (or ffmpeg fallback)."""
+    import subprocess
 
-    Creates a clean M4B without embedded chapter markers, which can cause
-    compatibility issues with some audiobook players. The title is embedded
-    in the file metadata.
+    # Try ffprobe first (faster, more precise)
+    ffprobe = ffmpeg_path.replace("ffmpeg", "ffprobe")
+    try:
+        r = subprocess.run(
+            [ffprobe, "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
+            capture_output=True, text=True, timeout=30,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return int(float(r.stdout.strip()) * 1000)
+    except Exception:
+        pass
+
+    # Fallback: parse ffmpeg stderr
+    try:
+        r = subprocess.run(
+            [ffmpeg_path, "-i", audio_path, "-f", "null", "-"],
+            capture_output=True, text=True, timeout=120,
+        )
+        for line in r.stderr.splitlines():
+            if "Duration:" in line:
+                part = line.split("Duration:")[1].split(",")[0].strip()
+                h, m, s = part.split(":")
+                return int((int(h) * 3600 + int(m) * 60 + float(s)) * 1000)
+    except Exception:
+        pass
+    return 0
+
+
+def _inject_nero_chapters(m4b_path, chapters_ms):
+    """Inject Nero-style chapter markers into an M4B file.
+
+    Nero chapters are stored in moov.udta.chpl and are widely supported by
+    audiobook players.  Unlike QuickTime chapter tracks, they do NOT create
+    an extra stream (no SubtitleHandler text track) which avoids the
+    'source files deleted/moved' error in some players.
+
+    Args:
+        m4b_path: Path to M4B file (modified in-place).
+        chapters_ms: [{title: str, start_ms: int}, ...]
+    """
+    import struct
+
+    if not chapters_ms:
+        return
+
+    with open(m4b_path, "rb") as f:
+        data = bytearray(f.read())
+
+    # -- Build chpl atom --
+    payload = bytearray()
+    payload += struct.pack("B", 1)          # version 1
+    payload += b"\x00\x00\x00"              # flags
+    payload += b"\x00\x00\x00\x00"          # reserved (version-1 field)
+    payload += struct.pack(">I", len(chapters_ms))
+    for ch in chapters_ms:
+        ts = ch["start_ms"] * 10_000        # ms -> 100ns units
+        title = ch["title"].encode("utf-8")[:255]
+        payload += struct.pack(">q", ts)
+        payload += struct.pack("B", len(title))
+        payload += title
+    chpl_atom = struct.pack(">I", len(payload) + 8) + b"chpl" + bytes(payload)
+
+    # -- Find moov atom --
+    pos = 0
+    moov_pos = moov_size = None
+    while pos < len(data) - 8:
+        atom_sz = struct.unpack(">I", data[pos:pos + 4])[0]
+        atom_nm = bytes(data[pos + 4:pos + 8])
+        if atom_sz == 1:
+            atom_sz = struct.unpack(">Q", data[pos + 8:pos + 16])[0]
+        elif atom_sz == 0:
+            atom_sz = len(data) - pos
+        if atom_sz < 8:
+            break
+        if atom_nm == b"moov":
+            moov_pos = pos
+            moov_size = atom_sz
+        pos += atom_sz
+    if moov_pos is None:
+        raise ValueError("moov atom not found")
+
+    # -- Find udta inside moov --
+    scan = moov_pos + 8
+    moov_end = moov_pos + moov_size
+    udta_pos = udta_size = None
+    while scan < moov_end - 8:
+        s = struct.unpack(">I", data[scan:scan + 4])[0]
+        n = bytes(data[scan + 4:scan + 8])
+        if s < 8:
+            break
+        if n == b"udta":
+            udta_pos = scan
+            udta_size = s
+            break
+        scan += s
+
+    if udta_pos is not None:
+        # Remove existing chpl if present
+        inner = udta_pos + 8
+        while inner < udta_pos + udta_size - 8:
+            s2 = struct.unpack(">I", data[inner:inner + 4])[0]
+            if s2 < 8:
+                break
+            if bytes(data[inner + 4:inner + 8]) == b"chpl":
+                del data[inner:inner + s2]
+                udta_size -= s2
+                moov_size -= s2
+                struct.pack_into(">I", data, udta_pos, udta_size)
+                struct.pack_into(">I", data, moov_pos, moov_size)
+                break
+            inner += s2
+
+        # Append chpl at end of udta
+        ins = udta_pos + udta_size
+        data[ins:ins] = chpl_atom
+        udta_size += len(chpl_atom)
+        moov_size += len(chpl_atom)
+        struct.pack_into(">I", data, udta_pos, udta_size)
+        struct.pack_into(">I", data, moov_pos, moov_size)
+    else:
+        # Create udta containing chpl at end of moov
+        udta = struct.pack(">I", len(chpl_atom) + 8) + b"udta" + chpl_atom
+        ins = moov_pos + moov_size
+        data[ins:ins] = udta
+        moov_size += len(udta)
+        struct.pack_into(">I", data, moov_pos, moov_size)
+
+    with open(m4b_path, "wb") as f:
+        f.write(data)
+
+
+def _convert_mp3_to_m4b(mp3_path, chapter_list, book_title):
+    """Convert MP3 to M4B (AAC in MP4) with Nero chapter markers.
+
+    Two-step process:
+      1. FFmpeg transcodes MP3 to AAC in MP4 container (no chapter input,
+         so no spurious text track is created -- single audio stream).
+      2. Python injects Nero chapters directly into moov.udta.chpl.
+
+    The M4B is created WITHOUT +faststart (moov at end of file) so that
+    chapter injection doesn't require stco offset fixups.
     """
     import shutil
     import subprocess
@@ -3610,8 +3778,7 @@ def _convert_mp3_to_m4b(mp3_path, chapter_list, book_title):
     m4b_path = os.path.join(WORKSPACE_DIR, "audiobook.m4b")
 
     try:
-        # Convert MP3 to M4B (AAC in MP4 container) -- clean conversion without chapter metadata
-        # Embedded chapter markers can cause "source files deleted/moved" errors in some players
+        # Step 1: transcode to AAC -- no chapter metadata input, no extra streams
         cmd = [
             ffmpeg_path,
             "-i", mp3_path,
@@ -3619,7 +3786,6 @@ def _convert_mp3_to_m4b(mp3_path, chapter_list, book_title):
             "-b:a", "128k",
             "-metadata", f"title={book_title}",
             "-metadata", "album=Audiobook",
-            "-movflags", "+faststart",
             "-y", m4b_path,
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
@@ -3628,11 +3794,32 @@ def _convert_mp3_to_m4b(mp3_path, chapter_list, book_title):
             audiobook_state.error = f"FFmpeg conversion failed: {result.stderr[-500:]}"
             return
 
+        # Step 2: calculate chapter times and inject Nero chapters
+        if chapter_list:
+            duration_ms = _probe_duration_ms(ffmpeg_path, mp3_path)
+            total_bytes = os.path.getsize(mp3_path)
+            chapters_ms = []
+            for ch in chapter_list:
+                start_ms = (
+                    int(ch["byte_offset"] / total_bytes * duration_ms)
+                    if total_bytes else 0
+                )
+                chapters_ms.append({"title": ch["title"], "start_ms": start_ms})
+
+            _inject_nero_chapters(m4b_path, chapters_ms)
+            state.emit("log", {
+                "message": f"Audiobook: injected {len(chapters_ms)} Nero chapters",
+                "level": "info",
+            })
+
         audiobook_state.output_file = m4b_path
 
     except subprocess.TimeoutExpired:
         audiobook_state.status = "error"
         audiobook_state.error = "FFmpeg conversion timed out"
+    except Exception as e:
+        audiobook_state.status = "error"
+        audiobook_state.error = f"M4B conversion error: {e}"
 
 
 @app.route("/api/tts/compile", methods=["POST"])
