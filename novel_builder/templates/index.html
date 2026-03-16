@@ -1268,11 +1268,11 @@ textarea {
       <button class="btn btn-sm" onclick="refreshOutput()">Refresh</button>
       <button class="btn btn-sm" onclick="location.href='/api/download'">Download .md</button>
     <button class="btn btn-sm" onclick="showTextAnalysis()">Text Analysis</button>
+    <button class="btn btn-sm gen-btn-resume" onclick="startGeneration(true)" style="display:none;">&#9654; Resume</button>
+    <button class="btn btn-sm btn-danger gen-btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
     <label style="display:flex; align-items:center; gap:.3rem; font-size:.78rem; color:var(--text-dim);">
       <input type="checkbox" id="chk-autoscroll" checked> Auto-scroll
     </label>
-    <button class="btn btn-sm gen-btn-resume" onclick="startGeneration(true)" style="display:none;">&#9654; Resume</button>
-    <button class="btn btn-sm btn-danger gen-btn-stop" onclick="stopGeneration()" style="display:none;">&#9209; Stop</button>
     <span class="spacer"></span>
     <button class="btn btn-sm" id="btn-tts-play" onclick="playAllScenes()">Read Aloud</button>
     <button class="btn btn-sm" id="btn-tts-pause" onclick="pauseTTS()" style="display:none;">Pause</button>
