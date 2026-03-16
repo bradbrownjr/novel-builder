@@ -1277,7 +1277,8 @@ textarea {
     <button class="btn btn-sm" id="btn-tts-play" onclick="playAllScenes()">Read Aloud</button>
     <button class="btn btn-sm" id="btn-tts-pause" onclick="pauseTTS()" style="display:none;">Pause</button>
     <button class="btn btn-sm btn-danger" id="btn-tts-stop" onclick="stopTTS()" style="display:none;">Stop</button>
-    <button class="btn btn-sm" id="btn-tts-download" onclick="downloadAudiobook()">Download MP3</button>
+    <button class="btn btn-sm" id="btn-tts-download" onclick="downloadAudiobook('mp3')">Download MP3</button>
+    <button class="btn btn-sm" id="btn-tts-download-m4b" onclick="downloadAudiobook('m4b')">Download Audiobook</button>
     <button class="btn btn-sm btn-danger" id="btn-tts-download-cancel" onclick="cancelDownload()" style="display:none;">Cancel</button>
 
   </div>
@@ -2840,7 +2841,8 @@ async function playAllScenes() {
 }
 
 /* --- Audiobook download --- */
-async function downloadAudiobook() {
+async function downloadAudiobook(format) {
+  format = format || 'mp3';
   const text = getOutputText();
   if (!text || text.startsWith('(No output')) {
     toast('No output to compile', 'warn'); return;
@@ -2874,23 +2876,19 @@ async function downloadAudiobook() {
   }
 
   toast('Building segment list...', 'info');
-  // allSegments tracks which chapter each segment belongs to for byte-offset accounting
   const allSegments = [];
 
-  // Inject story title as a spoken segment at the start.
-  // Trailing " . . . " produces a natural pause before scene audio begins.
+  // Inject story title as a spoken segment at the start
   const storyTitle = parsed?.outline?.story_title || '';
   if (storyTitle) {
     allSegments.push({ seg: { type: 'title', text: storyTitle + ' . . .', character: null }, chapterIdx: 0 });
   }
 
   for (let ci = 0; ci < chapters.length; ci++) {
-    // Inject chapter title as a spoken segment before the chapter's scenes
     if (chapters[ci].title) {
       allSegments.push({ seg: { type: 'title', text: chapters[ci].title + ' . . .', character: null }, chapterIdx: ci });
     }
     for (const scene of chapters[ci].scenes) {
-      // Use pre-baked span attribution if available; otherwise call the model
       const preTagged = parseSpanSegments(scene);
       let segs;
       if (preTagged) {
@@ -2918,7 +2916,6 @@ async function downloadAudiobook() {
     if (tts.downloadCancelled) break;
     updateDownloadControls(i, total);
     const { seg, chapterIdx } = allSegments[i];
-    // Record the byte offset at the first segment of each chapter
     if (chapterByteOffsets[chapterIdx] === null) {
       chapterByteOffsets[chapterIdx] = cumulativeBytes;
     }
@@ -2952,30 +2949,34 @@ async function downloadAudiobook() {
 
   const title = (storyTitle || 'audiobook').replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'audiobook';
 
-  // Build chapter list for ID3 tagging (only chapters that produced audio)
   const chapterList = chapters
     .map((ch, i) => ({ title: ch.title, byte_offset: chapterByteOffsets[i] ?? 0 }))
     .filter((_, i) => chapterByteOffsets[i] !== null);
 
   let finalBlob;
-  if (chapterList.length > 1) {
-    toast('Adding chapter markers...', 'info');
+  let ext = '.mp3';
+
+  if (format === 'm4b' && chapterList.length >= 1) {
+    toast('Converting to M4B audiobook with chapters...', 'info');
     try {
       const formData = new FormData();
       formData.append('chapters', JSON.stringify(chapterList));
+      formData.append('title', storyTitle || 'Audiobook');
       formData.append('mp3', new Blob([combined], { type: 'audio/mpeg' }), 'audio.mp3');
-      const resp = await fetch('/api/tts/add-chapters', { method: 'POST', body: formData });
+      const resp = await fetch('/api/tts/convert-m4b', { method: 'POST', body: formData });
       if (resp.ok) {
         finalBlob = await resp.blob();
+        ext = '.m4b';
       } else {
         const err = await resp.json().catch(() => ({}));
-        console.warn('Chapter tagging failed:', err.error || resp.status);
+        console.warn('M4B conversion failed:', err.error || resp.status);
         finalBlob = new Blob([combined], { type: 'audio/mpeg' });
-        toast('Chapter tagging failed, downloading without chapters', 'warn');
+        toast('M4B conversion failed: ' + (err.error || 'unknown error') + '. Downloading as MP3.', 'warn');
       }
     } catch (e) {
-      console.warn('Chapter tagging error:', e.message);
+      console.warn('M4B conversion error:', e.message);
       finalBlob = new Blob([combined], { type: 'audio/mpeg' });
+      toast('M4B conversion error. Downloading as MP3.', 'warn');
     }
   } else {
     finalBlob = new Blob([combined], { type: 'audio/mpeg' });
@@ -2984,13 +2985,13 @@ async function downloadAudiobook() {
   const url = URL.createObjectURL(finalBlob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = title + '.mp3';
+  a.download = title + ext;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 10000);
-  const chapterNote = chapterList.length > 1 ? ' with ' + chapterList.length + ' chapters' : '';
-  toast('Audiobook download started -- ' + (finalBlob.size / 1024 / 1024).toFixed(1) + ' MB' + chapterNote, 'ok');
+  const chapterNote = ext === '.m4b' && chapterList.length > 1 ? ' with ' + chapterList.length + ' chapters' : '';
+  toast('Download started: ' + title + ext + ' -- ' + (finalBlob.size / 1024 / 1024).toFixed(1) + ' MB' + chapterNote, 'ok');
 }
 
 function cancelDownload() {
@@ -2999,18 +3000,21 @@ function cancelDownload() {
 
 function updateDownloadControls(done, total, finished = false) {
   const btnDl = document.getElementById('btn-tts-download');
+  const btnM4b = document.getElementById('btn-tts-download-m4b');
   const btnCancel = document.getElementById('btn-tts-download-cancel');
   const prog = document.getElementById('tts-download-progress');
   if (!btnDl) return;
   const chip = document.getElementById('ind-tts-compile');
   if (finished || !tts.downloading) {
     btnDl.style.display = '';
+    if (btnM4b) btnM4b.style.display = '';
     btnCancel.style.display = 'none';
     if (prog) prog.textContent = '';
     if (chip) chip.style.display = 'none';
   } else {
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
     btnDl.style.display = 'none';
+    if (btnM4b) btnM4b.style.display = 'none';
     btnCancel.style.display = '';
     if (prog) prog.textContent = 'Compiling... ' + done + '/' + total + ' (' + pct + '%)';
     if (chip) chip.style.display = '';

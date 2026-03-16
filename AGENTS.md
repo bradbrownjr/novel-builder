@@ -33,7 +33,8 @@ Before any large file rewrite, verify every row in the affected file column is p
 | Checkpoint / resume | state.py, web.py | `save_checkpoint()`, `load_checkpoint()`, `/api/status` |
 | Web UI (all tabs) | web.py, templates/index.html | `run_server()`, all `/api/*` routes |
 | TTS Read Aloud | web.py, tts.py, templates/index.html | `/api/tts/*`, `parse_span_segments()`, `parseSpanSegments()`, `const tts`, `btn-tts-play`, `btn-tts-stop` |
-| TTS Download MP3 with chapters | web.py, templates/index.html | `/api/tts/add-chapters`, `downloadAudiobook()` |
+| TTS Download MP3 | web.py, templates/index.html | `downloadAudiobook('mp3')`, `btn-tts-download` |
+| TTS Download M4B Audiobook | web.py, templates/index.html | `/api/tts/convert-m4b`, `downloadAudiobook('m4b')`, `btn-tts-download-m4b` |
 | AI Consult (YAML audit) | consult.py, web.py | `/api/consult`, `/api/consult-apply` |
 | Scene / chapter regeneration | story_processor.py, web.py | `regenerate_scene()`, `/api/regenerate` |
 | Story memory (facts, actions) | state.py, web.py | `story_memory`, `/api/memory` |
@@ -191,6 +192,7 @@ _(Track fixes here for reference.)_
 - Story memory action suppression -- Actions in prompt injection changed from "Action taken:" to "Already narrated (do NOT re-narrate):" in `prompt_builder.py`, making the directive explicitly suppressive rather than informational.
 - Word frequency windowed decay -- `update_word_frequency()` in `state.py` rewritten to use rolling `word_frequency_log` (15-scene window via `_WORD_FREQ_WINDOW`). Aggregate `word_frequency` rebuilt from window each update, so old usage naturally drops off. Prevents permanent word flagging.
 - Text analysis -- `/api/text-analysis` in `web.py` analyzes `full_story.md` for most common words and phrases (bigrams/trigrams), filtered by comprehensive stop word list. UI modal in Output tab shows tabbed results (Words/Phrases) with counts, total/unique word stats.
+- TTS Download M4B Audiobook -- new `/api/tts/convert-m4b` endpoint in `web.py` converts concatenated MP3 audio to M4B (AAC in MP4 container) with proper chapter markers using FFmpeg. Accepts multipart (mp3 file + chapters JSON + title). Probes MP3 duration, builds FFmpeg metadata file with `[CHAPTER]` blocks (byte-offset to time interpolation), converts with `ffmpeg -c:a aac -b:a 128k -movflags +faststart -f mp4`. Returns .m4b file with Content-Disposition filename matching book title. Graceful fallback to MP3 download if FFmpeg is not installed. Two download buttons in Output tab: "Download MP3" (straight MP3, no chapter tagging) and "Download Audiobook" (M4B with chapters). `downloadAudiobook()` in `index.html` accepts format parameter ('mp3' or 'm4b').
 
 ## Scene Marker Format
 

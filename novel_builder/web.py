@@ -3444,6 +3444,143 @@ def api_tts_add_chapters():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/tts/convert-m4b", methods=["POST"])
+def api_tts_convert_m4b():
+    """Convert an MP3 to M4B audiobook with chapter markers using FFmpeg.
+
+    Accepts multipart/form-data:
+      - mp3: binary MP3 file
+      - chapters: JSON string [{title, byte_offset}, ...]
+      - title: story title string (optional)
+
+    Returns the M4B file as audio/mp4, or an error if FFmpeg is unavailable.
+    """
+    import io
+    import json as _json
+    import shutil
+    import subprocess
+    import tempfile
+
+    ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        return jsonify({
+            "ok": False,
+            "error": "FFmpeg is not installed. Install it with: sudo apt install ffmpeg",
+        }), 500
+
+    if "mp3" not in request.files:
+        return jsonify({"ok": False, "error": "No mp3 file provided"}), 400
+
+    try:
+        mp3_bytes = request.files["mp3"].read()
+        chapters = _json.loads(request.form.get("chapters", "[]"))
+        book_title = request.form.get("title", "Audiobook")
+
+        # Get total duration from FFmpeg probe
+        tmp_dir = tempfile.mkdtemp(prefix="nb_m4b_")
+        mp3_path = os.path.join(tmp_dir, "input.mp3")
+        m4b_path = os.path.join(tmp_dir, "output.m4b")
+        meta_path = os.path.join(tmp_dir, "metadata.txt")
+
+        try:
+            with open(mp3_path, "wb") as f:
+                f.write(mp3_bytes)
+
+            # Probe duration in milliseconds
+            probe = subprocess.run(
+                [ffmpeg_path, "-i", mp3_path, "-f", "null", "-"],
+                capture_output=True, text=True, timeout=120,
+            )
+            duration_ms = 0
+            for line in probe.stderr.splitlines():
+                if "Duration:" in line:
+                    # Parse "Duration: HH:MM:SS.xx"
+                    part = line.split("Duration:")[1].split(",")[0].strip()
+                    h, m, s = part.split(":")
+                    duration_ms = int(
+                        (int(h) * 3600 + int(m) * 60 + float(s)) * 1000
+                    )
+                    break
+
+            total_bytes = len(mp3_bytes)
+
+            # Build FFmpeg metadata file
+            meta_lines = [";FFMETADATA1", f"title={book_title}"]
+
+            if chapters and len(chapters) >= 1:
+                sorted_chapters = sorted(chapters, key=lambda c: c["byte_offset"])
+                for i, chap in enumerate(sorted_chapters):
+                    start_off = chap["byte_offset"]
+                    end_off = (
+                        sorted_chapters[i + 1]["byte_offset"]
+                        if i + 1 < len(sorted_chapters)
+                        else total_bytes
+                    )
+                    start_ms = (
+                        int(start_off / total_bytes * duration_ms)
+                        if total_bytes
+                        else 0
+                    )
+                    end_ms = (
+                        int(end_off / total_bytes * duration_ms)
+                        if total_bytes
+                        else duration_ms
+                    )
+                    meta_lines.append("[CHAPTER]")
+                    meta_lines.append("TIMEBASE=1/1000")
+                    meta_lines.append(f"START={start_ms}")
+                    meta_lines.append(f"END={end_ms}")
+                    meta_lines.append(f"title={chap['title']}")
+
+            with open(meta_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(meta_lines) + "\n")
+
+            # Convert MP3 to M4B (AAC in MP4 container) with chapter metadata
+            cmd = [
+                ffmpeg_path,
+                "-i", mp3_path,
+                "-i", meta_path,
+                "-map_metadata", "1",
+                "-map", "0:a",
+                "-c:a", "aac",
+                "-b:a", "128k",
+                "-movflags", "+faststart",
+                "-f", "mp4",
+                "-y", m4b_path,
+            ]
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=600,
+            )
+            if result.returncode != 0:
+                return jsonify({
+                    "ok": False,
+                    "error": f"FFmpeg conversion failed: {result.stderr[-500:]}",
+                }), 500
+
+            with open(m4b_path, "rb") as f:
+                m4b_bytes = f.read()
+
+            safe_title = "".join(
+                c if c.isalnum() or c in " _-" else "_" for c in book_title
+            ).strip() or "audiobook"
+
+            return Response(
+                m4b_bytes,
+                mimetype="audio/mp4",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{safe_title}.m4b"',
+                },
+            )
+
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "error": "FFmpeg conversion timed out"}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 # ---------------------------------------------------------------------------
 # Text analysis
 # ---------------------------------------------------------------------------
