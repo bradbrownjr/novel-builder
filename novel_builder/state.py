@@ -53,6 +53,16 @@ _SENSORY_WATCH_WORDS = {
         "retorted", "offered", "admitted", "confessed", "announced",
         "declared", "insisted", "pleaded", "urged", "prompted",
     ],
+    "hedge": [
+        "felt", "seemed", "almost", "something", "somehow",
+        "perhaps", "slightly", "quite", "rather", "simply",
+        "merely", "certainly", "surely", "apparently", "presumably",
+    ],
+    "modifier": [
+        "familiar", "peculiar", "subtle", "faint", "forgotten",
+        "usual", "faded", "silent", "still", "soft",
+        "quiet", "gentle", "small", "low", "near",
+    ],
 }
 
 # Flat lookup: word -> category
