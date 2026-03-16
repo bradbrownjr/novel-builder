@@ -2758,8 +2758,11 @@ function waitWhilePaused() {
 async function playAllScenes() {
   const startAtIdx = getFirstVisibleSceneIdx();
 
-  const text = getOutputText();
-  if (!text || text.startsWith('(No output')) {
+  // Fetch raw markdown from the server so scene markers are preserved.
+  // getOutputText() reads from the DOM where renderScenes() strips markers.
+  const rawResp = await api('/api/output');
+  const text = rawResp?.text || '';
+  if (!text) {
     toast('No output to read aloud', 'warn'); return;
   }
 
@@ -2843,8 +2846,11 @@ async function playAllScenes() {
 /* --- Audiobook download --- */
 async function downloadAudiobook(format) {
   format = format || 'mp3';
-  const text = getOutputText();
-  if (!text || text.startsWith('(No output')) {
+  // Fetch raw markdown from the server so chapter/scene markers are preserved.
+  // getOutputText() reads from the DOM where renderScenes() strips markers.
+  const rawResp = await api('/api/output');
+  const text = rawResp?.text || '';
+  if (!text) {
     toast('No output to compile', 'warn'); return;
   }
 
