@@ -287,6 +287,13 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
                 "without a voice assignment"
                 "\n- Place the span around the quotation marks"
                 "\n- Leave all narration and action untagged"
+                "\n- Tag EVERY quoted line, no matter how short (even "
+                '"\"Yes.\", \"Oh dear.\", \"Night.\")'
+                "\n- When a character speaks, then narration interrupts, "
+                "then the SAME character speaks again, tag EACH quoted "
+                "segment separately. Example:"
+                '\n  <span data-tts="Morty">"First line."</span> He paused. '
+                '<span data-tts="Morty">"Second line."</span>'
                 "\n- CRITICAL: Always close every span tag you open. Every"
                 " <span data-tts=\"Name\"> MUST have a corresponding </span>"
                 " on the same line. Never leave a span unclosed."
