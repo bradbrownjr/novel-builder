@@ -2879,7 +2879,7 @@ async function downloadAudiobook() {
 
   // Inject story title as a spoken segment at the start.
   // Trailing " . . . " produces a natural pause before scene audio begins.
-  const storyTitle = snap?.config?.story_title || '';
+  const storyTitle = parsed?.outline?.story_title || '';
   if (storyTitle) {
     allSegments.push({ seg: { type: 'title', text: storyTitle + ' . . .', character: null }, chapterIdx: 0 });
   }
@@ -2950,7 +2950,7 @@ async function downloadAudiobook() {
     offset += buf.byteLength;
   }
 
-  const title = (snap?.config?.story_title || 'audiobook').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const title = (storyTitle || 'audiobook').replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'audiobook';
 
   // Build chapter list for ID3 tagging (only chapters that produced audio)
   const chapterList = chapters
