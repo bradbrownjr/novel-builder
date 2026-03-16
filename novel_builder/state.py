@@ -39,6 +39,20 @@ _SENSORY_WATCH_WORDS = {
         "foreboding", "ominous", "bleak", "dreary", "dismal", "somber",
         "gloomy", "sullen", "brooding",
     ],
+    "action": [
+        "nodded", "shrugged", "sighed", "smiled", "frowned", "winced",
+        "flinched", "gasped", "blinked", "swallowed", "clenched", "trembled",
+        "shuddered", "stiffened", "tensed", "hesitated", "paused", "exhaled",
+        "inhaled", "grimaced", "smirked", "scowled", "squinted", "gestured",
+        "shifted", "leaned", "straightened", "glanced", "stared", "gazed",
+        "peered", "studied", "watched", "observed", "noticed", "spotted",
+    ],
+    "dialogue": [
+        "murmured", "muttered", "whispered", "stammered", "stuttered",
+        "rasped", "growled", "snapped", "hissed", "blurted", "replied",
+        "retorted", "offered", "admitted", "confessed", "announced",
+        "declared", "insisted", "pleaded", "urged", "prompted",
+    ],
 }
 
 # Flat lookup: word -> category
@@ -749,22 +763,40 @@ def get_used_imagery(state, setting_id=None, char_ids=None):
     }
 
 
-def update_word_frequency(state, scene_text):
-    """Scan scene text for sensory/atmospheric watch words and accumulate counts.
+_WORD_FREQ_WINDOW = 15  # only consider word counts from the last N scenes
 
-    Updates state["word_frequency"] in place.  This data is later read by
-    the prompt builder to inject a variety nudge for words used too often.
+
+def update_word_frequency(state, scene_text):
+    """Scan scene text for watch words and accumulate windowed counts.
+
+    Stores per-scene word snapshots in ``word_frequency_log`` (rolling
+    window of the last ``_WORD_FREQ_WINDOW`` scenes).  The aggregate
+    ``word_frequency`` dict is rebuilt from the window on each call so
+    that old counts naturally decay as scenes scroll out of the window.
 
     Args:
         state: Checkpoint state dict (mutated).
         scene_text: The generated scene text string.
     """
-    freq = state.setdefault("word_frequency", {})
-    # Tokenize: lowercase, strip punctuation, split on whitespace
+    # Tokenize current scene
     tokens = re.sub(r"[^\w\s]", " ", scene_text.lower()).split()
+    scene_counts = {}
     for token in tokens:
         if token in _WATCH_WORD_CATEGORY:
-            freq[token] = freq.get(token, 0) + 1
+            scene_counts[token] = scene_counts.get(token, 0) + 1
+
+    # Append to rolling log and trim to window size
+    log = state.setdefault("word_frequency_log", [])
+    log.append(scene_counts)
+    if len(log) > _WORD_FREQ_WINDOW:
+        state["word_frequency_log"] = log[-_WORD_FREQ_WINDOW:]
+
+    # Rebuild aggregate from windowed log
+    freq = {}
+    for entry in state["word_frequency_log"]:
+        for word, count in entry.items():
+            freq[word] = freq.get(word, 0) + count
+    state["word_frequency"] = freq
 
 
 def get_overused_words(state, threshold=None):
