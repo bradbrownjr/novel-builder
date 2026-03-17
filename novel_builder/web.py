@@ -3462,21 +3462,34 @@ def _compile_audiobook_worker(fmt, cfg, story_title, chapters, voice_map,
     chapters_json_path = os.path.join(WORKSPACE_DIR, "audiobook_chapters.json")
 
     try:
-        # If M4B requested and MP3 + chapter metadata already cached, skip synthesis
+        # If M4B requested and MP3 + chapter metadata already cached,
+        # skip synthesis -- but only when the cached chapter count matches
+        # the current story (guards against partial synthesis runs).
         if fmt == "m4b" and os.path.exists(mp3_path) and os.path.exists(chapters_json_path):
             try:
                 with open(chapters_json_path, "r", encoding="utf-8") as f:
                     cached_chapters = _json_mod.load(f)
-                state.emit("log", {
-                    "message": "Audiobook: using cached MP3, skipping synthesis",
-                    "level": "info",
-                })
-                _convert_mp3_to_m4b(mp3_path, cached_chapters, story_title or "Audiobook")
-                audiobook_state.status = "completed"
-                audiobook_state.phase = ""
-                state.emit("log", {"message": "Audiobook: M4B ready for download", "level": "info"})
-                state.emit("audiobook_progress", audiobook_state.snapshot())
-                return
+                if len(cached_chapters) < len(chapters):
+                    state.emit("log", {
+                        "message": (
+                            f"Audiobook: cached MP3 is incomplete "
+                            f"({len(cached_chapters)} chapters vs {len(chapters)} in story) "
+                            "-- re-synthesizing from scratch"
+                        ),
+                        "level": "warn",
+                    })
+                    # Fall through to full synthesis below
+                else:
+                    state.emit("log", {
+                        "message": "Audiobook: using cached MP3, skipping synthesis",
+                        "level": "info",
+                    })
+                    _convert_mp3_to_m4b(mp3_path, cached_chapters, story_title or "Audiobook")
+                    audiobook_state.status = "completed"
+                    audiobook_state.phase = ""
+                    state.emit("log", {"message": "Audiobook: M4B ready for download", "level": "info"})
+                    state.emit("audiobook_progress", audiobook_state.snapshot())
+                    return
             except Exception as e:
                 state.emit("log", {
                     "message": f"Audiobook: cached chapter data invalid ({e}), re-synthesizing",
@@ -3667,6 +3680,10 @@ def _inject_nero_chapters(m4b_path, chapters_ms):
 
     with open(m4b_path, "rb") as f:
         data = bytearray(f.read())
+
+    # -- Fix ftyp major brand: M4A -> M4B (required for audiobook players) --
+    if len(data) >= 12 and bytes(data[4:8]) == b"ftyp":
+        data[8:12] = b"M4B "
 
     # -- Build chpl atom --
     payload = bytearray()
