@@ -2517,25 +2517,30 @@ async function discoverVoices(model) {
   const r = await api('/api/tts/voices?model=' + encodeURIComponent(model)
     + '&host=' + encodeURIComponent(host));
 
-  const dl = document.getElementById('tts-voices-list');
-  if (dl) dl.innerHTML = '';  // legacy datalist kept for compatibility
+  const dl = document.getElementById('tts-voices-list'); // legacy datalist, may be null
+  if (dl) dl.innerHTML = '';
   tts.availableVoices = [];
   tts.voiceCatalog = {};
 
   if (r && r.ok && r.voices?.length) {
     tts.availableVoices = r.voices;
     for (const v of r.voices) {
-      const o = document.createElement('option');
       if (typeof v === 'object' && v.id) {
-        o.value = v.id;
-        const label = v.desc ? v.id + ' -- ' + v.desc : v.id;
-        o.textContent = label;
         tts.voiceCatalog[v.id] = v;
+        if (dl) {
+          const o = document.createElement('option');
+          o.value = v.id;
+          o.textContent = v.desc ? v.id + ' -- ' + v.desc : v.id;
+          dl.appendChild(o);
+        }
       } else {
         const vid = typeof v === 'string' ? v : (v.id || v.name || String(v));
-        o.value = vid;
+        if (dl) {
+          const o = document.createElement('option');
+          o.value = vid;
+          dl.appendChild(o);
+        }
       }
-      dl.appendChild(o);
     }
     // Re-render voice map with descriptions now available
     const statusR = await api('/api/status');
