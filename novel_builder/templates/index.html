@@ -4997,11 +4997,49 @@ function taShowTab(tab) {
 }
 
 /* ==========================================================
+   Version Footer
+   ========================================================== */
+async function updateVersionFooter() {
+  try {
+    const r = await api('/api/version');
+    if (!r) return;
+    const footer = document.getElementById('version-footer');
+    if (!footer) return;
+    const dateObj = new Date(r.timestamp);
+    const dateStr = dateObj.toLocaleString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+    const title = `Commit: ${r.hash}\nDate: ${dateStr}`;
+    footer.textContent = `v${r.hash.substring(0, 7)} • ${dateStr}`;
+    footer.title = title;
+  } catch (e) {
+    // Silently fail if version fetch fails
+  }
+}
+
+/* ==========================================================
    Boot
    ========================================================== */
 setupDropZones();
 init();
 startHealthPolling();
+updateVersionFooter();
+// Refresh version info every 60 seconds
+setInterval(updateVersionFooter, 60000);
 </script>
+
+<!-- Version footer -->
+<footer id="version-footer" style="
+  position: fixed;
+  bottom: 0;
+  right: 0;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  background: transparent;
+  cursor: help;
+  z-index: 999;
+"></footer>
 </body>
 </html>
