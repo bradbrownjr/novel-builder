@@ -1032,9 +1032,6 @@ textarea {
 
 </div>
 
-<!-- Custom voice picker dropdown (shared, positioned via JS) -->
-<div id="voice-picker-dropdown"></div>
-
 <!-- ==================== PLAN TAB ==================== -->
 <div class="tab-panel" id="panel-plan">
 
@@ -2660,23 +2657,26 @@ function resetCharVoice(btn) {
 /* ==========================================================
    Custom voice picker dropdown
    ========================================================== */
-const _vp = { input: null };
+const _vp = { input: null, justClosed: false };
 
 function vpToggle(e, input) {
   e.preventDefault();
   const dp = document.getElementById('voice-picker-dropdown');
   if (dp.style.display === 'block' && _vp.input === input) {
-    vpClose();
+    // Close without touching input focus so vpOpen doesn't re-fire
+    dp.style.display = 'none';
+    _vp.justClosed = true;
+    setTimeout(() => { _vp.justClosed = false; }, 200);
   } else {
     _vp.input = input;
     _vpRender(input.value);
     _vpPosition(input);
     dp.style.display = 'block';
-    input.focus();
   }
 }
 
 function vpOpen(input) {
+  if (_vp.justClosed) return; // Arrow button just closed it -- don't re-open on focus
   _vp.input = input;
   _vpRender(input.value);
   _vpPosition(input);
@@ -2744,7 +2744,6 @@ function vpSelect(e, voice) {
     } else {
       onVoiceInputChange(_vp.input);
     }
-    _vp.input.focus();
   }
   document.getElementById('voice-picker-dropdown').style.display = 'none';
 }
@@ -5211,5 +5210,8 @@ setInterval(updateVersionFooter, 60000);
   cursor: help;
   z-index: 999;
 "></footer>
+
+<!-- Custom voice picker dropdown (shared, positioned via JS) -->
+<div id="voice-picker-dropdown"></div>
 </body>
 </html>
