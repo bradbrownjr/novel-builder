@@ -3470,7 +3470,6 @@ def _compile_audiobook_worker(fmt, cfg, story_title, chapters, voice_map,
                 with open(chapters_json_path, "r", encoding="utf-8") as f:
                     cached_chapters = _json_mod.load(f)
                 mp3_size = os.path.getsize(mp3_path)
-                last_offset = max((c.get("byte_offset", 0) for c in cached_chapters), default=0)
                 if len(cached_chapters) < len(chapters):
                     state.emit("log", {
                         "message": (
@@ -3481,12 +3480,11 @@ def _compile_audiobook_worker(fmt, cfg, story_title, chapters, voice_map,
                         "level": "warn",
                     })
                     # Fall through to full synthesis below
-                elif last_offset > mp3_size:
+                elif mp3_size < 1024:
                     state.emit("log", {
                         "message": (
-                            f"Audiobook: cached chapter offsets (last={last_offset:,} bytes) "
-                            f"exceed current MP3 size ({mp3_size:,} bytes) -- cache is stale, "
-                            "re-synthesizing from scratch"
+                            f"Audiobook: cached MP3 is too small ({mp3_size:,} bytes) "
+                            "-- cache is stale, re-synthesizing from scratch"
                         ),
                         "level": "warn",
                     })
@@ -3548,8 +3546,49 @@ def _compile_audiobook_worker(fmt, cfg, story_title, chapters, voice_map,
             return narrator_voice
 
         # Synthesize each segment and write MP3 bytes to disk
-        chapter_byte_offsets = [None] * len(chapters)
+        chapter_start_ms = [None] * len(chapters)
         cumulative_bytes = 0
+        cumulative_ms = 0.0
+
+        def _mp3_duration_ms(data):
+            """Calculate MP3 duration from MPEG frame headers (no I/O)."""
+            total_samples = 0
+            sample_rate = 44100  # fallback
+            _sr_table = {
+                0: {0: 11025, 1: 12000, 2: 8000},   # MPEG2.5
+                2: {0: 22050, 1: 24000, 2: 16000},   # MPEG2
+                3: {0: 44100, 1: 48000, 2: 32000},   # MPEG1
+            }
+            _br_v1 = [0,32,40,48,56,64,80,96,112,128,160,192,224,256,320,0]
+            _br_v2 = [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160,0]
+            pos = 0
+            dlen = len(data)
+            while pos < dlen - 4:
+                if data[pos] == 0xFF and (data[pos+1] & 0xE0) == 0xE0:
+                    ver = (data[pos+1] >> 3) & 3
+                    layer = (data[pos+1] >> 1) & 3
+                    br_idx = (data[pos+2] >> 4) & 0xF
+                    sr_idx = (data[pos+2] >> 2) & 3
+                    pad = (data[pos+2] >> 1) & 1
+                    if layer != 1 or sr_idx == 3 or br_idx == 0 or br_idx == 15:
+                        pos += 1
+                        continue
+                    sr = _sr_table.get(ver, {}).get(sr_idx)
+                    if sr is None:
+                        pos += 1
+                        continue
+                    sample_rate = sr
+                    br = (_br_v1 if ver == 3 else _br_v2)[br_idx] * 1000
+                    samples = 1152 if ver == 3 else 576
+                    frame_size = (samples * br // (8 * sr)) + pad
+                    if frame_size < 4:
+                        pos += 1
+                        continue
+                    total_samples += samples
+                    pos += frame_size
+                else:
+                    pos += 1
+            return (total_samples / sample_rate * 1000) if sample_rate else 0
 
         with open(mp3_path, "wb") as mp3_file:
             for i, entry in enumerate(all_segments):
@@ -3561,8 +3600,8 @@ def _compile_audiobook_worker(fmt, cfg, story_title, chapters, voice_map,
 
                 seg = entry["seg"]
                 ci = entry["chapter_idx"]
-                if chapter_byte_offsets[ci] is None:
-                    chapter_byte_offsets[ci] = cumulative_bytes
+                if chapter_start_ms[ci] is None:
+                    chapter_start_ms[ci] = int(cumulative_ms)
 
                 voice = get_voice(seg)
                 text = _preprocess_tts_text(seg.get("text", "").strip())
@@ -3584,9 +3623,12 @@ def _compile_audiobook_worker(fmt, cfg, story_title, chapters, voice_map,
                         stream=True,
                     )
                     resp.raise_for_status()
+                    seg_data = bytearray()
                     for chunk in resp.iter_content(chunk_size=8192):
                         mp3_file.write(chunk)
+                        seg_data.extend(chunk)
                         cumulative_bytes += len(chunk)
+                    cumulative_ms += _mp3_duration_ms(bytes(seg_data))
                 except Exception as e:
                     state.emit("log", {
                         "message": f"Audiobook: segment {i + 1}/{total} failed: {e}",
@@ -3605,10 +3647,10 @@ def _compile_audiobook_worker(fmt, cfg, story_title, chapters, voice_map,
         # Build chapter list and save for re-use
         chapter_list = []
         for ci, chapter in enumerate(chapters):
-            if chapter_byte_offsets[ci] is not None:
+            if chapter_start_ms[ci] is not None:
                 chapter_list.append({
                     "title": chapter["title"],
-                    "byte_offset": chapter_byte_offsets[ci],
+                    "start_ms": chapter_start_ms[ci],
                 })
         try:
             with open(chapters_json_path, "w", encoding="utf-8") as f:
@@ -3716,15 +3758,19 @@ def _convert_mp3_to_m4b(mp3_path, chapter_list, book_title):
     m4b_path = os.path.join(WORKSPACE_DIR, "audiobook.m4b")
 
     try:
-        # Build chapter timestamps from byte offsets
+        # Chapter list already has start_ms from synthesis-time tracking
         duration_ms = _probe_duration_ms(ffmpeg_path, mp3_path)
-        total_bytes = os.path.getsize(mp3_path)
         chapters_ms = []
         for ch in chapter_list:
-            start_ms = (
-                int(ch["byte_offset"] / total_bytes * duration_ms)
-                if total_bytes else 0
-            )
+            # Support both new format (start_ms) and legacy (byte_offset)
+            if "start_ms" in ch:
+                start_ms = ch["start_ms"]
+            else:
+                total_bytes = os.path.getsize(mp3_path)
+                start_ms = (
+                    int(ch["byte_offset"] / total_bytes * duration_ms)
+                    if total_bytes else 0
+                )
             chapters_ms.append({"title": ch["title"], "start_ms": start_ms})
 
         # Step 1: Write FFMETADATA file with chapter markers
