@@ -3469,12 +3469,24 @@ def _compile_audiobook_worker(fmt, cfg, story_title, chapters, voice_map,
             try:
                 with open(chapters_json_path, "r", encoding="utf-8") as f:
                     cached_chapters = _json_mod.load(f)
+                mp3_size = os.path.getsize(mp3_path)
+                last_offset = max((c.get("byte_offset", 0) for c in cached_chapters), default=0)
                 if len(cached_chapters) < len(chapters):
                     state.emit("log", {
                         "message": (
                             f"Audiobook: cached MP3 is incomplete "
                             f"({len(cached_chapters)} chapters vs {len(chapters)} in story) "
                             "-- re-synthesizing from scratch"
+                        ),
+                        "level": "warn",
+                    })
+                    # Fall through to full synthesis below
+                elif last_offset > mp3_size:
+                    state.emit("log", {
+                        "message": (
+                            f"Audiobook: cached chapter offsets (last={last_offset:,} bytes) "
+                            f"exceed current MP3 size ({mp3_size:,} bytes) -- cache is stale, "
+                            "re-synthesizing from scratch"
                         ),
                         "level": "warn",
                     })
