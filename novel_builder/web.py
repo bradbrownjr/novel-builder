@@ -3697,16 +3697,19 @@ def _inject_nero_chapters(m4b_path, chapters_ms):
     if len(data) >= 12 and bytes(data[4:8]) == b"ftyp":
         data[8:12] = b"M4B "
 
-    # -- Build chpl atom --
+    # -- Build chpl atom (Nero chapter format, version 0) --
+    # Version 0 format per FFmpeg mov_read_chpl / VLC mp4 mux:
+    #   version (1 byte) + flags (3 bytes) + count (1 byte, NOT 4)
+    #   per chapter: timestamp_100ns (8 bytes, unsigned BE) + len (1 byte) + title
+    # Using 4 bytes for count is a common mistake -- FFmpeg reads only 1 byte.
     payload = bytearray()
-    payload += struct.pack("B", 1)          # version 1
+    payload += struct.pack("B", 0)          # version 0
     payload += b"\x00\x00\x00"              # flags
-    payload += b"\x00\x00\x00\x00"          # reserved (version-1 field)
-    payload += struct.pack(">I", len(chapters_ms))
+    payload += struct.pack("B", len(chapters_ms))   # count: 1 byte
     for ch in chapters_ms:
-        ts = ch["start_ms"] * 10_000        # ms -> 100ns units
+        ts = ch["start_ms"] * 10_000        # ms -> 100ns units (unsigned)
         title = ch["title"].encode("utf-8")[:255]
-        payload += struct.pack(">q", ts)
+        payload += struct.pack(">Q", ts)    # unsigned 64-bit big-endian
         payload += struct.pack("B", len(title))
         payload += title
     chpl_atom = struct.pack(">I", len(payload) + 8) + b"chpl" + bytes(payload)
