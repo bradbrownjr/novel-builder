@@ -708,6 +708,32 @@ textarea {
 }
 .voice-map-input:focus { border-color: var(--accent); outline: none; }
 
+/* Voice picker custom dropdown */
+#voice-picker-dropdown {
+  position: fixed;
+  z-index: 10000;
+  min-width: 440px;
+  max-width: 560px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(0,0,0,.45);
+  display: none;
+}
+#voice-picker-dropdown .vp-option {
+  padding: .4rem .65rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+#voice-picker-dropdown .vp-option:last-child { border-bottom: none; }
+#voice-picker-dropdown .vp-option:hover,
+#voice-picker-dropdown .vp-option.vp-active { background: var(--bg-hover); }
+#voice-picker-dropdown .vp-id { font-size: .82rem; font-weight: 600; display: block; }
+#voice-picker-dropdown .vp-desc { font-size: .72rem; color: var(--text-dim); display: block; white-space: normal; }
+#voice-picker-dropdown .vp-empty { padding: .6rem .65rem; color: var(--text-dim); font-size: .78rem; }
+
 .tts-toolbar {
   display: flex;
   gap: .5rem;
@@ -945,8 +971,9 @@ textarea {
     <div class="form-group">
       <label for="cfg-tts-narrator-voice">Narrator Voice</label>
       <div style="display:flex; gap:.5rem; align-items:center;">
-        <input type="text" id="cfg-tts-narrator-voice" list="tts-voices-list"
-               placeholder="e.g., af_heart" style="flex:1;" onchange="onNarratorVoiceChange()">
+        <input type="text" id="cfg-tts-narrator-voice" autocomplete="off"
+               placeholder="e.g., af_heart" style="flex:1;"
+               onfocus="vpOpen(this)" oninput="vpFilter(this)" onchange="onNarratorVoiceChange()">
         <button class="btn btn-sm" onclick="testVoice('narrator')" title="Preview narrator voice">Test</button>
       </div>
       <div id="narrator-voice-desc" class="voice-desc" style="margin-top:.2rem;padding-left:0;"></div>
@@ -975,9 +1002,11 @@ textarea {
     </div>
     <div id="tts-status" style="font-size:.78rem; margin-top:.5rem; color:var(--text-dim);"></div>
   </div>
-  <datalist id="tts-voices-list"></datalist>
 
 </div>
+
+<!-- Custom voice picker dropdown (shared, positioned via JS) -->
+<div id="voice-picker-dropdown"></div>
 
 <!-- ==================== PLAN TAB ==================== -->
 <div class="tab-panel" id="panel-plan">
@@ -2465,7 +2494,7 @@ async function discoverVoices(model) {
     + '&host=' + encodeURIComponent(host));
 
   const dl = document.getElementById('tts-voices-list');
-  dl.innerHTML = '';
+  if (dl) dl.innerHTML = '';  // legacy datalist kept for compatibility
   tts.availableVoices = [];
   tts.voiceCatalog = {};
 
@@ -2554,7 +2583,8 @@ function updateVoiceMapUI(characters) {
       + ' data-yaml-voice="' + escHtml(yamlVoice) + '"'
       + ' value="' + escHtml(displayVoice) + '"'
       + ' placeholder="voice name"'
-      + ' onchange="onVoiceInputChange(this)"'
+      + ' autocomplete="off"'
+      + ' onfocus="vpOpen(this)" oninput="vpFilter(this)" onchange="onVoiceInputChange(this)"'
       + ' style="flex:1;">'
       + (yamlVoice
           ? '<span title="Default from characters.yaml: ' + escHtml(yamlVoice) + '" style="font-size:.7rem;color:var(--text-dim);white-space:nowrap;cursor:default;">yaml</span>'
@@ -2595,6 +2625,99 @@ function resetCharVoice(btn) {
   input.value = yamlVoice;
   onVoiceInputChange(input);
 }
+
+/* ==========================================================
+   Custom voice picker dropdown
+   ========================================================== */
+const _vp = { input: null };
+
+function vpOpen(input) {
+  _vp.input = input;
+  _vpRender(input.value);
+  _vpPosition(input);
+  document.getElementById('voice-picker-dropdown').style.display = '';
+}
+
+function vpFilter(input) {
+  _vp.input = input;
+  _vpRender(input.value);
+  _vpPosition(input);
+  document.getElementById('voice-picker-dropdown').style.display = '';
+}
+
+function _vpRender(query) {
+  const voices = tts.availableVoices || [];
+  const q = query.toLowerCase().trim();
+  const filtered = q
+    ? voices.filter(v => {
+        const id = typeof v === 'object' ? v.id : v;
+        const desc = typeof v === 'object' ? (v.desc || '') : '';
+        return id.toLowerCase().includes(q) || desc.toLowerCase().includes(q);
+      })
+    : voices;
+  const dp = document.getElementById('voice-picker-dropdown');
+  if (!filtered.length) {
+    dp.innerHTML = '<div class="vp-empty">No voices match -- check TTS connection or type a voice name manually</div>';
+    return;
+  }
+  dp.innerHTML = filtered.map(v => {
+    const id = typeof v === 'object' ? v.id : v;
+    const desc = typeof v === 'object' ? (v.desc || '') : '';
+    const castLine = typeof v === 'object' ? _voiceCastingLine(v) : '';
+    const safeId = id.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return '<div class="vp-option" onmousedown="vpSelect(event, \'' + safeId + '\')">'  
+      + '<span class="vp-id">' + escHtml(id) + '</span>'
+      + (desc ? '<span class="vp-desc">' + escHtml(desc) + (castLine ? ' \u00B7 ' + escHtml(castLine) : '') + '</span>' : '')
+      + '</div>';
+  }).join('');
+}
+
+function _vpPosition(input) {
+  const rect = input.getBoundingClientRect();
+  const dp = document.getElementById('voice-picker-dropdown');
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const dropH = Math.min(300, (tts.availableVoices?.length || 0) * 52 + 10);
+  if (spaceBelow < dropH && rect.top > dropH) {
+    // Open upward
+    dp.style.top = '';
+    dp.style.bottom = (window.innerHeight - rect.top + 2) + 'px';
+  } else {
+    dp.style.bottom = '';
+    dp.style.top = (rect.bottom + 2) + 'px';
+  }
+  const leftPos = Math.min(rect.left, window.innerWidth - 460);
+  dp.style.left = Math.max(4, leftPos) + 'px';
+}
+
+function vpSelect(e, voice) {
+  e.preventDefault();
+  if (_vp.input) {
+    _vp.input.value = voice;
+    // Fire change handlers depending on which input was targeted
+    if (_vp.input.id === 'cfg-tts-narrator-voice') {
+      onNarratorVoiceChange();
+    } else {
+      onVoiceInputChange(_vp.input);
+    }
+    _vp.input.focus();
+  }
+  document.getElementById('voice-picker-dropdown').style.display = 'none';
+}
+
+function vpClose() {
+  document.getElementById('voice-picker-dropdown').style.display = 'none';
+}
+
+// Close when focus leaves: use focusout with a small delay since mousedown
+// on an option fires before the input loses focus.
+document.addEventListener('focusin', e => {
+  const dp = document.getElementById('voice-picker-dropdown');
+  if (dp.style.display === 'none') return;
+  if (!dp.contains(e.target) && e.target !== _vp.input) vpClose();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') vpClose();
+});
 
 /* --- Save / test --- */
 async function saveTTSConfig() {
