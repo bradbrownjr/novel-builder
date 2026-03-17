@@ -722,6 +722,29 @@ textarea {
   box-shadow: 0 6px 20px rgba(0,0,0,.45);
   display: none;
 }
+/* Wrapper that gives voice text inputs a dropdown arrow button */
+.vp-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.vp-wrap input {
+  flex: 1;
+  padding-right: 1.8rem; /* room for the arrow */
+}
+.vp-arrow {
+  position: absolute;
+  right: .3rem;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: .7rem;
+  cursor: pointer;
+  padding: .2rem .3rem;
+  line-height: 1;
+  pointer-events: all;
+}
+.vp-arrow:hover { color: var(--text); }
 #voice-picker-dropdown .vp-option {
   padding: .4rem .65rem;
   cursor: pointer;
@@ -971,9 +994,13 @@ textarea {
     <div class="form-group">
       <label for="cfg-tts-narrator-voice">Narrator Voice</label>
       <div style="display:flex; gap:.5rem; align-items:center;">
-        <input type="text" id="cfg-tts-narrator-voice" autocomplete="off"
-               placeholder="e.g., af_heart" style="flex:1;"
-               onfocus="vpOpen(this)" oninput="vpFilter(this)" onchange="onNarratorVoiceChange()">
+        <div class="vp-wrap" style="flex:1;">
+          <input type="text" id="cfg-tts-narrator-voice" autocomplete="off"
+                 placeholder="e.g., af_heart"
+                 onfocus="vpOpen(this)" oninput="vpFilter(this)" onchange="onNarratorVoiceChange()">
+          <button type="button" class="vp-arrow" tabindex="-1"
+                  onmousedown="vpToggle(event, document.getElementById('cfg-tts-narrator-voice'))">&#9660;</button>
+        </div>
         <button class="btn btn-sm" onclick="testVoice('narrator')" title="Preview narrator voice">Test</button>
       </div>
       <div id="narrator-voice-desc" class="voice-desc" style="margin-top:.2rem;padding-left:0;"></div>
@@ -2576,22 +2603,26 @@ function updateVoiceMapUI(characters) {
     html += '<div class="voice-map-row">'
       + '<span class="voice-map-name">' + escHtml(ch.name) + '</span>'
       + '<span class="voice-map-role">' + escHtml(ch.role || '') + '</span>';
+    const safeCharName = escHtml(ch.name).replace(/'/g, "\\'");
     html += '<span style="display:flex;align-items:center;gap:.35rem;flex:1;">'
-      + '<input type="text" list="tts-voices-list" class="voice-map-input tts-char-voice"'
+      + '<div class="vp-wrap" style="flex:1;">'
+      + '<input type="text" class="voice-map-input tts-char-voice"'
       + ' data-character="' + escHtml(ch.name) + '"'
       + ' data-character-id="' + escHtml(ch.id) + '"'
       + ' data-yaml-voice="' + escHtml(yamlVoice) + '"'
       + ' value="' + escHtml(displayVoice) + '"'
       + ' placeholder="voice name"'
       + ' autocomplete="off"'
-      + ' onfocus="vpOpen(this)" oninput="vpFilter(this)" onchange="onVoiceInputChange(this)"'
-      + ' style="flex:1;">'
+      + ' onfocus="vpOpen(this)" oninput="vpFilter(this)" onchange="onVoiceInputChange(this)">'
+      + '<button type="button" class="vp-arrow" tabindex="-1"'
+      + ' onmousedown="vpToggle(event,this.previousElementSibling)">&#9660;</button>'
+      + '</div>'
       + (yamlVoice
           ? '<span title="Default from characters.yaml: ' + escHtml(yamlVoice) + '" style="font-size:.7rem;color:var(--text-dim);white-space:nowrap;cursor:default;">yaml</span>'
           + '<button type="button" class="btn btn-sm" title="Reset to YAML default (' + escHtml(yamlVoice) + ')" style="padding:.15rem .35rem;font-size:.65rem;" onclick="resetCharVoice(this)">&cularr;</button>'
           : '')
       + '</span>';
-    html += '<button class="btn btn-sm" onclick="testVoice(\'' + escHtml(ch.name).replace(/'/g, "\\'") + '\')" title="Test">Test</button>'
+    html += '<button class="btn btn-sm" onclick="testVoice(\'' + safeCharName + '\')" title="Test">Test</button>'
       + '</div>';
     if (descHtml) html += '<div class="voice-map-desc-row">' + descHtml + '</div>';
   }
@@ -2630,6 +2661,20 @@ function resetCharVoice(btn) {
    Custom voice picker dropdown
    ========================================================== */
 const _vp = { input: null };
+
+function vpToggle(e, input) {
+  e.preventDefault();
+  const dp = document.getElementById('voice-picker-dropdown');
+  if (dp.style.display === 'block' && _vp.input === input) {
+    vpClose();
+  } else {
+    _vp.input = input;
+    _vpRender(input.value);
+    _vpPosition(input);
+    dp.style.display = 'block';
+    input.focus();
+  }
+}
 
 function vpOpen(input) {
   _vp.input = input;
