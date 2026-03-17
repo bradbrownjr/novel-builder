@@ -2540,35 +2540,27 @@ function updateVoiceMapUI(characters) {
     const yamlVoice = ch.tts_voice || '';
     const saved = tts.voiceMap[ch.name] || '';
     // Saved config (voice cast) wins over YAML so assignments persist across restarts.
-    // fromYaml is only true when there is a YAML voice and no saved override --
-    // that is the only case where we render the input as readonly.
     const displayVoice = saved || yamlVoice;
-    const fromYaml = !!yamlVoice && !saved;
     const catalog = tts.voiceCatalog || {};
     const voiceInfo = displayVoice ? catalog[displayVoice] : null;
     const descHtml = voiceInfo ? _voiceDescSpan(voiceInfo) : '';
     html += '<div class="voice-map-row">'
       + '<span class="voice-map-name">' + escHtml(ch.name) + '</span>'
       + '<span class="voice-map-role">' + escHtml(ch.role || '') + '</span>';
-    if (fromYaml) {
-      html += '<span style="display:flex;align-items:center;gap:.35rem;flex:1;">'
-        + '<input type="text" list="tts-voices-list" class="voice-map-input tts-char-voice"'
-        + ' data-character="' + escHtml(ch.name) + '"'
-        + ' data-character-id="' + escHtml(ch.id) + '"'
-        + ' value="' + escHtml(displayVoice) + '"'
-        + ' readonly title="Defined in characters.yaml -- edit tts_voice to change"'
-        + ' style="flex:1;opacity:.75;cursor:default;"'
-        + ' onchange="onVoiceInputChange(this)">'
-        + '<span title="Voice defined in characters.yaml" style="font-size:.7rem;color:var(--text-dim);white-space:nowrap;">yaml</span>'
-        + '</span>';
-    } else {
-      html += '<input type="text" list="tts-voices-list" class="voice-map-input tts-char-voice"'
-        + ' data-character="' + escHtml(ch.name) + '"'
-        + ' data-character-id="' + escHtml(ch.id) + '"'
-        + ' value="' + escHtml(displayVoice) + '"'
-        + ' placeholder="voice name"'
-        + ' onchange="onVoiceInputChange(this)">';
-    }
+    html += '<span style="display:flex;align-items:center;gap:.35rem;flex:1;">'
+      + '<input type="text" list="tts-voices-list" class="voice-map-input tts-char-voice"'
+      + ' data-character="' + escHtml(ch.name) + '"'
+      + ' data-character-id="' + escHtml(ch.id) + '"'
+      + ' data-yaml-voice="' + escHtml(yamlVoice) + '"'
+      + ' value="' + escHtml(displayVoice) + '"'
+      + ' placeholder="voice name"'
+      + ' onchange="onVoiceInputChange(this)"'
+      + ' style="flex:1;">'
+      + (yamlVoice
+          ? '<span title="Default from characters.yaml: ' + escHtml(yamlVoice) + '" style="font-size:.7rem;color:var(--text-dim);white-space:nowrap;cursor:default;">yaml</span>'
+          + '<button type="button" class="btn btn-sm" title="Reset to YAML default (' + escHtml(yamlVoice) + ')" style="padding:.15rem .35rem;font-size:.65rem;" onclick="resetCharVoice(this)">&cularr;</button>'
+          : '')
+      + '</span>';
     html += '<button class="btn btn-sm" onclick="testVoice(\'' + escHtml(ch.name).replace(/'/g, "\\'") + '\')" title="Test">Test</button>'
       + '</div>';
     if (descHtml) html += '<div class="voice-map-desc-row">' + descHtml + '</div>';
@@ -2592,6 +2584,16 @@ function onVoiceInputChange(el) {
     descDiv.innerHTML = _voiceDescSpan(info);
     row.after(descDiv);
   }
+}
+
+function resetCharVoice(btn) {
+  const row = btn.closest('.voice-map-row');
+  if (!row) return;
+  const input = row.querySelector('.tts-char-voice');
+  if (!input) return;
+  const yamlVoice = input.dataset.yamlVoice || '';
+  input.value = yamlVoice;
+  onVoiceInputChange(input);
 }
 
 /* --- Save / test --- */
