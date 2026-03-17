@@ -836,6 +836,37 @@ def api_status():
     return jsonify(snap)
 
 
+@app.route("/api/version")
+def api_version():
+    """Return git commit info for version display."""
+    try:
+        import subprocess
+        # Get last commit info
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%h %aI %s"],
+            cwd=os.path.dirname(os.path.dirname(__file__)),
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            parts = result.stdout.strip().split(" ", 2)
+            if len(parts) >= 2:
+                return jsonify({
+                    "hash": parts[0],
+                    "timestamp": parts[1],
+                    "subject": parts[2] if len(parts) > 2 else ""
+                })
+    except Exception:
+        pass
+    # Fallback if git not available
+    return jsonify({
+        "hash": "unknown",
+        "timestamp": datetime.now().isoformat(),
+        "subject": ""
+    })
+
+
 @app.route("/api/config", methods=["GET", "POST"])
 def api_config():
     """Get or save generation configuration."""
