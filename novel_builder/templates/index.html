@@ -2662,42 +2662,39 @@ function resetCharVoice(btn) {
 /* ==========================================================
    Custom voice picker dropdown
    ========================================================== */
-const _vp = { input: null, justClosed: false };
+const _vp = { input: null, open: false };
 
 function vpToggle(e, input) {
   e.preventDefault();
-  const dp = document.getElementById('voice-picker-dropdown');
-  if (dp.style.display === 'block' && _vp.input === input) {
-    // Close without touching input focus so vpOpen doesn't re-fire
-    dp.style.display = 'none';
-    _vp.justClosed = true;
-    setTimeout(() => { _vp.justClosed = false; }, 200);
+  e.stopPropagation();
+  if (_vp.open && _vp.input === input) {
+    vpClose();
   } else {
-    _vp.input = input;
-    _vpRender(input.value);
-    _vpPosition(input);
-    dp.style.display = 'block';
+    _vpShow(input, '');
   }
 }
 
 function vpOpen(input) {
-  if (_vp.justClosed) return; // Arrow button just closed it -- don't re-open on focus
-  _vp.input = input;
-  _vpRender(input.value);
-  _vpPosition(input);
-  document.getElementById('voice-picker-dropdown').style.display = 'block';
+  // Show all voices on focus (don't filter by current value)
+  _vpShow(input, '');
 }
 
 function vpFilter(input) {
+  // Filter as user types
+  _vpShow(input, input.value);
+}
+
+function _vpShow(input, query) {
   _vp.input = input;
-  _vpRender(input.value);
+  _vp.open = true;
+  _vpRender(query);
   _vpPosition(input);
   document.getElementById('voice-picker-dropdown').style.display = 'block';
 }
 
 function _vpRender(query) {
   const voices = tts.availableVoices || [];
-  const q = query.toLowerCase().trim();
+  const q = (query || '').toLowerCase().trim();
   const filtered = q
     ? voices.filter(v => {
         const id = typeof v === 'object' ? v.id : v;
@@ -2715,7 +2712,7 @@ function _vpRender(query) {
     const desc = typeof v === 'object' ? (v.desc || '') : '';
     const castLine = typeof v === 'object' ? _voiceCastingLine(v) : '';
     const safeId = id.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    return '<div class="vp-option" onmousedown="vpSelect(event, \'' + safeId + '\')">'  
+    return '<div class="vp-option" onmousedown="vpSelect(event, \'' + safeId + '\')">'
       + '<span class="vp-id">' + escHtml(id) + '</span>'
       + (desc ? '<span class="vp-desc">' + escHtml(desc) + (castLine ? ' \u00B7 ' + escHtml(castLine) : '') + '</span>' : '')
       + '</div>';
@@ -2728,7 +2725,6 @@ function _vpPosition(input) {
   const spaceBelow = window.innerHeight - rect.bottom;
   const dropH = Math.min(300, (tts.availableVoices?.length || 0) * 52 + 10);
   if (spaceBelow < dropH && rect.top > dropH) {
-    // Open upward
     dp.style.top = '';
     dp.style.bottom = (window.innerHeight - rect.top + 2) + 'px';
   } else {
@@ -2741,28 +2737,31 @@ function _vpPosition(input) {
 
 function vpSelect(e, voice) {
   e.preventDefault();
+  e.stopPropagation();
   if (_vp.input) {
     _vp.input.value = voice;
-    // Fire change handlers depending on which input was targeted
     if (_vp.input.id === 'cfg-tts-narrator-voice') {
       onNarratorVoiceChange();
     } else {
       onVoiceInputChange(_vp.input);
     }
   }
-  document.getElementById('voice-picker-dropdown').style.display = 'none';
+  vpClose();
 }
 
 function vpClose() {
+  _vp.open = false;
   document.getElementById('voice-picker-dropdown').style.display = 'none';
 }
 
-// Close when focus leaves: use focusout with a small delay since mousedown
-// on an option fires before the input loses focus.
-document.addEventListener('focusin', e => {
+// Close on any click outside the dropdown and the active input
+document.addEventListener('mousedown', e => {
+  if (!_vp.open) return;
   const dp = document.getElementById('voice-picker-dropdown');
-  if (dp.style.display === 'none') return;
-  if (!dp.contains(e.target) && e.target !== _vp.input) vpClose();
+  if (dp.contains(e.target)) return;
+  // Check if click is on the active input or its arrow button
+  if (_vp.input && (e.target === _vp.input || e.target.closest('.vp-wrap') === _vp.input.closest('.vp-wrap'))) return;
+  vpClose();
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') vpClose();
