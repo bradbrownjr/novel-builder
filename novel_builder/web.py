@@ -3673,129 +3673,35 @@ def _probe_duration_ms(ffmpeg_path, audio_path):
     return 0
 
 
-def _inject_nero_chapters(m4b_path, chapters_ms):
-    """Inject Nero-style chapter markers into an M4B file.
+def _fix_m4b_brand(m4b_path):
+    """Patch the ftyp major brand from M4A to M4B in-place.
 
-    Nero chapters are stored in moov.udta.chpl and are widely supported by
-    audiobook players.  Unlike QuickTime chapter tracks, they do NOT create
-    an extra stream (no SubtitleHandler text track) which avoids the
-    'source files deleted/moved' error in some players.
-
-    Args:
-        m4b_path: Path to M4B file (modified in-place).
-        chapters_ms: [{title: str, start_ms: int}, ...]
+    FFmpeg writes M4A as the major brand even for .m4b files.  Audiobook
+    players (e.g. Audibly) require M4B to recognize the file as an
+    audiobook rather than a music file.
     """
     import struct
 
-    if not chapters_ms:
-        return
-
-    with open(m4b_path, "rb") as f:
-        data = bytearray(f.read())
-
-    # -- Fix ftyp major brand: M4A -> M4B (required for audiobook players) --
-    if len(data) >= 12 and bytes(data[4:8]) == b"ftyp":
-        data[8:12] = b"M4B "
-
-    # -- Build chpl atom (Nero chapter format, version 0) --
-    # Version 0 format per FFmpeg mov_read_chpl / VLC mp4 mux:
-    #   version (1 byte) + flags (3 bytes) + count (1 byte, NOT 4)
-    #   per chapter: timestamp_100ns (8 bytes, unsigned BE) + len (1 byte) + title
-    # Using 4 bytes for count is a common mistake -- FFmpeg reads only 1 byte.
-    payload = bytearray()
-    payload += struct.pack("B", 0)          # version 0
-    payload += b"\x00\x00\x00"              # flags
-    payload += struct.pack("B", len(chapters_ms))   # count: 1 byte
-    for ch in chapters_ms:
-        ts = ch["start_ms"] * 10_000        # ms -> 100ns units (unsigned)
-        title = ch["title"].encode("utf-8")[:255]
-        payload += struct.pack(">Q", ts)    # unsigned 64-bit big-endian
-        payload += struct.pack("B", len(title))
-        payload += title
-    chpl_atom = struct.pack(">I", len(payload) + 8) + b"chpl" + bytes(payload)
-
-    # -- Find moov atom --
-    pos = 0
-    moov_pos = moov_size = None
-    while pos < len(data) - 8:
-        atom_sz = struct.unpack(">I", data[pos:pos + 4])[0]
-        atom_nm = bytes(data[pos + 4:pos + 8])
-        if atom_sz == 1:
-            atom_sz = struct.unpack(">Q", data[pos + 8:pos + 16])[0]
-        elif atom_sz == 0:
-            atom_sz = len(data) - pos
-        if atom_sz < 8:
-            break
-        if atom_nm == b"moov":
-            moov_pos = pos
-            moov_size = atom_sz
-        pos += atom_sz
-    if moov_pos is None:
-        raise ValueError("moov atom not found")
-
-    # -- Find udta inside moov --
-    scan = moov_pos + 8
-    moov_end = moov_pos + moov_size
-    udta_pos = udta_size = None
-    while scan < moov_end - 8:
-        s = struct.unpack(">I", data[scan:scan + 4])[0]
-        n = bytes(data[scan + 4:scan + 8])
-        if s < 8:
-            break
-        if n == b"udta":
-            udta_pos = scan
-            udta_size = s
-            break
-        scan += s
-
-    if udta_pos is not None:
-        # Remove existing chpl if present
-        inner = udta_pos + 8
-        while inner < udta_pos + udta_size - 8:
-            s2 = struct.unpack(">I", data[inner:inner + 4])[0]
-            if s2 < 8:
-                break
-            if bytes(data[inner + 4:inner + 8]) == b"chpl":
-                del data[inner:inner + s2]
-                udta_size -= s2
-                moov_size -= s2
-                struct.pack_into(">I", data, udta_pos, udta_size)
-                struct.pack_into(">I", data, moov_pos, moov_size)
-                break
-            inner += s2
-
-        # Append chpl at end of udta
-        ins = udta_pos + udta_size
-        data[ins:ins] = chpl_atom
-        udta_size += len(chpl_atom)
-        moov_size += len(chpl_atom)
-        struct.pack_into(">I", data, udta_pos, udta_size)
-        struct.pack_into(">I", data, moov_pos, moov_size)
-    else:
-        # Create udta containing chpl at end of moov
-        udta = struct.pack(">I", len(chpl_atom) + 8) + b"udta" + chpl_atom
-        ins = moov_pos + moov_size
-        data[ins:ins] = udta
-        moov_size += len(udta)
-        struct.pack_into(">I", data, moov_pos, moov_size)
-
-    with open(m4b_path, "wb") as f:
-        f.write(data)
+    with open(m4b_path, "r+b") as f:
+        header = f.read(12)
+        if len(header) >= 12 and header[4:8] == b"ftyp" and header[8:12] != b"M4B ":
+            f.seek(8)
+            f.write(b"M4B ")
 
 
 def _convert_mp3_to_m4b(mp3_path, chapter_list, book_title):
-    """Convert MP3 to M4B (AAC in MP4) with Nero chapter markers.
+    """Convert MP3 to M4B (AAC in MP4) with QuickTime chapter markers.
 
     Two-step process:
-      1. FFmpeg transcodes MP3 to AAC in MP4 container (no chapter input,
-         so no spurious text track is created -- single audio stream).
-      2. Python injects Nero chapters directly into moov.udta.chpl.
-
-    The M4B is created WITHOUT +faststart (moov at end of file) so that
-    chapter injection doesn't require stco offset fixups.
+      1. FFmpeg transcodes MP3 to AAC with FFMETADATA chapter markers.
+         This creates a QuickTime chapter track that ATL (used by Audibly)
+         and other audiobook players can read.
+      2. Python patches the ftyp major brand from M4A to M4B so audiobook
+         players recognize the file as an audiobook, not music.
     """
     import shutil
     import subprocess
+    import tempfile
 
     audiobook_state.phase = "converting"
     state.emit("audiobook_progress", audiobook_state.snapshot())
@@ -3810,40 +3716,66 @@ def _convert_mp3_to_m4b(mp3_path, chapter_list, book_title):
     m4b_path = os.path.join(WORKSPACE_DIR, "audiobook.m4b")
 
     try:
-        # Step 1: transcode to AAC -- no chapter metadata input, no extra streams
+        # Build chapter timestamps from byte offsets
+        duration_ms = _probe_duration_ms(ffmpeg_path, mp3_path)
+        total_bytes = os.path.getsize(mp3_path)
+        chapters_ms = []
+        for ch in chapter_list:
+            start_ms = (
+                int(ch["byte_offset"] / total_bytes * duration_ms)
+                if total_bytes else 0
+            )
+            chapters_ms.append({"title": ch["title"], "start_ms": start_ms})
+
+        # Step 1: Write FFMETADATA file with chapter markers
+        metadata_path = os.path.join(WORKSPACE_DIR, "_ffmeta.txt")
+        with open(metadata_path, "w", encoding="utf-8") as mf:
+            mf.write(";FFMETADATA1\n")
+            mf.write(f"title={book_title}\n")
+            mf.write("album=Audiobook\n\n")
+            for i, ch in enumerate(chapters_ms):
+                end_ms = (
+                    chapters_ms[i + 1]["start_ms"]
+                    if i + 1 < len(chapters_ms)
+                    else duration_ms
+                )
+                mf.write("[CHAPTER]\n")
+                mf.write("TIMEBASE=1/1000\n")
+                mf.write(f"START={ch['start_ms']}\n")
+                mf.write(f"END={end_ms}\n")
+                mf.write(f"title={ch['title']}\n\n")
+
+        # Step 2: Transcode MP3 to AAC with chapters from metadata file
         cmd = [
             ffmpeg_path,
             "-i", mp3_path,
+            "-i", metadata_path,
+            "-map", "0:a",
+            "-map_metadata", "1",
             "-c:a", "aac",
             "-b:a", "128k",
-            "-metadata", f"title={book_title}",
-            "-metadata", "album=Audiobook",
             "-y", m4b_path,
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+
+        # Clean up temp metadata file
+        try:
+            os.remove(metadata_path)
+        except OSError:
+            pass
+
         if result.returncode != 0:
             audiobook_state.status = "error"
             audiobook_state.error = f"FFmpeg conversion failed: {result.stderr[-500:]}"
             return
 
-        # Step 2: calculate chapter times and inject Nero chapters
-        if chapter_list:
-            duration_ms = _probe_duration_ms(ffmpeg_path, mp3_path)
-            total_bytes = os.path.getsize(mp3_path)
-            chapters_ms = []
-            for ch in chapter_list:
-                start_ms = (
-                    int(ch["byte_offset"] / total_bytes * duration_ms)
-                    if total_bytes else 0
-                )
-                chapters_ms.append({"title": ch["title"], "start_ms": start_ms})
+        # Step 3: Patch ftyp brand from M4A to M4B
+        _fix_m4b_brand(m4b_path)
 
-            _inject_nero_chapters(m4b_path, chapters_ms)
-            state.emit("log", {
-                "message": f"Audiobook: injected {len(chapters_ms)} Nero chapters",
-                "level": "info",
-            })
-
+        state.emit("log", {
+            "message": f"Audiobook: M4B created with {len(chapters_ms)} chapters",
+            "level": "info",
+        })
         audiobook_state.output_file = m4b_path
 
     except subprocess.TimeoutExpired:
