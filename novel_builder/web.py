@@ -333,19 +333,34 @@ class AudiobookState:
 
     def snapshot(self):
         with self._lock:
+            out = self.output_file
+            fmt = self.format
+            status = self.status
+
+            # When idle (e.g. after server restart), detect audiobook files
+            # that still exist on disk so the download button is restored.
+            if status == "idle" and not out:
+                m4b = os.path.join(WORKSPACE_DIR, "audiobook.m4b")
+                mp3 = os.path.join(WORKSPACE_DIR, "audiobook.mp3")
+                if os.path.exists(m4b) and os.path.getsize(m4b) > 1024:
+                    out = m4b
+                    fmt = "m4b"
+                    status = "completed"
+                elif os.path.exists(mp3) and os.path.getsize(mp3) > 1024:
+                    out = mp3
+                    fmt = "mp3"
+                    status = "completed"
+
+            has = bool(out and os.path.exists(out))
             return {
-                "status": self.status,
+                "status": status,
                 "done": self.done,
                 "total": self.total,
                 "phase": self.phase,
                 "error": self.error,
-                "format": self.format,
-                "has_file": bool(self.output_file and os.path.exists(self.output_file)),
-                "file_size": (
-                    os.path.getsize(self.output_file)
-                    if self.output_file and os.path.exists(self.output_file)
-                    else 0
-                ),
+                "format": fmt,
+                "has_file": has,
+                "file_size": os.path.getsize(out) if has else 0,
             }
 
 
@@ -3970,7 +3985,17 @@ def api_tts_compile_download():
     if not snap["has_file"]:
         return jsonify({"ok": False, "error": "No audiobook file available"}), 404
 
+    # Prefer in-memory path; fall back to disk detection (server restart case)
     path = audiobook_state.output_file
+    if not path or not os.path.exists(path):
+        m4b = os.path.join(WORKSPACE_DIR, "audiobook.m4b")
+        mp3 = os.path.join(WORKSPACE_DIR, "audiobook.mp3")
+        if os.path.exists(m4b) and os.path.getsize(m4b) > 1024:
+            path = m4b
+        elif os.path.exists(mp3) and os.path.getsize(mp3) > 1024:
+            path = mp3
+        else:
+            return jsonify({"ok": False, "error": "No audiobook file available"}), 404
     ext = os.path.splitext(path)[1]  # .mp3 or .m4b
     mimetype = "audio/mp4" if ext == ".m4b" else "audio/mpeg"
 
