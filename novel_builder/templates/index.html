@@ -833,7 +833,7 @@ textarea {
     </div>
     <div class="indicator" id="ind-tts-compile" style="display:none;">
       <span class="dot blue pulse" id="dot-tts-compile"></span>
-      <span id="tts-download-progress"></span>
+      <span id="tts-compile-chip-text"></span>
     </div>
   </div>
 </header>
@@ -3031,7 +3031,8 @@ function _updateAudiobookUI(s) {
   const btnCancel = document.getElementById('btn-tts-download-cancel');
   const btnGet = document.getElementById('btn-tts-download-get');
   const prog = document.getElementById('tts-download-progress');
-  const chip = document.getElementById('ind-tts-compile');
+  const chipWrap = document.getElementById('ind-tts-compile');
+  const chipText = document.getElementById('tts-compile-chip-text');
   if (!btnMp3) return;
 
   const running = s.status === 'compiling' || s.status === 'converting';
@@ -3044,13 +3045,14 @@ function _updateAudiobookUI(s) {
     const pct = s.total > 0 ? Math.round((s.done / s.total) * 100) : 0;
     const phase = s.phase === 'converting' ? 'Converting to M4B...' : `Compiling... ${s.done}/${s.total} (${pct}%)`;
     if (prog) prog.textContent = phase;
-    if (chip) chip.style.display = '';
+    if (chipText) chipText.textContent = phase;
+    if (chipWrap) chipWrap.style.display = '';
   } else {
     btnMp3.style.display = '';
     btnM4b.style.display = '';
     btnCancel.style.display = 'none';
     if (prog) prog.textContent = '';
-    if (chip) chip.style.display = 'none';
+    if (chipWrap) chipWrap.style.display = 'none';
 
     if (s.status === 'completed' && s.has_file) {
       if (btnGet) btnGet.style.display = '';
