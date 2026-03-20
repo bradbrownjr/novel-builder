@@ -2148,6 +2148,12 @@ function appendSceneToOutput(data) {
 async function refreshOutput() {
   const r = await api('/api/output');
   if (r && r.exists) renderScenes(r.text);
+  // Restore audiobook compile status (download button, progress text)
+  const ab = await api('/api/tts/compile-status');
+  if (ab) {
+    _updateAudiobookUI(ab);
+    if (ab.status === 'compiling' || ab.status === 'converting') _pollAudiobookProgress();
+  }
 }
 
 function renderScenes(text) {
