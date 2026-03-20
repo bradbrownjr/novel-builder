@@ -3541,9 +3541,20 @@ def _compile_audiobook_worker(fmt, cfg, story_title, chapters, voice_map,
                         "level": "info",
                     })
                     _convert_mp3_to_m4b(mp3_path, cached_chapters, story_title or "Audiobook")
-                    audiobook_state.status = "completed"
+                    if audiobook_state.status == "error":
+                        # Conversion failed -- fall back to offering the MP3
+                        state.emit("log", {
+                            "message": f"Audiobook: M4B conversion failed ({audiobook_state.error}), offering MP3 instead",
+                            "level": "warn",
+                        })
+                        audiobook_state.status = "completed"
+                        audiobook_state.output_file = mp3_path
+                        audiobook_state.format = "mp3"
+                    else:
+                        audiobook_state.status = "completed"
                     audiobook_state.phase = ""
-                    state.emit("log", {"message": "Audiobook: M4B ready for download", "level": "info"})
+                    fmt_label = audiobook_state.format.upper()
+                    state.emit("log", {"message": f"Audiobook: {fmt_label} ready for download", "level": "info"})
                     state.emit("audiobook_progress", audiobook_state.snapshot())
                     return
             except Exception as e:
@@ -3707,13 +3718,21 @@ def _compile_audiobook_worker(fmt, cfg, story_title, chapters, voice_map,
         # Convert to M4B if requested
         if fmt == "m4b":
             _convert_mp3_to_m4b(mp3_path, chapter_list, story_title or "Audiobook")
+            if audiobook_state.status == "error":
+                # Conversion failed -- fall back to offering the MP3
+                state.emit("log", {
+                    "message": f"Audiobook: M4B conversion failed ({audiobook_state.error}), offering MP3 instead",
+                    "level": "warn",
+                })
+                audiobook_state.output_file = mp3_path
+                audiobook_state.format = "mp3"
         else:
             audiobook_state.output_file = mp3_path
 
         audiobook_state.status = "completed"
         audiobook_state.phase = ""
         state.emit("log", {
-            "message": f"Audiobook: {fmt.upper()} ready for download",
+            "message": f"Audiobook: {audiobook_state.format.upper()} ready for download",
             "level": "info",
         })
         state.emit("audiobook_progress", audiobook_state.snapshot())
