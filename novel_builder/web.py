@@ -3838,6 +3838,10 @@ def _convert_mp3_to_m4b(mp3_path, chapter_list, book_title):
                 )
             chapters_ms.append({"title": ch["title"], "start_ms": start_ms})
 
+        # Sort by start time and remove duplicates/invalid entries
+        chapters_ms.sort(key=lambda c: c["start_ms"])
+        chapters_ms = [c for c in chapters_ms if 0 <= c["start_ms"] < duration_ms]
+
         # Step 1: Write FFMETADATA file with chapter markers
         metadata_path = os.path.join(WORKSPACE_DIR, "_ffmeta.txt")
         with open(metadata_path, "w", encoding="utf-8") as mf:
@@ -3850,6 +3854,7 @@ def _convert_mp3_to_m4b(mp3_path, chapter_list, book_title):
                     if i + 1 < len(chapters_ms)
                     else duration_ms
                 )
+                end_ms = max(end_ms, ch["start_ms"] + 1)  # guard: end > start
                 mf.write("[CHAPTER]\n")
                 mf.write("TIMEBASE=1/1000\n")
                 mf.write(f"START={ch['start_ms']}\n")
