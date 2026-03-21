@@ -72,7 +72,7 @@ novel_builder/
 ├── cli.py                # parse_args()
 ├── config.py             # load_config(), discover_yaml_files()
 ├── ollama_client.py      # call_ollama(), call_ollama_with_retry(), call_summary_model(), unload_model(), _OllamaWatchdog, _wait_for_ollama()
-├── prompt_builder.py     # build_system_prompt(), build_scene_prompt(), build_summary_prompt()
+├── prompt_builder.py     # build_system_prompt(), build_scene_prompt(), build_summary_prompt(), _build_offstage_context()
 ├── state.py              # load_checkpoint(), save_checkpoint(), should_resume(), should_compress(), compress_story_so_far(), get_used_imagery()
 ├── story_processor.py    # generate_story(), process_chapter(), process_scene(), regenerate_scene(), regenerate_chapter()
 ├── characters.py         # load_characters(), filter_for_scene(), auto_detect_characters(), get_evolution_context()
@@ -101,6 +101,7 @@ _(Update this tree when functions are added, renamed, or moved.)_
 |---|---|---|
 | **Full bio** | First appearance in story | Name, summary, role, personality, vibe, species, appearance, origin, voice, habit, status + merged heritage traits |
 | **Reminder** | Subsequent appearances | Name, role, vibe, species, appearance, origin, voice, status + evolution notes |
+| **Off-stage** | Mentioned in events/notes but NOT present | Name, role, key facts, relationships to present characters, vital status, naming guidance |
 
 - `vibe` is the persistent tonal anchor — always included.
 - `voice` (speech patterns) is always included when present — shapes dialogue.
@@ -111,6 +112,8 @@ _(Update this tree when functions are added, renamed, or moved.)_
 - `catchphrase` is probability-gated, not included every scene.
 - `secret` is only included when the scene's notes reference tension or subtext.
 - `relationships` are included when both characters in the relationship are present in the scene.
+- **Off-stage characters** referenced in events/notes get a separate context block with their name, role, summary, relationships to present characters, and a directive that they exist in memory/dialogue only.
+- **CHARACTER FAMILIARITY** directive is injected when co-present characters have established relationships, preventing the LLM from writing introductions between acquainted characters.
 - Character appearance history is tracked in `checkpoint.yaml`.
 - Story memory (auto-extracted minor characters, facts, commitments) is tracked in `checkpoint.yaml` and injected when relevant.
 
@@ -195,6 +198,13 @@ _(Track fixes here for reference.)_
 - Server-side audiobook compilation -- TTS audiobook compilation moved entirely server-side. `AudiobookState` class tracks compilation progress. `_compile_audiobook_worker()` runs in a background thread: parses chapters from `full_story.md`, synthesizes each segment via TTS API, writes MP3 to `workspace/audiobook.mp3`, optionally converts to M4B via FFmpeg with chapter markers. Four API endpoints: `/api/tts/compile` (start), `/api/tts/compile-status` (poll), `/api/tts/compile-cancel` (cancel), `/api/tts/compile-download` (download result). SSE `audiobook_progress` events update UI in real time. Compilation survives browser close/sleep/device switch. Old browser-upload endpoints (`/api/tts/add-chapters`, `/api/tts/convert-m4b`) removed. `New Story` and `Reset Generation` clean up audiobook files.
 - M4B audiobook chapters -- Final working approach: FFmpeg FFMETADATA1 chapter embedding (QuickTime chapter tracks) + ftyp brand patch (M4A -> M4B). `_convert_mp3_to_m4b()` writes an FFMETADATA file with `[CHAPTER]` blocks (TIMEBASE=1/1000, START/END in ms), passes it as a second FFmpeg input (`-map_metadata 1`), then `_fix_m4b_brand()` patches bytes 8-12 of the ftyp atom to `M4B `. The M4B brand fix is critical -- without it, Audibly treats the file as music and shows "source files deleted/moved". QuickTime chapter tracks (vs Nero chpl) are required because ATL (.NET library used by Audibly) only reads QuickTime chapters. Chapter byte offsets saved to `audiobook_chapters.json` after synthesis; when M4B is re-requested and the cached MP3 exists, synthesis is skipped entirely and conversion runs from cache. `_probe_duration_ms()` probes MP3 duration via ffprobe.
 - TTS raw markdown source fix -- `playAllScenes()` and `downloadAudiobook()` now fetch raw markdown from `/api/output` instead of reading from the DOM via `getOutputText()`. `renderScenes()` strips all structural markers (chapter markers, scene markers, chapter headings) during DOM rendering, causing `parseOutputIntoScenes()` and `parseOutputIntoChaptersForAudio()` to fail to find any structure. The entire story was treated as one massive text block, and the TTS engine choked on the oversized input, resulting in only the injected title segment being spoken.
+- Off-stage character context -- `_build_offstage_context()` in `prompt_builder.py` injects brief context for characters mentioned in scene events/notes who are NOT physically present. Includes name, role, key facts, relationships to present characters, and vital status. Directive instructs LLM to reference them in memory/dialogue only, not write them as present. Fixes characters being misidentified or treated as strangers when referenced from memory.
+- Relational naming directive -- `build_system_prompt()` in `prompt_builder.py` adds RELATIONAL NAMING directive for first-person POV: narrator refers to family members by relationship term (Mom, Dad, my sister) not first name, unless there's a dramatic reason. Fixes POV character calling their mother by first name throughout the story.
+- Character familiarity directive -- `build_scene_prompt()` in `prompt_builder.py` detects when co-present characters have established relationships and injects CHARACTER FAMILIARITY directive: do NOT write them meeting for the first time or introducing themselves unless events explicitly say so. Fixes married couples being written as strangers (e.g. Morty saying "You must be Beatrice" to his own wife).
+- Strengthened event framing -- Scene events changed from "What happens:" to "SCENE EVENTS (follow these faithfully -- this is what must happen in this scene, in this order):" to reduce LLM drift from intended plot. Fixes contradictions like Morty locking Elias in deliberately when events specify he's unaware.
+- Plain-text chapter/scene title stripping -- `clean_scene_text()` in `postprocess.py` now strips plain-text chapter/scene titles (e.g. "Chapter 3: The Lock-In" without # marks) in addition to markdown-formatted headers. Fixes TTS reading chapter titles as narration at wrong positions in audiobook.
+- Audiobook title-segment filtering -- `_compile_audiobook_worker()` in `web.py` now skips `type="title"` segments extracted from scene text by `parse_span_segments()`, since chapter titles are already injected as separate segments. Prevents duplicate/misplaced chapter title readings in compiled audiobooks.
+- Explicit no-header system prompt -- `build_system_prompt()` explicitly instructs the LLM not to write chapter/scene titles as either markdown headers OR plain text, closing the gap where models would generate "Chapter N: Title" without # marks.
 
 ## Scene Marker Format
 
