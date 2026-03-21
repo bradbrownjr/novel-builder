@@ -169,6 +169,18 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
                 "not 'he', 'she', or 'they'. "
                 "Never shift away from this POV."
             )
+        # Relational naming directive for first-person POV
+        if pov_text or pov_char:
+            parts.append(
+                "\nRELATIONAL NAMING: In first-person narration, the narrator "
+                "refers to family members by relationship term (Mom, Dad, "
+                "my sister, my brother, etc.), NOT by their first name, unless "
+                "there is a specific in-story reason to use the formal name "
+                "(e.g. emotional distance, estrangement, or introducing the name "
+                "to the reader for the first time in a natural way like "
+                "'my mother, Samantha'). After the first natural introduction, "
+                "revert to the relational term."
+            )
     elif isinstance(arc, str) and arc:
         parts.append(f"\nStory arc: {arc}")
 
@@ -229,7 +241,10 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
 
     # Do NOT impose word count
     parts.append(
-        "\nDo not include scene headers, titles, or meta-commentary. "
+        "\nDo not include scene headers, titles, chapter headings, or "
+        "meta-commentary in your output. Do not write lines like "
+        "'Chapter 3: The Lock-In' or 'Scene 2' -- neither as markdown "
+        "headers nor as plain text. "
         "Do not use markdown formatting (**bold**, *italic*, etc.) to annotate, "
         "flag, or call attention to character names or story elements. "
         "Use bold or italic only when the prose itself calls for emphasis. "
@@ -392,9 +407,12 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
 
     parts.append(f"\n--- Scene {scene_num} ---")
     if scene_events:
-        parts.append(f"What happens: {scene_events}")
+        parts.append(
+            f"SCENE EVENTS (follow these faithfully -- this is what must "
+            f"happen in this scene, in this order): {scene_events}"
+        )
     if scene_notes:
-        parts.append(f"Notes: {scene_notes}")
+        parts.append(f"Author notes: {scene_notes}")
     if effective_pov:
         parts.append(f"POV: {effective_pov}")
     if scene_pacing:
@@ -434,15 +452,65 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
     if char_block:
         parts.append(f"\nCharacters in this scene:\n{char_block}")
 
-        # Build exclusion list: ALL characters the model knows about
-        # who are NOT in this scene's character list.  This covers:
-        #  - Characters that appeared earlier (in the system-prompt roster)
-        #  - Characters mentioned in events/notes for context only
+        # Character familiarity directive -- when multiple characters are
+        # present and have relationship data, explicitly state they know
+        # each other so the LLM doesn't write introductions or treat
+        # established characters as strangers.
         explicit_chars = scene.get("characters", [])
         if isinstance(explicit_chars, str):
             explicit_chars = [explicit_chars] if explicit_chars else []
         present_set = set(explicit_chars)
+        if len(present_set) > 1:
+            familiar_pairs = []
+            for cid in present_set:
+                cdata = all_characters.get(cid, {})
+                if not isinstance(cdata, dict):
+                    continue
+                rels = cdata.get("relationships", "")
+                if not rels:
+                    continue
+                cname = cdata.get("Name") or cdata.get("name", cid)
+                if isinstance(rels, str):
+                    rels_lower = rels.lower()
+                    for other_id in present_set:
+                        if other_id == cid:
+                            continue
+                        other_data = all_characters.get(other_id, {})
+                        if not isinstance(other_data, dict):
+                            continue
+                        other_name = (other_data.get("Name")
+                                      or other_data.get("name", other_id))
+                        # Check full name, first name, and ID
+                        first_name = other_name.split()[0] if other_name else ""
+                        if (other_name.lower() in rels_lower
+                                or other_id.lower() in rels_lower
+                                or (first_name
+                                    and first_name.lower() in rels_lower)):
+                            familiar_pairs.append((cname, other_name))
+                elif isinstance(rels, dict):
+                    for other_id_rel, rel_desc in rels.items():
+                        if other_id_rel in present_set:
+                            other_data = all_characters.get(other_id_rel, {})
+                            if isinstance(other_data, dict):
+                                other_name = (other_data.get("Name")
+                                              or other_data.get("name",
+                                                                other_id_rel))
+                            else:
+                                other_name = other_id_rel
+                            familiar_pairs.append((cname, other_name))
+            if familiar_pairs:
+                parts.append(
+                    "CHARACTER FAMILIARITY: The characters listed above "
+                    "already know each other as described in their "
+                    "relationship data. Do NOT write them meeting for the "
+                    "first time or introducing themselves to each other "
+                    "unless the scene events explicitly say so."
+                )
 
+        # Build exclusion list: ALL characters the model knows about
+        # who are NOT in this scene's character list.  This covers:
+        #  - Characters that appeared earlier (in the system-prompt roster)
+        #  - Characters mentioned in events/notes for context only
         absent_ids = set()
         # 1) Every character that has appeared in the story so far
         appeared = state.get("character_appearances", {})
@@ -477,6 +545,16 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
                 "background context only -- do not write them as present, "
                 "speaking, or taking action in the scene."
             )
+
+    # -- Off-stage character context --
+    # Characters mentioned in events/notes who are NOT present in the scene.
+    # Provides the LLM with relationship context, vital status, and naming
+    # guidance so it doesn't mishandle references to absent characters.
+    offstage_block = _build_offstage_context(
+        scene, all_characters, config,
+    )
+    if offstage_block:
+        parts.append(f"\nReferenced off-stage characters (mentioned but NOT physically present):\n{offstage_block}")
 
     # -- Narrative hooks --
     hook_text = _get_relevant_hook(config, scene)
@@ -686,6 +764,98 @@ def _build_character_block(scene, all_characters, heritage_defs,
         blocks.append("\n".join(lines))
 
     return "\n\n".join(blocks)
+
+
+def _build_offstage_context(scene, all_characters, config):
+    """Build context for characters mentioned in events/notes but not present.
+
+    When scene events reference characters who are off-stage (deceased,
+    absent, remembered), the LLM needs:
+    - Their name and relationship to present characters
+    - Vital status (alive, deceased, absent)
+    - How the narrator/present characters would refer to them
+
+    Args:
+        scene: Current scene dict.
+        all_characters: Full characters dict from config.
+        config: Story configuration dict (for POV character).
+
+    Returns:
+        Formatted off-stage context string, or empty string.
+    """
+    explicit_chars = scene.get("characters", [])
+    if isinstance(explicit_chars, str):
+        explicit_chars = [explicit_chars] if explicit_chars else []
+    present_set = set(explicit_chars)
+
+    # Scan events + notes for character name mentions
+    scan_text = f"{scene.get('events', '')} {scene.get('notes', '')}"
+    if not scan_text.strip():
+        return ""
+
+    mentioned_ids = auto_detect_characters(scan_text, all_characters)
+    offstage_ids = [cid for cid in mentioned_ids if cid not in present_set]
+
+    if not offstage_ids:
+        # Also scan for non-character names referenced in summaries of
+        # present characters (family members etc.)  These aren't in the
+        # characters dict but appear in present chars' summary/relationships.
+        return ""
+
+    pov_char = config.get("pov_character", "")
+    blocks = []
+
+    for cid in offstage_ids:
+        cdata = all_characters.get(cid, {})
+        if not isinstance(cdata, dict):
+            continue
+        name = cdata.get("Name") or cdata.get("name", cid)
+        role = cdata.get("role", "")
+        summary = cdata.get("summary", "")
+
+        lines = [f"**{name}** (OFF-STAGE)"]
+        if role:
+            lines.append(f"  Role: {role}")
+        if summary:
+            lines.append(f"  Key facts: {summary}")
+
+        # Include relationships so the LLM knows how present characters
+        # relate to this person
+        relationships = cdata.get("relationships", "")
+        if relationships:
+            if isinstance(relationships, str):
+                lines.append(f"  Relationships: {relationships}")
+            elif isinstance(relationships, dict):
+                for rel_target, rel_desc in relationships.items():
+                    if rel_target in present_set:
+                        target_data = all_characters.get(rel_target, {})
+                        target_name = (target_data.get("Name", rel_target)
+                                       if isinstance(target_data, dict)
+                                       else rel_target)
+                        lines.append(
+                            f"  Relationship with {target_name}: {rel_desc}"
+                        )
+
+        lines.append(
+            f"  This character is NOT physically present. They may be "
+            f"referenced in memory, dialogue, or thoughts only."
+        )
+        blocks.append("\n".join(lines))
+
+    if not blocks:
+        return ""
+
+    # Add global directive for how to reference off-stage characters
+    directive = (
+        "These characters are mentioned in the scene context but are NOT "
+        "present. They may be thought about, discussed, or remembered, but "
+        "must NOT appear, speak, or take physical action. "
+        "Present characters should refer to them naturally -- by "
+        "relationship term (Mom, my wife, the old man) in internal thoughts, "
+        "and by name or relationship in dialogue as appropriate to the speaker."
+    )
+
+    return "\n\n".join(blocks) + "\n\n" + directive
 
 
 def _get_relevant_hook(config, scene):

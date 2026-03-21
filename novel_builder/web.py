@@ -3582,6 +3582,12 @@ def _compile_audiobook_worker(fmt, cfg, story_title, chapters, voice_map,
                 if not segs:
                     segs = [{"type": "narration", "text": scene_text, "character": None}]
                 for seg in segs:
+                    # Skip title-type segments from scene text -- chapter
+                    # titles are already injected above as separate segments.
+                    # Title segments in scene text are artifacts from the LLM
+                    # generating headers that the TTS parser picked up.
+                    if seg.get("type") == "title":
+                        continue
                     all_segments.append({"seg": seg, "chapter_idx": ci})
 
         total = len(all_segments)

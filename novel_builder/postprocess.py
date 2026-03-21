@@ -61,6 +61,17 @@ def clean_scene_text(text):
         flags=re.IGNORECASE | re.MULTILINE,
     )
 
+    # Remove plain-text chapter/scene titles (no # marks) that the model
+    # may generate at the start or end of output.  These cause TTS to
+    # read the title as narration at the wrong time.
+    # Matches: "Chapter 3: The Lock-In", "Scene 2.1", "Part IV: Awakening"
+    text = re.sub(
+        r"^\s*(?:Chapter|Scene|Part|Act|Section)\s+[\d\w.:]+(?:\s*[-—:]\s*.+)?\s*$\n*",
+        "",
+        text,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+
     # Remove trailing spaces on lines
     text = re.sub(r" +\n", "\n", text)
 
