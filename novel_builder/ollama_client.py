@@ -584,9 +584,20 @@ def _parse_summary_response(text):
         elif current_section == "summary":
             summary += " " + line
         elif current_section in extraction:
-            if line.upper() != "NONE" and line.startswith("- "):
+            if line.upper() == "NONE":
+                continue
+            # Accept bulleted lines (standard format)
+            if line.startswith("- "):
                 extraction[current_section].append(line[2:].strip())
-            elif line.upper() != "NONE" and line:
+            # Reject bare continuation lines that look like model
+            # commentary rather than extracted content.  Valid
+            # continuation lines typically contain character names,
+            # colons, or concrete details — not meta-commentary.
+            elif (line and not line.startswith("Note")
+                  and not line.startswith("The scene")
+                  and not line.startswith("This scene")
+                  and not line.startswith("Overall")
+                  and ":" in line):
                 extraction[current_section].append(line)
 
     # Fallback: if parsing fails, treat the whole thing as summary

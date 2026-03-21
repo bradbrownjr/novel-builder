@@ -881,13 +881,13 @@ def should_compress(state):
     """Check whether story_so_far should be compressed.
 
     Returns True every _COMPRESSION_INTERVAL scenes and when the
-    accumulated text exceeds 1500 characters (the prompt builder's
-    truncation threshold).  The counter is stored in the checkpoint
-    so it survives restarts.
+    accumulated text exceeds the prompt builder's truncation threshold
+    (3000 chars).  The counter is stored in the checkpoint so it
+    survives restarts.
     """
     counter = state.get("_scenes_since_compress", 0)
     story = state.get("story_so_far", "")
-    return counter >= _COMPRESSION_INTERVAL and len(story) > 1500
+    return counter >= _COMPRESSION_INTERVAL and len(story) > 3000
 
 
 def compress_story_so_far(state, host, summary_model):
