@@ -39,6 +39,16 @@ _DEFAULT_PROMPT_ANTI_PATTERNS = [
     '"dust motes dancing" or "dust motes" as atmospheric filler',
     '"grime coated windows" or "grime-coated" -- vary window/light descriptions',
     '"something else entirely" or "something else" as vague descriptions',
+    '"couldn\'t help but" -- remove; just state the action directly',
+    '"the weight of" as emotional metaphor -- find concrete alternatives',
+    '"seemed to" or "appeared to" -- commit to the observation or cut it',
+    '"a mixture of" or "a mix of" for emotions -- show conflicting emotions through action',
+    '"let out a breath/sigh/laugh" -- show the reaction, don\'t narrate the exhale',
+    '"found himself/herself/themselves" -- rewrite as direct action',
+    '"hung in the air" or "hung between them" -- show tension through behavior',
+    '"filled the room" or "filled the space" -- use specific sensory detail instead',
+    '"a sense of" -- vague; replace with concrete sensation',
+    '"the sound of" -- name the sound directly without this frame',
 ]
 
 
@@ -141,13 +151,11 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
             parts.append(f"\nGenre: {arc['genre']}")
         if arc.get("tone"):
             parts.append(
-                f"Tone: {arc['tone']} "
-                "This is the narrator's emotional lens, not a mandate for every "
-                "moment. The world contains warmth, humor, charm, and lightness "
-                "even when the POV character is hurting. Let scenes breathe -- "
-                "a warm setting, a funny exchange, or an unexpected moment of "
-                "beauty can coexist with the character's inner state, and often "
-                "lands more powerfully because of the contrast."
+                f"Tone: {arc['tone']}. "
+                "This is the prevailing emotional register for the story. "
+                "Scenes may naturally vary in intensity -- let each scene "
+                "breathe at its own pace rather than forcing every moment "
+                "to the same pitch."
             )
         if arc.get("themes"):
             themes = arc["themes"]
@@ -415,6 +423,12 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
         parts.append(f"Author notes: {scene_notes}")
     if effective_pov:
         parts.append(f"POV: {effective_pov}")
+    elif config.get("pov_character"):
+        # Reinforce first-person POV at scene level to prevent drift
+        parts.append(
+            f"POV: First-person narration by {config['pov_character']}. "
+            "Use 'I', not third-person pronouns."
+        )
     if scene_pacing:
         parts.append(f"Pacing: {scene_pacing}")
     if scene_mood:
@@ -584,11 +598,13 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
     # -- Story so far (condensed) --
     story_so_far = state.get("story_so_far", "")
     if story_so_far:
-        # Truncate if very long — keep the essentials
-        max_len = 1500
+        # Keep enough for meaningful continuity (~500 words / ~3000 chars).
+        # The compression step keeps this manageable between scenes; the
+        # truncation here is a safety net for very long runs.
+        max_len = 3000
         if len(story_so_far) > max_len:
             story_so_far = story_so_far[-max_len:]
-            # Trim to sentence boundary
+            # Trim to sentence boundary so we don't start mid-thought
             first_period = story_so_far.find(". ")
             if first_period > 0:
                 story_so_far = story_so_far[first_period + 2:]
@@ -913,7 +929,7 @@ def _format_story_memory(memory):
 
     facts = memory.get("facts", [])
     if isinstance(facts, list):
-        for fact in facts[:5]:  # Cap to keep prompt manageable
+        for fact in facts[:8]:  # Cap to keep prompt manageable
             if not isinstance(fact, dict):
                 continue
             detail = fact.get("detail", "")
@@ -922,7 +938,7 @@ def _format_story_memory(memory):
 
     actions = memory.get("actions", [])
     if isinstance(actions, list):
-        for action in actions[:5]:
+        for action in actions[:8]:
             if not isinstance(action, dict):
                 continue
             detail = action.get("detail", "")
@@ -933,7 +949,7 @@ def _format_story_memory(memory):
 
     commitments = memory.get("commitments", [])
     if isinstance(commitments, list):
-        for commit in commitments[:3]:
+        for commit in commitments[:5]:
             if not isinstance(commit, dict):
                 continue
             detail = commit.get("detail", "")

@@ -345,8 +345,8 @@ def _run_generation(config, args, event_callback=None):
             except OllamaError as e:
                 print(f"    Warning: Summary failed — {e}")
                 emit("log", message=f"Summary failed: {e}", level="warn")
-                # Fall back to first 200 chars
-                summary = text[:200].rsplit(" ", 1)[0] + "..."
+                # Fall back to first 500 chars — enough for a paragraph
+                summary = text[:500].rsplit(" ", 1)[0] + "..."
             emit("model_active", model="idle", name="")
             # Free summary model memory before next generation call
             if _models_differ:
@@ -526,13 +526,15 @@ def _write_scene(filepath, scene_num, scene_title, text):
     markers so individual scenes can be located and replaced by the
     regeneration feature.  The markers are invisible in rendered Markdown
     and are stripped from the downloaded file for a clean book appearance.
+
+    Scene titles are NOT written into the output — the system prompt
+    forbids headers, so including them creates artifacts that the
+    postprocessor and TTS must then strip.  Chapter headers (written
+    by _write_chapter_header) are sufficient for structure.
     """
     with open(filepath, "a", encoding="utf-8") as f:
         f.write(f"<!-- scene:{scene_num} -->\n")
-        if scene_title:
-            f.write(f"### {scene_title}\n\n{text}\n\n")
-        else:
-            f.write(f"{text}\n\n")
+        f.write(f"{text}\n\n")
         f.write(f"<!-- /scene:{scene_num} -->\n\n")
 
 
@@ -594,10 +596,7 @@ def _replace_scene_in_file(filepath, scene_id, new_text, scene_title=""):
         return None
 
     old_text = match.group(2)
-    if scene_title:
-        replacement = f"### {scene_title}\n\n{new_text}\n\n"
-    else:
-        replacement = f"{new_text}\n\n"
+    replacement = f"{new_text}\n\n"
 
     new_content = content[:match.start(2)] + replacement + content[match.end(2):]
 
@@ -731,7 +730,7 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
         emit("model_active", model="idle", name="")
     except Exception as e:
         emit("model_active", model="idle", name="")
-        summary = text[:200].rsplit(" ", 1)[0] + "..."
+        summary = text[:500].rsplit(" ", 1)[0] + "..."
         emit("log", message=f"Summary failed for regen: {e}", level="warn")
     if _models_differ:
         unload_model(args.host, getattr(args, 'summary_model', args.model), emit if event_callback else None)
@@ -922,7 +921,7 @@ def rebuild_memories(config, args, event_callback=None):
             )
         except OllamaError as e:
             emit("log", message=f"  Scene {scene_id} summary failed: {e}", level="warn")
-            summary = scene_text[:200].rsplit(" ", 1)[0] + "..."
+            summary = scene_text[:500].rsplit(" ", 1)[0] + "..."
             extraction = {"characters": [], "facts": [], "actions": [], "commitments": [], "used_imagery": []}
         finally:
             emit("model_active", model="idle", name="")
