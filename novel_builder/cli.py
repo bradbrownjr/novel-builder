@@ -26,13 +26,13 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--model",
-        default="gemma3:12b",
-        help="Ollama model for scene generation (default: gemma3:12b).",
+        default="gemma4:e4b",
+        help="Ollama model for scene generation (default: gemma4:e4b).",
     )
     parser.add_argument(
         "--summary-model",
-        default="gemma3:4b",
-        help="Ollama model for summarization (default: gemma3:4b).",
+        default="gemma4:e2b",
+        help="Ollama model for summarization (default: gemma4:e2b).",
     )
 
     # --- Files ---

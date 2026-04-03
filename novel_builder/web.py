@@ -637,8 +637,8 @@ def _load_web_config():
             pass
     return {
         "host": os.environ.get("OLLAMA_HOST", ""),
-        "model": "gemma3:12b",
-        "summary_model": "gemma3:4b",
+        "model": "gemma4:e4b",
+        "summary_model": "gemma4:e2b",
         "retries": 3,
         "timeout": 900,
         # TTS (Speaches / Kokoro / Piper)
@@ -709,8 +709,8 @@ def _start_generation(web_config):
     # Build args namespace matching what CLI produces
     args = SimpleNamespace(
         host=_normalize_host(web_config.get("host", "")),
-        model=web_config.get("model", "gemma3:12b"),
-        summary_model=web_config.get("summary_model", "gemma3:4b"),
+        model=web_config.get("model", "gemma4:e4b"),
+        summary_model=web_config.get("summary_model", "gemma4:e2b"),
         retries=int(web_config.get("retries", 3)),
         timeout=int(web_config.get("timeout", 900)),
         num_ctx=int(web_config.get("generation_num_ctx", 8192)),
@@ -1993,7 +1993,7 @@ def api_consult():
             from .consult import get_analysis_passes, build_pass_prompt, build_story_context
             cfg = _load_web_config()
             host = _normalize_host(cfg.get("host", ""))
-            model = cfg.get("model", "gemma3:12b")
+            model = cfg.get("model", "gemma4:e4b")
             # Consult passes can need a large context window for full YAML
             # analysis.  Default 32768; configurable via Settings tab.
             timeout = max(int(cfg.get("timeout", 900)), 1800)
@@ -2345,7 +2345,7 @@ def api_concept():
 
             cfg = _load_web_config()
             host = _normalize_host(cfg.get("host", ""))
-            model = cfg.get("model", "gemma3:12b")
+            model = cfg.get("model", "gemma4:e4b")
             consult_ctx = int(cfg.get("consult_num_ctx", 32768))
 
             if not host:
