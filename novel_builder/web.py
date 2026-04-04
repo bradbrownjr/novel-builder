@@ -183,6 +183,7 @@ class GenerationState:
         self.error = None
         self.start_time = None
         self.throughput = {"generation": None, "summary": None}
+        self.pull_state = {}  # model -> {completed, total, status}
         self._thread = None
         self._event_queues = []
         self._lock = threading.Lock()
@@ -233,6 +234,16 @@ class GenerationState:
                         "tok_per_min": data.get("tok_per_min", 0),
                         "updated_at": time.time(),
                     }
+            elif event_type == "pull_progress":
+                model = data.get("model", "")
+                if model:
+                    self.pull_state[model] = {
+                        "completed": data.get("completed", 0),
+                        "total": data.get("total", 0),
+                        "status": data.get("status", ""),
+                    }
+                    if data.get("status") == "success":
+                        self.pull_state.pop(model, None)
 
             # Push to all SSE subscriber queues
             dead = []
@@ -279,6 +290,7 @@ class GenerationState:
                     self._thread is not None and self._thread.is_alive()
                 ),
                 "throughput": dict(self.throughput),
+                "pull_state": dict(self.pull_state),
             }
 
     def reset(self):
@@ -295,6 +307,7 @@ class GenerationState:
             self.error = None
             self.start_time = None
             self.throughput = {"generation": None, "summary": None}
+            self.pull_state = {}
 
 
 state = GenerationState()

@@ -14,7 +14,9 @@ import traceback
 
 from .characters import auto_detect_characters, load_characters
 from .locations import load_locations
-from .ollama_client import call_ollama_with_retry, call_summary_model, OllamaError, unload_model
+from .ollama_client import (call_ollama_with_retry, call_summary_model,
+                            OllamaError, unload_model,
+                            ensure_model_available, check_coexist_models)
 from .postprocess import clean_scene_text, apply_anti_patterns, strip_scene_header
 from .prompt_builder import build_system_prompt, build_scene_prompt
 from .state import (
@@ -153,6 +155,18 @@ def _run_generation(config, args, event_callback=None):
         f"{total_chapters} chapters, {all_scene_count} scenes | "
         f"Model: {args.model} | Output: {output_file}"
     ), level="info")
+
+    # Ensure both models are present on the target server, pulling if needed.
+    ensure_model_available(args.host, args.model, emit)
+    summary_model_name = getattr(args, 'summary_model', args.model)
+    if summary_model_name != args.model:
+        ensure_model_available(args.host, summary_model_name, emit)
+
+    # _can_coexist: None = not yet determined, True = keep both loaded,
+    # False = swap (unload between generation and summary passes).
+    # Determined lazily after the first generation call so /api/ps reflects
+    # the actual memory layout chosen by Ollama for this server.
+    _can_coexist = None
 
     for ch_idx in range(start_ch, total_chapters):
         if _shutdown_requested:
@@ -306,10 +320,20 @@ def _run_generation(config, args, event_callback=None):
             summary = ""
             extraction = {"characters": [], "facts": [], "actions": [], "commitments": [], "used_imagery": []}
             _models_differ = args.model != getattr(args, 'summary_model', args.model)
-            # Free generation model memory before loading summary model
-            if _models_differ:
+
+            # Lazily determine co-residency after the first generation call,
+            # when Ollama has actually loaded the model and /api/ps is accurate.
+            if _can_coexist is None and _models_differ:
+                _can_coexist = check_coexist_models(
+                    args.host, args.model,
+                    getattr(args, 'summary_model', args.model), emit,
+                )
+
+            # Free generation model memory before loading summary model,
+            # but only in GPU/swap mode — CPU servers keep both loaded.
+            if _models_differ and not _can_coexist:
                 unload_model(args.host, args.model, emit)
-            emit("model_active", model="summarization", name=getattr(args, 'summary_model', 'gemma3:4b'))
+            emit("model_active", model="summarization", name=getattr(args, 'summary_model', args.model))
             setting_id = scene.get("setting", "") or ""
             try:
                 summary_model = args.summary_model
@@ -348,8 +372,9 @@ def _run_generation(config, args, event_callback=None):
                 # Fall back to first 500 chars — enough for a paragraph
                 summary = text[:500].rsplit(" ", 1)[0] + "..."
             emit("model_active", model="idle", name="")
-            # Free summary model memory before next generation call
-            if _models_differ:
+            # Free summary model memory before next generation call,
+            # but only in GPU/swap mode.
+            if _models_differ and not _can_coexist:
                 unload_model(args.host, getattr(args, 'summary_model', args.model), emit)
 
             # Update state
