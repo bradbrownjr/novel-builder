@@ -1,0 +1,55 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>novel-builder</Name>
+  <Repository>ghcr.io/bradbrownjr/novel-builder:latest</Repository>
+  <Registry>https://ghcr.io/bradbrownjr/novel-builder</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/bradbrownjr/novel-builder</Support>
+  <Project>https://github.com/bradbrownjr/novel-builder</Project>
+  <Overview>Web UI for generating long-form fiction with local LLMs via Ollama. Upload story YAML files, configure models, and watch scenes generate in real time with live progress and full checkpoint/resume support.</Overview>
+  <Category>MediaApp:Other Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/bradbrownjr/novel-builder/main/docs/icon.png</Icon>
+  <ExtraParams>--restart=unless-stopped</ExtraParams>
+  <Description>Novel Builder — scene-by-scene long-form fiction generator using local Ollama LLMs. Supports Gemma 4, Qwen, and any Ollama-compatible model. Auto-pulls missing models, detects GPU vs CPU memory layout, and streams generation progress live.</Description>
+
+  <Networking>
+    <Mode>bridge</Mode>
+    <Publish>
+      <Port>
+        <HostPort>8080</HostPort>
+        <ContainerPort>8080</ContainerPort>
+        <Protocol>tcp</Protocol>
+      </Port>
+    </Publish>
+  </Networking>
+
+  <Data>
+    <Volume>
+      <HostDir>/mnt/user/appdata/novel-builder</HostDir>
+      <ContainerDir>/workspace</ContainerDir>
+      <Mode>rw</Mode>
+    </Volume>
+  </Data>
+
+  <Environment>
+    <Variable>
+      <Value>http://YOUR_OLLAMA_HOST:11434</Value>
+      <Name>OLLAMA_HOST</Name>
+      <Mode/>
+    </Variable>
+  </Environment>
+
+  <Config Name="Web UI Port" Target="8080" Default="8080" Mode="tcp"
+          Description="Port for the Novel Builder web interface."
+          Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+
+  <Config Name="Workspace" Target="/workspace" Default="/mnt/user/appdata/novel-builder" Mode="rw"
+          Description="Host path for story YAML files, checkpoints, and generated output. Persists across container restarts."
+          Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/novel-builder</Config>
+
+  <Config Name="Ollama Host" Target="OLLAMA_HOST" Default="http://YOUR_OLLAMA_HOST:11434" Mode=""
+          Description="URL of your Ollama server. Used as the default in the web UI settings."
+          Type="Variable" Display="always" Required="false" Mask="false">http://YOUR_OLLAMA_HOST:11434</Config>
+</Container>

@@ -58,7 +58,10 @@ app = Flask(__name__, template_folder=_template_dir)
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5 MB upload limit
 
 # Workspace directory for uploaded files and output
-WORKSPACE_DIR = os.path.join(os.getcwd(), "workspace")
+WORKSPACE_DIR = os.environ.get(
+    "NOVEL_BUILDER_WORKSPACE",
+    os.path.join(os.getcwd(), "workspace"),
+)
 ALLOWED_EXTENSIONS = {".yaml", ".yml", ".txt", ".md"}
 CONFIG_FILE = "web_config.json"
 CONSULT_CACHE_FILE = "consult_cache.json"
