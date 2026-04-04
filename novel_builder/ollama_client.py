@@ -34,6 +34,7 @@ def ensure_model_available(host, model, emit_callback=None):
         emit_callback: Optional callable(event_type, **kwargs).
     """
     def _log(msg, level="info"):
+        print(f"  {msg}")
         if emit_callback:
             try:
                 emit_callback("log", message=msg, level=level)
@@ -125,6 +126,7 @@ def check_coexist_models(host, gen_model, sum_model, emit_callback=None):
         True if models can coexist, False if they should be swapped.
     """
     def _log(msg, level="info"):
+        print(f"  {msg}")
         if emit_callback:
             try:
                 emit_callback("log", message=msg, level=level)
