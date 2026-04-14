@@ -1,0 +1,15 @@
+services:
+  novel-builder:
+    build: .
+    image: ghcr.io/bradbrownjr/novel-builder:latest
+    container_name: novel-builder
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - novel-builder-workspace:/app/workspace
+    environment:
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+
+volumes:
+  novel-builder-workspace:
