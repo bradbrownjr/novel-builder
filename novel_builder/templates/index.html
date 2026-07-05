@@ -902,6 +902,26 @@ textarea {
         </div>
       </div>
     </div>
+    <div class="form-row">
+      <div class="form-group" style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:.5rem;">
+        <div>
+          <label for="cfg-temperature">Temperature</label>
+          <input type="number" id="cfg-temperature" min="0" max="2" step="0.05" value="0.9" title="Sampling temperature for scene generation. Higher = more varied/creative, lower = more predictable.">
+        </div>
+        <div>
+          <label for="cfg-top-p">Top P</label>
+          <input type="number" id="cfg-top-p" min="0" max="1" step="0.01" value="0.95" title="Nucleus sampling threshold. Lower values narrow the model to more likely tokens.">
+        </div>
+        <div>
+          <label for="cfg-repeat-penalty">Repeat Penalty</label>
+          <input type="number" id="cfg-repeat-penalty" min="1" max="2" step="0.01" value="1.15" title="Penalizes repeated tokens. Higher values reduce repetition but can hurt natural phrasing if pushed too far.">
+        </div>
+        <div>
+          <label for="cfg-presence-penalty">Presence Penalty</label>
+          <input type="number" id="cfg-presence-penalty" min="0" max="2" step="0.05" value="0.2" title="Penalizes tokens already used anywhere in the output, encouraging vocabulary variety.">
+        </div>
+      </div>
+    </div>
     <button class="btn btn-sm" onclick="saveConfig()">Save Config</button>
   </div>
 
@@ -1379,12 +1399,14 @@ textarea {
     <div style="display:flex;gap:.75rem;margin-bottom:.5rem;">
       <button class="btn btn-sm btn-primary" id="ta-tab-words" onclick="taShowTab('words')">Words</button>
       <button class="btn btn-sm" id="ta-tab-phrases" onclick="taShowTab('phrases')">Phrases</button>
+      <button class="btn btn-sm" id="ta-tab-rhythm" onclick="taShowTab('rhythm')">Rhythm</button>
     </div>
     <div style="overflow-y:auto;flex:1;min-height:0;">
       <table style="width:100%;border-collapse:collapse;font-size:.85rem;" id="ta-table">
         <thead><tr><th style="text-align:left;padding:.35rem .5rem;border-bottom:1px solid var(--border);">#</th><th style="text-align:left;padding:.35rem .5rem;border-bottom:1px solid var(--border);">Term</th><th style="text-align:right;padding:.35rem .5rem;border-bottom:1px solid var(--border);">Count</th></tr></thead>
         <tbody id="ta-tbody"></tbody>
       </table>
+      <div id="ta-rhythm" style="display:none;font-size:.85rem;"></div>
     </div>
   </div>
 </div>
@@ -1484,6 +1506,10 @@ function loadConfigIntoForm(cfg) {
   document.getElementById('cfg-timeout').value = cfg.timeout || 900;
   document.getElementById('cfg-gen-ctx').value = cfg.generation_num_ctx || 8192;
   document.getElementById('cfg-consult-ctx').value = cfg.consult_num_ctx || 32768;
+  document.getElementById('cfg-temperature').value = cfg.temperature ?? 0.9;
+  document.getElementById('cfg-top-p').value = cfg.top_p ?? 0.95;
+  document.getElementById('cfg-repeat-penalty').value = cfg.repeat_penalty ?? 1.15;
+  document.getElementById('cfg-presence-penalty').value = cfg.presence_penalty ?? 0.2;
   // TTS fields
   document.getElementById('cfg-tts-host').value = cfg.tts_host || '';
   document.getElementById('cfg-tts-narrator-voice').value = cfg.tts_narrator_voice || '';
@@ -1508,7 +1534,15 @@ async function saveConfig() {
     timeout: parseInt(document.getElementById('cfg-timeout').value) || 900,
     generation_num_ctx: parseInt(document.getElementById('cfg-gen-ctx').value) || 8192,
     consult_num_ctx: parseInt(document.getElementById('cfg-consult-ctx').value) || 32768,
+    temperature: parseFloat(document.getElementById('cfg-temperature').value),
+    top_p: parseFloat(document.getElementById('cfg-top-p').value),
+    repeat_penalty: parseFloat(document.getElementById('cfg-repeat-penalty').value),
+    presence_penalty: parseFloat(document.getElementById('cfg-presence-penalty').value),
   };
+  if (isNaN(cfg.temperature)) cfg.temperature = 0.9;
+  if (isNaN(cfg.top_p)) cfg.top_p = 0.95;
+  if (isNaN(cfg.repeat_penalty)) cfg.repeat_penalty = 1.15;
+  if (isNaN(cfg.presence_penalty)) cfg.presence_penalty = 0.2;
   const r = await apiPost('/api/config', cfg);
   if (r && r.ok) { toast('Config saved', 'ok'); checkOllamaHealth(); }
   else toast('Failed to save config', 'error');
@@ -5156,11 +5190,40 @@ function closeTextAnalysis() {
   document.getElementById('modal-text-analysis').classList.remove('show');
 }
 
+const _TA_RHYTHM_LABELS = [
+  ['sentence_length_mean', 'Avg. sentence length (words)'],
+  ['sentence_length_stdev', 'Sentence length variance (higher = more natural rhythm)'],
+  ['paragraph_length_mean', 'Avg. paragraph length (words)'],
+  ['paragraph_length_stdev', 'Paragraph length variance'],
+  ['dialogue_word_ratio', 'Dialogue share of words (0-1)'],
+  ['adverb_per_1000_words', 'Adverbs ("-ly") per 1,000 words'],
+  ['emdash_per_1000_words', 'Em-dashes per 1,000 words'],
+];
+
 function taShowTab(tab) {
   _taActiveTab = tab;
   document.getElementById('ta-tab-words').className = 'btn btn-sm' + (tab === 'words' ? ' btn-primary' : '');
   document.getElementById('ta-tab-phrases').className = 'btn btn-sm' + (tab === 'phrases' ? ' btn-primary' : '');
+  document.getElementById('ta-tab-rhythm').className = 'btn btn-sm' + (tab === 'rhythm' ? ' btn-primary' : '');
+  const table = document.getElementById('ta-table');
+  const rhythmDiv = document.getElementById('ta-rhythm');
   if (!_taData) return;
+
+  if (tab === 'rhythm') {
+    table.style.display = 'none';
+    rhythmDiv.style.display = 'block';
+    const rhythm = _taData.rhythm || {};
+    const rows = _TA_RHYTHM_LABELS.map(([key, label]) => {
+      const val = rhythm[key];
+      return '<tr><td style="padding:.35rem .5rem;color:var(--text-dim);">' + label + '</td>' +
+        '<td style="padding:.35rem .5rem;text-align:right;font-variant-numeric:tabular-nums;">' +
+        (val === undefined ? '-' : val) + '</td></tr>';
+    });
+    rhythmDiv.innerHTML = '<table style="width:100%;border-collapse:collapse;">' + rows.join('') + '</table>';
+    return;
+  }
+  table.style.display = '';
+  rhythmDiv.style.display = 'none';
 
   const tbody = document.getElementById('ta-tbody');
   const items = tab === 'words' ? _taData.words : _taData.phrases;

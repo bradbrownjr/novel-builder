@@ -550,24 +550,21 @@ def _merge_used_imagery(memory, raw_imagery, scene_id, setting_id,
         if any(e.get("detail", "").lower() == phrase_lower for e in imagery_list):
             continue
 
-        # Fuzzy-dedup within the same scope: if a new phrase shares any
-        # significant content word with an existing entry for the same
-        # (scope_type, scope_id), treat it as a concept variant and skip it.
-        # This prevents "scent of cedar", "cedar aroma", "cedar-scented air"
-        # from accumulating as separate entries for the same location.
+        # Fuzzy-dedup within the same scope: if a new phrase is a close
+        # variant of an existing entry for the same (scope_type, scope_id),
+        # skip it. Uses the same Jaccard threshold as action/commitment
+        # dedup (_is_near_duplicate) so "scent of cedar" still blocks
+        # "cedar-scented air", but a single shared word (e.g. both entries
+        # merely mentioning "light") no longer wrongly blocks unrelated
+        # imagery from ever being recorded for that scope.
         if scope_type in ("setting", "character") and scope_id:
-            new_words = _dedup_words(phrase)
-            if new_words:  # skip check for very short / stop-word-only phrases
-                scope_entries = [
-                    e for e in imagery_list
-                    if e.get("scope_type") == scope_type
-                    and e.get("scope_id") == scope_id
-                ]
-                if any(
-                    len(new_words & _dedup_words(e.get("detail", ""))) >= 1
-                    for e in scope_entries
-                ):
-                    continue
+            scope_entries = [
+                e for e in imagery_list
+                if e.get("scope_type") == scope_type
+                and e.get("scope_id") == scope_id
+            ]
+            if _is_near_duplicate(phrase, scope_entries):
+                continue
 
         imagery_list.append({
             "scene": scene_id,
@@ -771,6 +768,73 @@ def get_used_imagery(state, setting_id=None, char_ids=None):
         "characters": char_phrases,
         "global": global_phrases,
     }
+
+
+_MAX_SCENE_BOUNDARIES = 8  # rolling window of recent scene openings/closings
+
+
+def _first_sentence(text):
+    """Return the first sentence (or leading clause) of a scene, for
+    repetition tracking. Word-frequency and imagery tracking already catch
+    repeated phrases/vocabulary, but not structural repetition like always
+    opening a scene on waking up or a weather description.
+    """
+    text = text.strip()
+    if not text:
+        return ""
+    match = re.search(r"^.{1,160}?[.!?](?=\s|$)", text, re.DOTALL)
+    if match:
+        return match.group(0).strip()
+    return text[:160].strip()
+
+
+def _last_sentence(text):
+    """Return the last sentence (or trailing clause) of a scene, for
+    repetition tracking (e.g. always closing on a portentous one-liner).
+    """
+    text = text.strip()
+    if not text:
+        return ""
+    ends = list(re.finditer(r"[.!?](?=\s|$)", text))
+    if len(ends) >= 2:
+        return text[ends[-2].end():].strip()
+    return text[-160:].strip()
+
+
+def update_scene_boundaries(state, scene_id, scene_text):
+    """Record a scene's opening and closing sentence in a rolling window.
+
+    Used by build_scene_prompt() to nudge the model away from repeating the
+    same scene-start/scene-end move (waking up, weather, a portentous
+    one-liner) across consecutive scenes.
+
+    Args:
+        state: Checkpoint state dict (mutated).
+        scene_id: Scene ID string.
+        scene_text: Cleaned generated scene text.
+    """
+    opening = _first_sentence(scene_text)
+    closing = _last_sentence(scene_text)
+    if not opening and not closing:
+        return
+    boundaries = state.setdefault("scene_boundaries", [])
+    boundaries.append({"scene": str(scene_id), "opening": opening, "closing": closing})
+    if len(boundaries) > _MAX_SCENE_BOUNDARIES:
+        state["scene_boundaries"] = boundaries[-_MAX_SCENE_BOUNDARIES:]
+
+
+def get_recent_scene_boundaries(state, limit=5):
+    """Return the most recent scene opening/closing sentences.
+
+    Args:
+        state: Checkpoint state dict.
+        limit: Maximum number of recent scenes to return.
+
+    Returns:
+        List of {"scene", "opening", "closing"} dicts, oldest first.
+    """
+    boundaries = state.get("scene_boundaries", [])
+    return boundaries[-limit:]
 
 
 _WORD_FREQ_WINDOW = 15  # only consider word counts from the last N scenes

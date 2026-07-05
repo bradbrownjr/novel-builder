@@ -90,6 +90,35 @@ def parse_args(argv=None):
         help="Ollama request timeout in seconds (default: 900).",
     )
 
+    # --- Sampling ---
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.9,
+        help="Sampling temperature for scene generation (default: 0.9).",
+    )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=0.95,
+        dest="top_p",
+        help="Nucleus sampling top-p for scene generation (default: 0.95).",
+    )
+    parser.add_argument(
+        "--repeat-penalty",
+        type=float,
+        default=1.15,
+        dest="repeat_penalty",
+        help="Repeat penalty for scene generation (default: 1.15).",
+    )
+    parser.add_argument(
+        "--presence-penalty",
+        type=float,
+        default=0.2,
+        dest="presence_penalty",
+        help="Presence penalty for scene generation (default: 0.2).",
+    )
+
     # --- Selective generation ---
     parser.add_argument(
         "--chapter",

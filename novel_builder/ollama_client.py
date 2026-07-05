@@ -11,6 +11,53 @@ class OllamaError(Exception):
     pass
 
 
+def estimate_prompt_tokens(system_prompt, user_prompt):
+    """Rough token estimate for a system+user prompt pair.
+
+    Uses the standard ~4-chars-per-token heuristic for English prose. This
+    can't match the model's actual tokenizer exactly, but it's good enough
+    to catch gross context overflow before it happens.
+    """
+    total_chars = len(system_prompt or "") + len(user_prompt or "")
+    return total_chars // 4
+
+
+def check_context_budget(system_prompt, user_prompt, num_ctx,
+                         emit_callback=None, scene_label=""):
+    """Warn when an estimated prompt is close to or over num_ctx.
+
+    Ollama silently truncates prompts that exceed num_ctx, and it truncates
+    from the FRONT of the combined prompt -- which drops the system prompt
+    (content policy, character roster, anti-patterns, POV) first, the worst
+    possible content to lose. This is a heuristic early warning, not an
+    exact check.
+
+    Args:
+        system_prompt: The system prompt string.
+        user_prompt: The user (scene) prompt string.
+        num_ctx: Configured context window size.
+        emit_callback: Optional callable(event_type, **kwargs) for log events.
+        scene_label: Optional label (e.g. "Scene 2.3") for the warning message.
+    """
+    estimated = estimate_prompt_tokens(system_prompt, user_prompt)
+    threshold = int(num_ctx * 0.9)
+    if estimated < threshold:
+        return
+    label = f"{scene_label}: " if scene_label else ""
+    message = (
+        f"{label}estimated prompt size (~{estimated} tokens) is close to or "
+        f"over num_ctx ({num_ctx}). Ollama truncates overflowing prompts "
+        f"from the front, dropping the system prompt first. Consider "
+        f"raising the context window or trimming story-so-far/memory."
+    )
+    print(f"    WARNING: {message}")
+    if emit_callback:
+        try:
+            emit_callback("log", message=f"[Context] {message}", level="warn")
+        except Exception:
+            pass
+
+
 class _OllamaWatchdog:
     """Monitor Ollama model liveness during generation via /api/ps polling.
 
@@ -199,7 +246,8 @@ class _OllamaWatchdog:
 
 def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
                 temperature=0.9, num_ctx=12288, emit_callback=None,
-                model_role="generation"):
+                model_role="generation", top_p=0.95, repeat_penalty=1.15,
+                presence_penalty=0.2):
     """Make a single streaming call to the Ollama /api/generate endpoint.
 
     Uses stream=True with no read timeout to prevent false timeouts on
@@ -218,6 +266,9 @@ def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
         num_ctx: Context window size.
         emit_callback: Optional callable(event_type, **kwargs) for
             progress/log events (forwarded to the watchdog).
+        top_p: Nucleus sampling threshold.
+        repeat_penalty: Penalty applied to repeated tokens.
+        presence_penalty: Penalty applied to tokens already present.
 
     Returns:
         Generated text string.
@@ -236,9 +287,9 @@ def call_ollama(host, model, system_prompt, user_prompt, timeout=900,
         "options": {
             "num_ctx": num_ctx,
             "temperature": temperature,
-            "top_p": 0.95,
-            "presence_penalty": 0.2,
-            "repeat_penalty": 1.15,
+            "top_p": top_p,
+            "presence_penalty": presence_penalty,
+            "repeat_penalty": repeat_penalty,
         },
     }
 
@@ -359,7 +410,8 @@ def unload_model(host, model, emit_callback=None):
 def call_ollama_with_retry(host, model, system_prompt, user_prompt,
                            timeout=900, retries=5, temperature=0.9,
                            num_ctx=12288, emit_callback=None,
-                           model_role="generation"):
+                           model_role="generation", top_p=0.95,
+                           repeat_penalty=1.15, presence_penalty=0.2):
     """Call Ollama with exponential backoff retry logic.
 
     Args:
@@ -372,6 +424,9 @@ def call_ollama_with_retry(host, model, system_prompt, user_prompt,
         temperature: Sampling temperature.
         num_ctx: Context window size.
         emit_callback: Optional callable(event_type, **kwargs) for progress logging.
+        top_p: Nucleus sampling threshold.
+        repeat_penalty: Penalty applied to repeated tokens.
+        presence_penalty: Penalty applied to tokens already present.
 
     Returns:
         Generated text string.
@@ -392,6 +447,8 @@ def call_ollama_with_retry(host, model, system_prompt, user_prompt,
                 host, model, system_prompt, user_prompt,
                 timeout=timeout, temperature=temperature, num_ctx=num_ctx,
                 emit_callback=_emit_callback, model_role=model_role,
+                top_p=top_p, repeat_penalty=repeat_penalty,
+                presence_penalty=presence_penalty,
             )
             return result
         except OllamaError as e:
@@ -574,9 +631,8 @@ def _parse_summary_response(text):
                 extraction["commitments"].append(content)
             current_section = "commitments"
         elif upper.startswith("USED_IMAGERY:") or upper.startswith("USED IMAGERY:"):
-            content = line.split(":", 1)[1].strip() if ":" in line[13:] else line[13:].strip()
-            # Re-parse: the header is "USED_IMAGERY:" and the content may
-            # itself contain "subject: phrase" so split carefully.
+            # The header is "USED_IMAGERY:" and the content may itself
+            # contain "subject: phrase", so strip only the header prefix.
             content = line[len("USED_IMAGERY:"):].strip() if upper.startswith("USED_IMAGERY:") else line[len("USED IMAGERY:"):].strip()
             if content.upper() != "NONE" and content:
                 extraction["used_imagery"].append(content)

@@ -14,7 +14,13 @@ import traceback
 
 from .characters import auto_detect_characters, load_characters
 from .locations import load_locations
-from .ollama_client import call_ollama_with_retry, call_summary_model, OllamaError, unload_model
+from .ollama_client import (
+    call_ollama_with_retry,
+    call_summary_model,
+    check_context_budget,
+    OllamaError,
+    unload_model,
+)
 from .postprocess import clean_scene_text, apply_anti_patterns, strip_scene_header
 from .prompt_builder import build_system_prompt, build_scene_prompt
 from .state import (
@@ -23,6 +29,7 @@ from .state import (
     save_checkpoint,
     should_resume,
     update_after_scene,
+    update_scene_boundaries,
     update_word_frequency,
     resumption_point,
     should_compress,
@@ -251,6 +258,11 @@ def _run_generation(config, args, event_callback=None):
                 raise
 
             # Call generation model
+            _gen_num_ctx = getattr(args, 'num_ctx', 8192)
+            check_context_budget(
+                system_prompt, user_prompt, _gen_num_ctx,
+                emit_callback=emit, scene_label=f"Scene {scene_num}",
+            )
             emit("model_active", model="generation", name=args.model)
             _scene_gen_t0 = time.time()
             try:
@@ -261,7 +273,11 @@ def _run_generation(config, args, event_callback=None):
                     user_prompt,
                     timeout=args.timeout,
                     retries=args.retries,
-                    num_ctx=getattr(args, 'num_ctx', 8192),
+                    num_ctx=_gen_num_ctx,
+                    temperature=getattr(args, 'temperature', 0.9),
+                    top_p=getattr(args, 'top_p', 0.95),
+                    repeat_penalty=getattr(args, 'repeat_penalty', 1.15),
+                    presence_penalty=getattr(args, 'presence_penalty', 0.2),
                     emit_callback=emit,
                 )
             except OllamaError as e:
@@ -292,6 +308,40 @@ def _run_generation(config, args, event_callback=None):
                     + "; ".join(f'"{m}" (line {ln})' for _, m, ln in warnings[:3])
                 ), level="warn")
 
+            # One rewrite attempt when a scene trips too many anti-patterns.
+            # Only keeps the rewrite if it actually reduces the count --
+            # otherwise the original draft is kept rather than looping.
+            if len(warnings) >= _ANTI_PATTERN_REGEN_THRESHOLD:
+                emit("log", message=(
+                    f"Scene {scene_num}: {len(warnings)} anti-pattern warnings "
+                    f"(>= {_ANTI_PATTERN_REGEN_THRESHOLD}) -- attempting one "
+                    f"rewrite pass."
+                ), level="warn")
+                new_text, new_count = _rewrite_for_anti_patterns(
+                    args.host, args.model, system_prompt, user_prompt,
+                    warnings, config.get("anti_patterns"),
+                    args.timeout, args.retries, _gen_num_ctx,
+                    dict(
+                        temperature=getattr(args, 'temperature', 0.9),
+                        top_p=getattr(args, 'top_p', 0.95),
+                        repeat_penalty=getattr(args, 'repeat_penalty', 1.15),
+                        presence_penalty=getattr(args, 'presence_penalty', 0.2),
+                    ),
+                    emit, scene_num,
+                )
+                if new_text is not None and new_count < len(warnings):
+                    emit("log", message=(
+                        f"Scene {scene_num}: rewrite reduced anti-pattern "
+                        f"warnings {len(warnings)} -> {new_count}. Using "
+                        f"rewritten version."
+                    ), level="info")
+                    text = new_text
+                else:
+                    emit("log", message=(
+                        f"Scene {scene_num}: rewrite did not reduce "
+                        f"anti-pattern warnings -- keeping original draft."
+                    ), level="warn")
+
             # Write to file
             _write_scene(output_file, scene_num, scene_title, text)
 
@@ -301,6 +351,7 @@ def _run_generation(config, args, event_callback=None):
 
             # Track sensory/atmospheric word frequency for variety nudges
             update_word_frequency(state, text)
+            update_scene_boundaries(state, scene_num, text)
 
             # Summarize scene
             summary = ""
@@ -550,6 +601,68 @@ def _print_scene(text):
     print("─" * 40)
 
 
+# Warning count at or above which a scene gets one rewrite attempt.
+_ANTI_PATTERN_REGEN_THRESHOLD = 3
+
+
+def _rewrite_for_anti_patterns(host, model, system_prompt, user_prompt,
+                               warnings, anti_patterns, timeout, retries,
+                               num_ctx, sampling_kwargs, emit_callback,
+                               scene_num):
+    """Ask the model for one rewrite pass when a scene trips too many
+    anti-patterns, naming the exact offending phrases so it doesn't just
+    repeat them with minor edits.
+
+    This is a single best-effort attempt, not a loop -- if the rewrite
+    doesn't actually reduce the warning count, the caller keeps the
+    original draft rather than regenerating indefinitely.
+
+    Args:
+        host, model: Ollama connection details.
+        system_prompt: The scene's system prompt (unchanged).
+        user_prompt: The scene's original user prompt.
+        warnings: List of (pattern, match_text, line_number) from the
+            first apply_anti_patterns() pass.
+        anti_patterns: Story's configured anti_patterns list (for the
+            recheck pass).
+        timeout, retries, num_ctx: Passed through to the Ollama call.
+        sampling_kwargs: Dict of temperature/top_p/repeat_penalty/
+            presence_penalty to pass through.
+        emit_callback: Event emitter for logging.
+        scene_num: Scene number, for header stripping and log labels.
+
+    Returns:
+        Tuple of (new_text, new_warning_count), or (None, None) if the
+        rewrite call itself failed.
+    """
+    offending = sorted({match for _, match, _ in warnings})
+    phrase_list = "; ".join(f'"{p}"' for p in offending[:10])
+    rewrite_prompt = (
+        f"{user_prompt}\n\n"
+        "REWRITE REQUIRED: Your previous draft of this scene relied on "
+        f"these overused AI phrases: {phrase_list}. Write the ENTIRE scene "
+        "again from scratch, covering the same events, but replace every "
+        "one of those phrases with fresh, specific language. Rewrite the "
+        "surrounding sentence naturally rather than swapping in a synonym."
+    )
+    try:
+        raw_text = call_ollama_with_retry(
+            host, model, system_prompt, rewrite_prompt,
+            timeout=timeout, retries=retries, num_ctx=num_ctx,
+            emit_callback=emit_callback, **sampling_kwargs,
+        )
+    except OllamaError as e:
+        emit_callback("log", message=(
+            f"Scene {scene_num}: anti-pattern rewrite attempt failed -- {e}"
+        ), level="warn")
+        return None, None
+
+    new_text = clean_scene_text(raw_text)
+    new_text = strip_scene_header(new_text, scene_num)
+    _, new_warnings = apply_anti_patterns(new_text, anti_patterns)
+    return new_text, len(new_warnings)
+
+
 # ===================================================================
 #  Scene / chapter regeneration
 # ===================================================================
@@ -671,13 +784,23 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
         return {"ok": False, "error": f"Prompt build failed: {e}"}
 
     # Call LLM
+    _gen_num_ctx = getattr(args, 'num_ctx', 8192)
+    check_context_budget(
+        system_prompt, user_prompt, _gen_num_ctx,
+        emit_callback=emit if event_callback else None,
+        scene_label=f"Scene {scene_id} (regen)",
+    )
     emit("model_active", model="generation", name=args.model)
     emit("log", message=f"Regenerating Scene {scene_id}…", level="info")
     try:
         raw_text = call_ollama_with_retry(
             args.host, args.model, system_prompt, user_prompt,
             timeout=args.timeout, retries=args.retries,
-            num_ctx=getattr(args, 'num_ctx', 8192),
+            num_ctx=_gen_num_ctx,
+            temperature=getattr(args, 'temperature', 0.9),
+            top_p=getattr(args, 'top_p', 0.95),
+            repeat_penalty=getattr(args, 'repeat_penalty', 1.15),
+            presence_penalty=getattr(args, 'presence_penalty', 0.2),
             emit_callback=emit if event_callback else None,
         )
     except OllamaError as e:
@@ -737,6 +860,7 @@ def regenerate_scene(config, args, scene_id, event_callback=None):
 
     # Track sensory/atmospheric word frequency for variety nudges
     update_word_frequency(state, text)
+    update_scene_boundaries(state, scene_id, text)
 
     # Update checkpoint — clear stale memory for this scene, then re-merge fresh extraction
     from .state import _merge_story_memory, _sanitize_story_memory, _clear_scene_memory, _MAX_RECENT_SCENES

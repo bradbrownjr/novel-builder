@@ -16,7 +16,12 @@ from .characters import (
     should_include_secret,
 )
 from .locations import resolve_location, format_location_for_prompt
-from .state import get_relevant_memory, get_used_imagery, get_overused_words
+from .state import (
+    get_overused_words,
+    get_recent_scene_boundaries,
+    get_relevant_memory,
+    get_used_imagery,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +242,12 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
         extra_raw = [p.strip() for p in extra_raw.replace(",", "\n").split("\n") if p.strip()]
     user_patterns.extend(extra_raw)
     merged = _merge_anti_patterns(user_patterns if user_patterns else None)
-    patterns_str = "; ".join(merged[:20])  # Cap list size for token budget
+    # Cap generously -- large enough that the 25 built-in defaults plus a
+    # realistic set of author-added patterns always fit. Previously capped
+    # at 20, which silently dropped the last 5 built-in defaults AND every
+    # user-defined anti_pattern / preset extra_anti_pattern (they're
+    # appended after the defaults in _merge_anti_patterns).
+    patterns_str = "; ".join(merged[:60])
     parts.append(
         f"\nIMPORTANT — Avoid these overused phrases and patterns: "
         f"{patterns_str}. "
@@ -594,6 +604,9 @@ def build_scene_prompt(config, chapter, scene, state, heritage_defs,
 
     # -- Overused word nudge (sensory/atmospheric variety) --
     _inject_word_variety_nudge(parts, state)
+
+    # -- Scene opening/closing variety (structural repetition) --
+    _inject_scene_boundary_nudge(parts, state)
 
     # -- Story so far (condensed) --
     story_so_far = state.get("story_so_far", "")
@@ -1058,5 +1071,32 @@ def _inject_word_variety_nudge(parts, state):
         word_list = ", ".join(f"{w} ({n}x)" for w, n in chunk)
         lines.append(f"  {label}: {word_list}")
         total += len(chunk)
+
+    parts.append("\n".join(lines))
+
+
+def _inject_scene_boundary_nudge(parts, state):
+    """Inject a reminder of how recent scenes opened and closed.
+
+    Word-frequency and imagery suppression catch repeated vocabulary and
+    descriptive phrases, but not structural repetition -- e.g. every scene
+    opening on waking up or a weather description, or every scene closing
+    on a portentous one-liner. This surfaces the last few scenes' opening
+    and closing sentences so the model picks a different move.
+    """
+    recent = get_recent_scene_boundaries(state, limit=5)
+    if not recent:
+        return
+
+    lines = [
+        "\nSCENE VARIETY — recent scenes opened and closed with the lines "
+        "below. Start and end THIS scene differently -- do not repeat these "
+        "moves (e.g. waking up, weather, a portentous closing line):"
+    ]
+    for entry in recent:
+        if entry.get("opening"):
+            lines.append(f"  Opened: \"{entry['opening']}\"")
+        if entry.get("closing"):
+            lines.append(f"  Closed: \"{entry['closing']}\"")
 
     parts.append("\n".join(lines))

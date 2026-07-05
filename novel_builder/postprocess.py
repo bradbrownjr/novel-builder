@@ -3,7 +3,35 @@
 import re
 
 
-# Default anti-patterns — overused AI prose markers
+# Invisible/control characters models occasionally emit: zero-width
+# space/joiner/non-joiner, BOM, soft hyphen, word joiner, bidi override and
+# isolate marks. These are undetectable to a casual reader but show up in
+# plagiarism/AI-detection tooling and can corrupt TTS/text processing.
+# Written as explicit \uXXXX escapes rather than literal characters so the
+# source stays readable and unambiguous.
+_INVISIBLE_CHARS_RE = re.compile(
+    "[\u200b\u200c\u200d\u200e\u200f\u2060\ufeff\u00ad"
+    "\u202a\u202b\u202c\u202d\u202e"
+    "\u2066\u2067\u2068\u2069]"
+)
+
+# Emoji / pictographic ranges -- forbidden by the system prompt, but stripped
+# here as a backstop in case a model emits one anyway.
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F000-\U0001FAFF"  # mahjong..symbols & pictographs extended-A
+    "\U00002600-\U000027BF"  # misc symbols & dingbats
+    "\U0001F1E6-\U0001F1FF"  # regional indicators (flag letters)
+    "\uFE0F"                  # variation selector-16 (emoji presentation)
+    "]+"
+)
+
+# Default anti-patterns — overused AI prose markers.
+# Kept in sync with _DEFAULT_PROMPT_ANTI_PATTERNS in prompt_builder.py so
+# detection coverage matches what the model is told to avoid. A few prompt
+# entries (purple prose, excessive em-dashes, redundant adverbs) aren't
+# literal phrases and have no regex equivalent here -- those stay
+# prompt-only.
 _DEFAULT_ANTI_PATTERNS = [
     r"\bdelve\b",
     r"\btapestry\b",
@@ -16,8 +44,23 @@ _DEFAULT_ANTI_PATTERNS = [
     r"\blittle did (?:they|he|she|I) know\b",
     r"\btime seemed to (?:stop|stand still|slow)\b",
     r"\bin that moment\b",
-    r"\bsent (?:a )?shivers? down\b",
+    r"\b(?:sent (?:a )?shivers?|a chill ran) down\b",
     r"\bpalpable tension\b",
+    r"\bcleared (?:his|her|their|my)?\s*throat\b",
+    r"\bcouldn'?t quite\b",
+    r"\bdust motes?\b",
+    r"\bgrime[- ]coated\b",
+    r"\bsomething else entirely\b",
+    r"\bcouldn'?t help but\b",
+    r"\bseemed to\b",
+    r"\bappeared to\b",
+    r"\ba (?:mixture|mix) of\b",
+    r"\blet out a (?:breath|sigh|laugh)\b",
+    r"\bfound (?:himself|herself|themselves|myself)\b",
+    r"\bhung (?:in the air|between them)\b",
+    r"\bfilled the (?:room|space)\b",
+    r"\ba sense of\b",
+    r"\bthe sound of\b",
 ]
 
 
@@ -41,9 +84,29 @@ def clean_scene_text(text):
     # Remove leading/trailing whitespace
     text = text.strip()
 
-    # Fix double em-dashes (some models output ———— or -- instead of —)
-    text = re.sub(r"—{2,}", "—", text)
-    text = re.sub(r"(?<!\-)--(?!\-)", "—", text)
+    # Strip invisible/control characters and emoji some models emit despite
+    # the system prompt forbidding them -- undetectable to a casual read but
+    # a known tell for AI-detection tooling.
+    text = _INVISIBLE_CHARS_RE.sub("", text)
+    text = _EMOJI_RE.sub("", text)
+    text = text.replace(" ", " ")  # non-breaking space -> regular space
+    text = re.sub(r"[ \t]{2,}", " ", text)  # collapse gaps left by removals
+
+    # Normalize all quote marks to a single consistent style (straight
+    # ASCII). Models frequently mix curly and straight quotes within the
+    # same document -- that inconsistency itself reads as a machine tell.
+    text = text.replace("“", '"').replace("”", '"')
+    text = text.replace("‘", "'").replace("’", "'")
+
+    # Em-dashes are a well-known AI prose tell. Convert them (and the "--"
+    # some models type to mean an em-dash) into commas so pauses/asides read
+    # as natural punctuation instead of the machine-generated tic. Numeric
+    # ranges (e.g. "1990—2010") keep a plain hyphen since a comma there
+    # would change the meaning.
+    text = re.sub(r"—{2,}", "—", text)  # collapse doubled em-dashes first
+    text = re.sub(r"(?<=\d)\s*—\s*(?=\d)", "-", text)
+    text = re.sub(r"\s*—\s*", ", ", text)
+    text = re.sub(r"\s*-{2,}\s*", ", ", text)
 
     # Collapse triple+ newlines into double
     text = re.sub(r"\n{3,}", "\n\n", text)

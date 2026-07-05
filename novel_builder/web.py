@@ -641,6 +641,11 @@ def _load_web_config():
         "summary_model": "gemma3:4b",
         "retries": 3,
         "timeout": 900,
+        # Sampling (scene generation only)
+        "temperature": 0.9,
+        "top_p": 0.95,
+        "repeat_penalty": 1.15,
+        "presence_penalty": 0.2,
         # TTS (Speaches / Kokoro / Piper)
         "tts_host": "",
         "tts_model": "",
@@ -697,13 +702,28 @@ def _event_callback(event_type, data):
     state.emit(event_type, data)
 
 
-def _start_generation(web_config):
-    """Start story generation in a background thread."""
-    _lazy_imports()
+def _build_generation_args_and_config(web_config, **extra_args):
+    """Build the args namespace and loaded story config shared by every
+    entry point that calls into story_processor (initial generation,
+    scene/chapter regeneration).
 
-    if state._thread is not None and state._thread.is_alive():
-        return False, "Generation already running"
+    Centralizing this avoids the two code paths drifting out of sync --
+    that's exactly how scene/chapter regeneration lost its TTS voice
+    tagging and prompt-override support after being reimplemented
+    separately from _start_generation.
 
+    Args:
+        web_config: Saved web configuration dict.
+        **extra_args: Additional fields to set on the args namespace
+            (e.g. quiet, resume, restart, dry_run, chapter, scene) --
+            merged in after the shared defaults below.
+
+    Returns:
+        Tuple of (args, config).
+
+    Raises:
+        ValueError: If required files are missing or config fails to load.
+    """
     _ensure_workspace()
 
     # Build args namespace matching what CLI produces
@@ -714,13 +734,11 @@ def _start_generation(web_config):
         retries=int(web_config.get("retries", 3)),
         timeout=int(web_config.get("timeout", 900)),
         num_ctx=int(web_config.get("generation_num_ctx", 8192)),
+        temperature=float(web_config.get("temperature", 0.9)),
+        top_p=float(web_config.get("top_p", 0.95)),
+        repeat_penalty=float(web_config.get("repeat_penalty", 1.15)),
+        presence_penalty=float(web_config.get("presence_penalty", 0.2)),
         output=os.path.join(WORKSPACE_DIR, "full_story.md"),
-        quiet=True,  # Web UI handles display
-        resume=web_config.get("resume", False),
-        restart=not web_config.get("resume", False),
-        dry_run=False,
-        chapter=None,
-        scene=None,
         # Always pin checkpoint to workspace so save and load agree
         checkpoint_path=os.path.join(WORKSPACE_DIR, "checkpoint.yaml"),
         # File paths  --  point to workspace
@@ -728,12 +746,14 @@ def _start_generation(web_config):
         characters=os.path.join(WORKSPACE_DIR, FILE_ROLES["characters"]),
         locations=os.path.join(WORKSPACE_DIR, FILE_ROLES["locations"]),
     )
+    for key, value in extra_args.items():
+        setattr(args, key, value)
 
     # Validate required files exist
     if not os.path.exists(args.outline):
-        return False, "Story outline file not uploaded"
+        raise ValueError("Story outline file not uploaded")
     if not os.path.exists(args.characters):
-        return False, "Characters file not uploaded"
+        raise ValueError("Characters file not uploaded")
 
     # Locations are optional  --  set to None if missing
     if not os.path.exists(args.locations):
@@ -753,7 +773,7 @@ def _start_generation(web_config):
     try:
         config = _config_loader(args)
     except Exception as e:
-        return False, f"Failed to load story config: {e}"
+        raise ValueError(f"Failed to load story config: {e}")
 
     # Inject custom style if provided
     if custom_style:
@@ -789,6 +809,29 @@ def _start_generation(web_config):
     merged_voice_map = {**yaml_voices, **saved_voice_map}
     if merged_voice_map:
         config["_tts_voice_map"] = merged_voice_map
+
+    return args, config
+
+
+def _start_generation(web_config):
+    """Start story generation in a background thread."""
+    _lazy_imports()
+
+    if state._thread is not None and state._thread.is_alive():
+        return False, "Generation already running"
+
+    try:
+        args, config = _build_generation_args_and_config(
+            web_config,
+            quiet=True,  # Web UI handles display
+            resume=web_config.get("resume", False),
+            restart=not web_config.get("resume", False),
+            dry_run=False,
+            chapter=None,
+            scene=None,
+        )
+    except ValueError as e:
+        return False, str(e)
 
     # Reset state and start
     state.reset()
@@ -892,6 +935,7 @@ def api_config():
     # Sanitize  --  only accept known keys
     allowed = {"host", "model", "summary_model", "retries", "timeout",
                "generation_num_ctx", "consult_num_ctx",
+               "temperature", "top_p", "repeat_penalty", "presence_penalty",
                "tts_host", "tts_model", "tts_narrator_voice", "tts_voice_map",
                "tts_speed",
                }
@@ -1759,6 +1803,64 @@ def api_stop():
     _story_stopper()
     state.emit("log", {"message": "Stop requested by user", "level": "warn", "time": time.time()})
     return jsonify({"ok": True, "message": "Stop requested"})
+
+
+@app.route("/api/regenerate", methods=["POST"])
+def api_regenerate():
+    """Regenerate a scene or chapter.
+
+    JSON body: { "scene_id": "2.3" } or { "chapter": 3 }
+    Runs in a background thread; progress and the final replaced scene
+    text stream to the UI via the existing SSE connection.
+    """
+    _lazy_imports()
+
+    if state.status == "running":
+        return jsonify({"ok": False, "error": "Generation is currently running -- stop it first."}), 409
+
+    body = request.get_json(force=True) or {}
+    scene_id = body.get("scene_id")
+    chapter_num = body.get("chapter")
+
+    if not scene_id and chapter_num is None:
+        return jsonify({"ok": False, "error": "Provide scene_id or chapter"}), 400
+
+    web_config = _load_web_config()
+    try:
+        args, config = _build_generation_args_and_config(web_config)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+    from .story_processor import regenerate_scene as _regen_scene
+    from .story_processor import regenerate_chapter as _regen_chapter
+
+    state.status = "running"
+    state.emit("status_change", {"status": "running"})
+
+    def worker():
+        try:
+            if chapter_num is not None:
+                result = _regen_chapter(config, args, chapter_num, event_callback=_event_callback)
+            else:
+                result = _regen_scene(config, args, scene_id, event_callback=_event_callback)
+
+            if result.get("ok"):
+                state.emit("log", {"message": "Regeneration complete", "level": "info"})
+                state.emit("status_change", {"status": "idle"})
+            else:
+                state.emit("log", {"message": f"Regeneration failed: {result.get('error', '')}", "level": "error"})
+                state.emit("status_change", {"status": "error", "message": result.get("error", "")})
+        except Exception as e:
+            tb = _traceback.format_exc()
+            state.emit("log", {"message": f"Regeneration error: {type(e).__name__}: {e}\n\n{tb}", "level": "error"})
+            state.emit("status_change", {"status": "error", "message": str(e)})
+        finally:
+            state.status = "idle"
+
+    t = threading.Thread(target=worker, daemon=True, name="novel-regen")
+    t.start()
+
+    return jsonify({"ok": True, "message": "Regeneration started"})
 
 
 @app.route("/api/consult-stop", methods=["POST"])
@@ -4132,6 +4234,74 @@ def _analyze_text(text: str, top_n: int = 80):
     }
 
 
+_SENTENCE_SPLIT_RE = re.compile(r"[^.!?]*[.!?]+(?:\s+|$)")
+_QUOTED_SPAN_RE = re.compile(r'"[^"]*"')
+_ADVERB_RE = re.compile(r"\b[a-z]+ly\b", re.IGNORECASE)
+_EMDASH_DENSITY_RE = re.compile(r"—|--")
+
+
+def _compute_rhythm_metrics(text: str):
+    """Compute prose-rhythm metrics that word/phrase frequency doesn't
+    catch: sentence-length variance ("burstiness"), paragraph-length
+    distribution, dialogue/narration balance, adverb density, and
+    em-dash density. AI prose tends toward uniform sentence length and
+    heavy adverb/em-dash use -- these numbers surface that even when the
+    vocabulary itself looks varied.
+    """
+    import statistics
+
+    clean = _STRIP_HTML_RE.sub(" ", text)
+    clean = _STRIP_MARKER_RE.sub(" ", clean)
+    clean = re.sub(r"^#{1,6}\s.*$", "", clean, flags=re.MULTILINE)
+
+    # Paragraphs: split on blank lines, word-count each non-empty one.
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", clean) if p.strip()]
+    para_word_counts = [len(p.split()) for p in paragraphs]
+
+    # Sentences: naive split on terminal punctuation.
+    sentences = [s.strip() for s in _SENTENCE_SPLIT_RE.findall(clean) if s.strip()]
+    sent_word_counts = [len(s.split()) for s in sentences]
+
+    def _mean_stdev(values):
+        if not values:
+            return 0.0, 0.0
+        mean = statistics.mean(values)
+        stdev = statistics.stdev(values) if len(values) > 1 else 0.0
+        return round(mean, 1), round(stdev, 1)
+
+    sent_mean, sent_stdev = _mean_stdev(sent_word_counts)
+    para_mean, para_stdev = _mean_stdev(para_word_counts)
+
+    total_words = len(clean.split())
+
+    # Dialogue vs narration: words inside quoted spans vs total.
+    dialogue_words = sum(len(m.split()) for m in _QUOTED_SPAN_RE.findall(clean))
+    dialogue_ratio = round(dialogue_words / total_words, 3) if total_words else 0.0
+
+    # Adverb density (words ending "-ly") per 1000 words -- a rough but
+    # standard self-editing heuristic (Hemingway-style).
+    adverb_count = len(_ADVERB_RE.findall(clean))
+    adverb_per_1000 = round(adverb_count / total_words * 1000, 1) if total_words else 0.0
+
+    # Em-dash density per 1000 words. Should trend near zero now that
+    # clean_scene_text() converts em-dashes to commas at generation time --
+    # a nonzero value here usually means older/imported text.
+    emdash_count = len(_EMDASH_DENSITY_RE.findall(clean))
+    emdash_per_1000 = round(emdash_count / total_words * 1000, 1) if total_words else 0.0
+
+    return {
+        "sentence_count": len(sentences),
+        "sentence_length_mean": sent_mean,
+        "sentence_length_stdev": sent_stdev,
+        "paragraph_count": len(paragraphs),
+        "paragraph_length_mean": para_mean,
+        "paragraph_length_stdev": para_stdev,
+        "dialogue_word_ratio": dialogue_ratio,
+        "adverb_per_1000_words": adverb_per_1000,
+        "emdash_per_1000_words": emdash_per_1000,
+    }
+
+
 @app.route("/api/text-analysis")
 def api_text_analysis():
     """Analyze the generated story text for word and phrase frequency."""
@@ -4149,6 +4319,7 @@ def api_text_analysis():
         return jsonify({"ok": False, "error": "Output file is empty."})
 
     result = _analyze_text(text)
+    result["rhythm"] = _compute_rhythm_metrics(text)
     result["ok"] = True
     return jsonify(result)
 

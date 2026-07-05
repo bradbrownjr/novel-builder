@@ -14,6 +14,22 @@ import yaml
 
 
 # ---------------------------------------------------------------------------
+# AI-cliche character names
+# ---------------------------------------------------------------------------
+
+# Names local LLMs reach for disproportionately often. Distinctive enough
+# that a reader who has seen a few AI-written stories will recognize the
+# pattern across an otherwise unrelated cast. Shared with concept.py so the
+# Story Concept Builder avoids generating them in the first place.
+AI_CLICHE_NAMES = {
+    "elara", "elias", "kael", "seraphina", "lyra", "aria", "silas",
+    "thorne", "voss", "isolde", "orin", "maeve", "corvin", "lyric",
+    "zephyr", "elowen", "caspian", "nyx", "aris", "anya", "juniper",
+    "sable", "vesper", "wren", "briar", "rowan", "sage",
+}
+
+
+# ---------------------------------------------------------------------------
 # Result dataclass
 # ---------------------------------------------------------------------------
 
@@ -339,11 +355,22 @@ def validate_characters(data, raw_yaml_str=""):
                 line=_line(idx, base))
             continue
 
-        if not _iget(cdata, "Name", "name"):
+        name = _iget(cdata, "Name", "name")
+        if not name:
             err(f"characters.{cid}.Name",
                 f"Character '{cid}' is missing Name.",
                 "Add: Name: \"Full Name\"",
                 line=_line(idx, base, "Name") or _line(idx, base))
+        else:
+            name_lower = str(name).lower().strip()
+            first_name = name_lower.split()[0] if name_lower else ""
+            if name_lower in AI_CLICHE_NAMES or first_name in AI_CLICHE_NAMES:
+                warn(f"characters.{cid}.Name",
+                     f"Character '{cid}' is named \"{name}\" -- one of the names "
+                     "local LLMs default to disproportionately often. Readers "
+                     "who've seen other AI-written fiction may recognize it.",
+                     "Consider a less statistically common name for this character.",
+                     line=_line(idx, base, "Name") or _line(idx, base))
 
         if not _iget(cdata, "vibe"):
             warn(f"characters.{cid}.vibe",

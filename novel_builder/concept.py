@@ -5,6 +5,8 @@ uses the generation model to produce complete story_outline.yaml,
 characters.yaml, and locations.yaml files ready for Novel Builder.
 """
 
+from .validator import AI_CLICHE_NAMES
+
 
 def build_concept_prompt(user_idea):
     """Build system + user prompts for story concept generation.
@@ -15,6 +17,8 @@ def build_concept_prompt(user_idea):
     Returns:
         Tuple of (system_prompt, user_prompt).
     """
+    banned_names = ", ".join(sorted(n.title() for n in AI_CLICHE_NAMES))
+
     system = """\
 You are a professional fiction architect. Your job is to take a rough story \
 idea and develop it into a complete, structured set of YAML configuration \
@@ -103,6 +107,15 @@ missing funds. She deflects with a story about her mother. He doesn't buy it."
 - Locations need sensory detail, not just adjective lists.
 - Relationships should capture the DYNAMIC, not just "they are friends".
 
+NAMING -- avoid AI-cliche names:
+- Do NOT name any character using any of these names or their obvious \
+variants (they are heavily overused by LLMs and readers will notice the \
+pattern): {banned_names}.
+- Draw names from the story's specific culture, era, and setting instead of \
+defaulting to generic fantasy-fiction names. Vary name origins across the \
+cast the way a real family/community would, rather than giving everyone the \
+same invented-fantasy register.
+
 OUTPUT FORMAT:
 ```
 --- FILE: story_outline.yaml ---
@@ -117,6 +130,8 @@ OUTPUT FORMAT:
 
 Use ONLY this marker format to separate files. Do not add any other markers \
 or commentary between files."""
+
+    system = system.replace("{banned_names}", banned_names)
 
     user = f"""\
 ## Story Idea
