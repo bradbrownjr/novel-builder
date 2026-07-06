@@ -1043,6 +1043,16 @@ textarea {
       <div id="tts-voice-map-entries"></div>
     </div>
 
+    <div class="form-group" style="margin-top:.75rem;">
+      <label style="display:flex; align-items:center; gap:.5rem;">
+        <input type="checkbox" id="cfg-tts-vocalizations" disabled style="width:auto;">
+        Spoken vocalizations (hmm, uh, grunts) in dialogue
+      </label>
+      <div id="tts-vocalizations-cap" style="font-size:.75rem; color:var(--text-dim); padding-left:1.6rem;">
+        Check connection to detect whether your TTS engine supports this.
+      </div>
+    </div>
+
     <div style="display:flex; gap:.5rem; margin-top:.75rem;">
       <button class="btn btn-sm" onclick="checkTTSHealth()">Check Connection</button>
       <button class="btn btn-sm" onclick="saveTTSConfig()">Save TTS Config</button>
@@ -1519,6 +1529,8 @@ function loadConfigIntoForm(cfg) {
     speedSel.value = String(cfg.tts_speed ?? 1.0);
     if (!speedSel.value) speedSel.value = '1'; // fallback if stored value doesn't match any option
   }
+  const vocEl = document.getElementById('cfg-tts-vocalizations');
+  if (vocEl) vocEl.checked = !!cfg.tts_vocalizations;
   tts.host = cfg.tts_host || '';
   tts.model = cfg.tts_model || '';
   tts.narratorVoice = cfg.tts_narrator_voice || '';
@@ -2504,6 +2516,35 @@ const tts = {
 };
 
 /* --- TTS health & model/voice discovery --- */
+async function checkVocalizationCapability() {
+  const box = document.getElementById('cfg-tts-vocalizations');
+  const cap = document.getElementById('tts-vocalizations-cap');
+  if (!box || !cap) return;
+  const host = document.getElementById('cfg-tts-host').value.trim();
+  const model = document.getElementById('cfg-tts-model').value.trim();
+  if (!host) return;
+  cap.textContent = 'Detecting engine capability...';
+  cap.style.color = 'var(--text-dim)';
+  const r = await api('/api/tts/capabilities?host=' + encodeURIComponent(host)
+    + '&model=' + encodeURIComponent(model));
+  if (r && r.ok && r.vocalizations) {
+    box.disabled = false;
+    cap.textContent = r.detail + '. Safe to enable.';
+    cap.style.color = 'var(--green)';
+  } else if (r && r.ok) {
+    // Unknown engine: allow manual override but warn and leave unchecked.
+    box.disabled = false;
+    if (!box.checked) { /* keep user's saved choice */ }
+    cap.textContent = (r.detail || 'Engine capability unknown')
+      + ' -- enabling may cause sounds to be spelled out.';
+    cap.style.color = 'var(--text-dim)';
+  } else {
+    box.disabled = true;
+    cap.textContent = 'Could not detect capability (' + (r?.error || 'no response') + ').';
+    cap.style.color = 'var(--text-dim)';
+  }
+}
+
 async function checkTTSHealth() {
   const host = document.getElementById('cfg-tts-host').value.trim();
   const statusEl = document.getElementById('tts-status');
@@ -2542,6 +2583,7 @@ async function checkTTSHealth() {
     lblTTS.textContent = 'TTS: connected (' + tts.availableModels.length + ' models)';
 
     if (sel.value) await discoverVoices(sel.value);
+    await checkVocalizationCapability();
   } else {
     statusEl.textContent = (r?.error || 'Connection failed');
     statusEl.style.color = 'var(--red)';
@@ -2822,6 +2864,7 @@ async function saveTTSConfig() {
     tts_voice_map: vm,
 
     tts_speed: parseFloat(document.getElementById('cfg-tts-speed').value) || 1.0,
+    tts_vocalizations: document.getElementById('cfg-tts-vocalizations').checked,
   };
   const r = await apiPost('/api/config', cfg);
   if (r && r.ok) {

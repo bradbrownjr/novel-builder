@@ -761,6 +761,39 @@ def get_catalog_summary():
     return "KOKORO TTS VOICE CATALOG\n" + "\n".join(lines)
 
 
+def is_kokoro_voice_set(voice_ids):
+    """Heuristically decide whether a voice list belongs to a Kokoro engine.
+
+    Kokoro-family engines (Speaches/Kokoro, Kokoro-FastAPI) voice
+    non-lexical interjections ("hmm", "uh", "mmm") as sounds rather than
+    spelling out letters, so vocalization flavor is safe to enable.  We
+    detect the family by matching the server's voice IDs against the known
+    catalog, then falling back to the Kokoro naming scheme (two-letter
+    accent+gender prefix followed by an underscore, e.g. ``af_heart``).
+
+    Returns True when a majority of the reported voices look like Kokoro
+    voices, so a stray custom voice does not flip the verdict.
+    """
+    if not voice_ids:
+        return False
+    catalog_hit = 0
+    scheme_hit = 0
+    for vid in voice_ids:
+        if not isinstance(vid, str):
+            continue
+        if vid in KOKORO_VOICES:
+            catalog_hit += 1
+            continue
+        # Kokoro scheme: <accent><gender>_<name>, e.g. af_heart, bm_george
+        prefix = vid.split("_", 1)[0] if "_" in vid else ""
+        if (len(prefix) == 2 and prefix[0] in _ACCENT_PREFIXES
+                and prefix[1] in ("f", "m")):
+            scheme_hit += 1
+    if catalog_hit:
+        return True
+    return scheme_hit * 2 >= len(voice_ids)
+
+
 # ---------------------------------------------------------------------------
 # Helpers for unknown voices
 # ---------------------------------------------------------------------------

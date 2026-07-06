@@ -336,6 +336,38 @@ def build_system_prompt(config, state=None, scene_char_ids=None):
                 " on the same line. Never leave a span unclosed."
             )
 
+    # Optional: non-lexical vocalizations for audiobook flavor.  Only enabled
+    # when the TTS engine can voice them (gated in the UI on capability).
+    if config.get("_tts_vocalizations"):
+        parts.append(
+            "\nSPOKEN VOCALIZATIONS:"
+            "\nThis story will be read aloud, so portray characters' emotions "
+            "with brief non-lexical sounds in their dialogue when the moment "
+            "calls for it. The emotion is carried by WHICH sound you choose "
+            "and by its punctuation, so pick the spelling that matches the "
+            "feeling:"
+            "\n- Thought / curiosity: \"Hmm.\"   Excited surprise or delight: "
+            "\"Oh!\" or \"Ooh!\"   Dismay, weariness, or exasperation: "
+            "\"Ohh...\" or \"Ugh.\""
+            "\n- Pleasure or contentment: \"Mmm.\"   Eager excitement: "
+            "\"Mmm!\"   Frustration or contempt: \"Hmph.\" or \"Mmph.\""
+            "\n- Effort or exertion: \"Unh.\" or \"Nngh.\"   Hesitation: "
+            "\"Uh...\" or \"Um...\"   Relief: \"Phew.\"   Disgust: \"Ew.\""
+            "\nRules:"
+            "\n- Use them sparingly and only when they earn their place; "
+            "overuse reads as filler and weakens the prose."
+            "\n- Let punctuation carry the intensity: \"!\" for an excited or "
+            "sharp sound, \"...\" for a trailing, weary, or drawn-out one. A "
+            "short form reads as curt; a slightly longer run (\"mmm\" vs "
+            "\"mm\") reads as sustained. Keep runs short (\"mmm\", never "
+            "\"mmmmmmm\")."
+            "\n- Write them lowercase, capitalized only when they begin a "
+            "line of dialogue."
+            "\n- Keep them inside the speaking character's dialogue and, when "
+            "that character has a voice tag, inside their span."
+            "\n- Never add them to narration or to the narrator's own voice."
+        )
+
     return "\n".join(parts)
 
 

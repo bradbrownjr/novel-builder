@@ -157,11 +157,67 @@ def _preprocess_tts_text(text):
             return _replace_stutter(m)
         return m.group(0)  # Not a stutter, leave unchanged
 
-    return re.sub(
+    text = re.sub(
         r"\b([A-Za-z])-([A-Za-z]{1,})\b",
         _is_stutter,
         text,
     )
+
+    return _normalize_vocalizations(text)
+
+
+# Recognized non-lexical interjections.  The emotional meaning of a
+# vocalization lives in WHICH form is chosen (mmm vs hmph vs unh) and in its
+# punctuation, so this set deliberately keeps distinct forms distinct -- it
+# never rewrites "hmph" to "mmm" or collapses length differences that carry
+# emotion.  Normalization only lowercases and caps runaway letter runs so the
+# engine voices them as sounds instead of spelling letters ("HMMM" -> "Hmm").
+_KNOWN_VOCALIZATIONS = frozenset({
+    # thought / hesitation
+    "hmm", "hm", "uh", "uhh", "um", "umm", "er", "err", "erm", "huh",
+    # pleasure / contentment / effort
+    "mmm", "mm", "unh", "ungh", "nngh", "ooh", "mhm",
+    # dismay / disgust / exasperation / frustration
+    "ugh", "ohh", "oh", "hmph", "mmph", "tch", "meh", "pff", "pfft",
+    # surprise / reaction
+    "ah", "ahh", "aha", "aw", "aww", "ha", "heh", "ew", "eww", "oof",
+    "ow", "oww", "yow",
+    # breath / other
+    "phew", "psst", "shh", "brr", "grr", "argh",
+})
+
+
+def _normalize_vocalizations(text):
+    """Normalize non-lexical vocalizations to TTS-friendly spellings.
+
+    Lowercases interjections and caps runaway letter runs so the engine
+    voices them as sounds ("Hmm") rather than spelling letters ("H M M M"),
+    while PRESERVING the distinct emotional forms and their length: "mmm"
+    (sustained) stays longer than "mm" (curt), and "hmph" is never merged
+    into "mmm".  Punctuation is left untouched so "!" / "..." keep carrying
+    intensity.  Only reshapes tokens already present; never adds new ones.
+    """
+    def _replace(m):
+        word = m.group(0)
+        low = word.lower()
+        # Cap runs of 4+ identical letters down to 3, keeping a moderate
+        # elongation as a length/emotion signal without risking spell-out.
+        capped = re.sub(r"([a-z])\1{3,}", lambda mm: mm.group(1) * 3, low)
+        has_run = re.search(r"([a-z])\1{2,}", low) is not None
+        # Treat as a vocalization only if it is a known interjection (in any
+        # length variant) or has a 3+ letter run (which real words never do).
+        if not (low in _KNOWN_VOCALIZATIONS
+                or capped in _KNOWN_VOCALIZATIONS
+                or has_run):
+            return word
+        out = capped
+        if word[:1].isupper():
+            out = out[:1].upper() + out[1:]
+        return out
+
+    # Only inspect short all-letter tokens; real words fall through untouched
+    # because they are not interjections and contain no 3+ letter run.
+    return re.sub(r"\b[A-Za-z]{2,7}\b", _replace, text)
 
 
 # ---------------------------------------------------------------------------
@@ -667,6 +723,11 @@ def _load_web_config():
         "tts_model": "",
         "tts_narrator_voice": "",
         "tts_voice_map": {},
+        # When true, the generation model adds sparing non-lexical
+        # vocalizations (hmm, uh, grunts) to dialogue for audiobook flavor.
+        # Only offered by the UI when the TTS engine can voice them (Kokoro
+        # family or native phoneme support) -- see /api/tts/capabilities.
+        "tts_vocalizations": False,
     }
 
 
@@ -826,6 +887,11 @@ def _build_generation_args_and_config(web_config, **extra_args):
     if merged_voice_map:
         config["_tts_voice_map"] = merged_voice_map
 
+    # Enable non-lexical vocalization flavor in generated dialogue when the
+    # author opted in (gated in the UI on TTS engine capability).
+    if web_config.get("tts_vocalizations"):
+        config["_tts_vocalizations"] = True
+
     return args, config
 
 
@@ -953,7 +1019,7 @@ def api_config():
                "generation_num_ctx", "consult_num_ctx",
                "temperature", "top_p", "repeat_penalty", "presence_penalty",
                "tts_host", "tts_model", "tts_narrator_voice", "tts_voice_map",
-               "tts_speed",
+               "tts_speed", "tts_vocalizations",
                }
     cfg = _load_web_config()
     for key in allowed:
@@ -3435,6 +3501,105 @@ def api_tts_health():
         return jsonify({"ok": False, "error": "Timeout"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/api/tts/capabilities")
+def api_tts_capabilities():
+    """Report whether the TTS engine can voice non-lexical vocalizations.
+
+    Two signals, honest about their reliability:
+
+    * ``phonemes`` -- a native phoneme endpoint responded (Kokoro-FastAPI
+      exposes ``/dev/phonemize``).  This means true phoneme markup is
+      available, not just interjection text.  Speaches' OpenAI shim has no
+      such endpoint.
+    * ``kokoro`` -- the server's voice list matches the Kokoro catalog /
+      naming scheme.  Kokoro-family engines voice "hmm"/"uh"/"mmm" as
+      sounds rather than spelling letters.
+
+    ``vocalizations`` is True when either signal holds, meaning the
+    vocalization-flavor feature is safe to offer.  For an unknown engine we
+    return False so the UI keeps it off by default (the user can still
+    override manually).
+    """
+    from .voice_catalog import is_kokoro_voice_set
+
+    host = request.args.get("host", "").strip()
+    model = request.args.get("model", "").strip()
+    cfg = _load_web_config()
+    if not host:
+        host = cfg.get("tts_host", "")
+    if not model:
+        model = cfg.get("tts_model", "")
+    host = _normalize_tts_host(host)
+    if not host:
+        return jsonify({"ok": False, "error": "No TTS host configured"})
+
+    # -- Probe for a native phoneme endpoint (Kokoro-FastAPI) --
+    phonemes = False
+    for ep in ("/dev/phonemize", "/v1/dev/phonemize"):
+        try:
+            pr = _requests.post(
+                f"{host}{ep}",
+                json={"text": "hmm", "language": "a"},
+                timeout=4,
+            )
+            if pr.ok:
+                body = pr.json()
+                if isinstance(body, dict) and (
+                    "phonemes" in body or "tokens" in body
+                ):
+                    phonemes = True
+                    break
+        except Exception:
+            continue
+
+    # -- Detect Kokoro voice family from the voice list --
+    kokoro = False
+    endpoints = []
+    if model:
+        endpoints.append(f"/v1/audio/voices?model={model}")
+    endpoints.extend(["/v1/audio/voices", "/v1/voices"])
+    for ep in endpoints:
+        try:
+            resp = _requests.get(f"{host}{ep}", timeout=5)
+            if not resp.ok:
+                continue
+            data = resp.json()
+            raw = (
+                data if isinstance(data, list)
+                else data.get("voices", data.get("data", []))
+            )
+            if not isinstance(raw, list) or not raw:
+                continue
+            ids = []
+            for v in raw:
+                if isinstance(v, str):
+                    ids.append(v)
+                elif isinstance(v, dict):
+                    ids.append(v.get("id") or v.get("name")
+                               or v.get("voice_id") or "")
+            kokoro = is_kokoro_voice_set([i for i in ids if i])
+            break
+        except Exception:
+            continue
+
+    supported = phonemes or kokoro
+    if phonemes:
+        detail = "Native phoneme support detected"
+    elif kokoro:
+        detail = "Kokoro-family engine detected"
+    else:
+        detail = ("Unknown engine -- interjections may be spelled out; "
+                  "enable at your own discretion")
+
+    return jsonify({
+        "ok": True,
+        "phonemes": phonemes,
+        "kokoro": kokoro,
+        "vocalizations": supported,
+        "detail": detail,
+    })
 
 
 @app.route("/api/tts/voices")
