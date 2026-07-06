@@ -7,9 +7,6 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - novel-builder-workspace:/app/workspace
+      - ./workspace:/workspace
     environment:
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
-
-volumes:
-  novel-builder-workspace:
+      - OLLAMA_HOST=http://YOUR_OLLAMA_HOST:11434

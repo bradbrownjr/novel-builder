@@ -6,6 +6,6 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - /mnt/user/appdata/novel-builder/workspace:/app/workspace
+      - /mnt/user/appdata/novel-builder:/workspace
     environment:
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - OLLAMA_HOST=http://YOUR_OLLAMA_HOST:11434

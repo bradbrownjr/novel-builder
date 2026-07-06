@@ -23,18 +23,23 @@ full_story.md
 web_config.json
 consult_cache.json
 
-# Git
+# Git / CI
 .git/
 .gitignore
+.github/
 
 # Docs
 docs/
 *.md
 AGENTS.md
+DESIGN_PLAN.md
 
 # Tests
 test_*.py
 sample_data/
+
+# Scripts not needed in the image
+run.sh
 
 # OS
 .DS_Store

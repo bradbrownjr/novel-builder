@@ -56,11 +56,11 @@ If Ollama runs on a different machine on your LAN, point Novel Builder at it:
 
 ```bash
 # CLI — pass the flag or set the env var
-export OLLAMA_HOST=http://10.6.26.3:11434
+export OLLAMA_HOST=http://192.168.1.x:11434
 python -m novel_builder
 
 # Or pass it directly
-python -m novel_builder --host http://10.6.26.3:11434
+python -m novel_builder --host http://192.168.1.x:11434
 ```
 
 In the **web UI**, enter the host URL in the config panel — it saves to disk and persists across restarts.

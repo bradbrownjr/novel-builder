@@ -24,7 +24,7 @@ The interface is organized as a wizard-style flow: **Setup → Plan → Consult 
 
 | Feature | Details |
 |---|---|
-| **Ollama Host** | Enter the IP/URL of your Ollama server (e.g., `http://10.6.26.3:11434`). Saved to `workspace/web_config.json` — you set it once and it persists across restarts. |
+| **Ollama Host** | Enter the IP/URL of your Ollama server (e.g., `http://192.168.1.x:11434`). Saved to `workspace/web_config.json` — you set it once and it persists across restarts. |
 | **Model selection** | Choose your generation and summary models from a dropdown of recommended options (with RAM estimates), or type any model name. If a model isn't installed, a Pull button fetches it from Ollama. |
 | **Retries & timeout** | Configure retry attempts and timeout per request. |
 | **File upload** | Upload, drag-drop, paste, or type YAML files for outline, characters, locations, and custom style prompt. Each file shows status, size, and timestamp. |

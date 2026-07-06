@@ -58,7 +58,10 @@ app = Flask(__name__, template_folder=_template_dir)
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5 MB upload limit
 
 # Workspace directory for uploaded files and output
-WORKSPACE_DIR = os.path.join(os.getcwd(), "workspace")
+WORKSPACE_DIR = os.environ.get(
+    "NOVEL_BUILDER_WORKSPACE",
+    os.path.join(os.getcwd(), "workspace"),
+)
 ALLOWED_EXTENSIONS = {".yaml", ".yml", ".txt", ".md"}
 CONFIG_FILE = "web_config.json"
 CONSULT_CACHE_FILE = "consult_cache.json"
@@ -77,8 +80,8 @@ FILE_ROLES = {
 def _normalize_host(host):
     """Normalize an Ollama host string to a full URL.
 
-    Accepts bare IPs (10.6.26.2), IP:port (10.6.26.2:11434),
-    or full URLs (http://10.6.26.2:11434).  Mirrors the same
+    Accepts bare IPs (192.168.1.x), IP:port (192.168.1.x:11434),
+    or full URLs (http://192.168.1.x:11434).  Mirrors the same
     normalization the CLI applies interactively.
     """
     if not host:
@@ -97,8 +100,8 @@ def _normalize_host(host):
 def _normalize_tts_host(host):
     """Normalize a TTS server URL.
 
-    Accepts bare IPs (10.6.26.2), IP:port (10.6.26.2:8001),
-    or full URLs (http://10.6.26.2:8001).  Unlike Ollama, there is
+    Accepts bare IPs (192.168.1.x), IP:port (192.168.1.x:8001),
+    or full URLs (http://192.168.1.x:8001).  Unlike Ollama, there is
     no default port -- the URL must include the port if non-standard.
     """
     if not host:
@@ -183,6 +186,7 @@ class GenerationState:
         self.error = None
         self.start_time = None
         self.throughput = {"generation": None, "summary": None}
+        self.pull_state = {}  # model -> {completed, total, status}
         self._thread = None
         self._event_queues = []
         self._lock = threading.Lock()
@@ -233,6 +237,16 @@ class GenerationState:
                         "tok_per_min": data.get("tok_per_min", 0),
                         "updated_at": time.time(),
                     }
+            elif event_type == "pull_progress":
+                model = data.get("model", "")
+                if model:
+                    self.pull_state[model] = {
+                        "completed": data.get("completed", 0),
+                        "total": data.get("total", 0),
+                        "status": data.get("status", ""),
+                    }
+                    if data.get("status") == "success":
+                        self.pull_state.pop(model, None)
 
             # Push to all SSE subscriber queues
             dead = []
@@ -279,6 +293,7 @@ class GenerationState:
                     self._thread is not None and self._thread.is_alive()
                 ),
                 "throughput": dict(self.throughput),
+                "pull_state": dict(self.pull_state),
             }
 
     def reset(self):
@@ -295,6 +310,7 @@ class GenerationState:
             self.error = None
             self.start_time = None
             self.throughput = {"generation": None, "summary": None}
+            self.pull_state = {}
 
 
 state = GenerationState()
@@ -637,8 +653,8 @@ def _load_web_config():
             pass
     return {
         "host": os.environ.get("OLLAMA_HOST", ""),
-        "model": "gemma3:12b",
-        "summary_model": "gemma3:4b",
+        "model": "gemma4:e4b",
+        "summary_model": "gemma4:e2b",
         "retries": 3,
         "timeout": 900,
         # Sampling (scene generation only)
@@ -729,8 +745,8 @@ def _build_generation_args_and_config(web_config, **extra_args):
     # Build args namespace matching what CLI produces
     args = SimpleNamespace(
         host=_normalize_host(web_config.get("host", "")),
-        model=web_config.get("model", "gemma3:12b"),
-        summary_model=web_config.get("summary_model", "gemma3:4b"),
+        model=web_config.get("model", "gemma4:e4b"),
+        summary_model=web_config.get("summary_model", "gemma4:e2b"),
         retries=int(web_config.get("retries", 3)),
         timeout=int(web_config.get("timeout", 900)),
         num_ctx=int(web_config.get("generation_num_ctx", 8192)),
@@ -2095,7 +2111,7 @@ def api_consult():
             from .consult import get_analysis_passes, build_pass_prompt, build_story_context
             cfg = _load_web_config()
             host = _normalize_host(cfg.get("host", ""))
-            model = cfg.get("model", "gemma3:12b")
+            model = cfg.get("model", "gemma4:e4b")
             # Consult passes can need a large context window for full YAML
             # analysis.  Default 32768; configurable via Settings tab.
             timeout = max(int(cfg.get("timeout", 900)), 1800)
@@ -2447,7 +2463,7 @@ def api_concept():
 
             cfg = _load_web_config()
             host = _normalize_host(cfg.get("host", ""))
-            model = cfg.get("model", "gemma3:12b")
+            model = cfg.get("model", "gemma4:e4b")
             consult_ctx = int(cfg.get("consult_num_ctx", 32768))
 
             if not host:

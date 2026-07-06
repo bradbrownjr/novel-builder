@@ -1,21 +1,23 @@
-FROM python:3.12-slim
+FROM python:3.12-alpine
 
-# ffmpeg for M4B audiobook compilation
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+# ffmpeg: audiobook MP3/M4B compilation
+RUN apk add --no-cache ffmpeg
 
 WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY novel-builder.py .
 COPY novel_builder/ ./novel_builder/
+COPY novel-builder.py .
 
-# Workspace holds YAML story files, output, and checkpoint state
-VOLUME ["/app/workspace"]
+# User story files, checkpoints, and output live here.
+# Mount a host directory to /workspace to persist data across container restarts.
+ENV NOVEL_BUILDER_WORKSPACE=/workspace
+VOLUME ["/workspace"]
 
-ENV OLLAMA_HOST=http://ollama:11434
+# Ollama server URL — override at runtime, e.g. -e OLLAMA_HOST=http://192.168.1.x:11434
+ENV OLLAMA_HOST=""
 
 EXPOSE 8080
 

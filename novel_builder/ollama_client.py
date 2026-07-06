@@ -1,9 +1,173 @@
 """Ollama API calls with retry logic and model routing."""
 
+import json as _json_module
 import threading
 import time
 
 import requests
+
+
+def _model_name_matches(a, b):
+    """Fuzzy model-name comparison to handle Ollama tag normalization.
+
+    Matches if exact, if normalized (:latest appended), or if either
+    name is a prefix of the other (covers tag suffixes like :12b-it).
+    """
+    if a == b:
+        return True
+    def _norm(n):
+        return n if ":" in n else n + ":latest"
+    if _norm(a) == _norm(b):
+        return True
+    return a.startswith(b) or b.startswith(a)
+
+
+def ensure_model_available(host, model, emit_callback=None):
+    """Pull a model from the Ollama registry if it is not already present.
+
+    Streams pull progress as log and pull_progress events.  No-ops if the
+    model is already listed in /api/tags.
+
+    Args:
+        host: Ollama server URL.
+        model: Model name (e.g. 'gemma4:e4b').
+        emit_callback: Optional callable(event_type, **kwargs).
+    """
+    def _log(msg, level="info"):
+        print(f"  {msg}")
+        if emit_callback:
+            try:
+                emit_callback("log", message=msg, level=level)
+            except Exception:
+                pass
+
+    def _pull_progress(**kwargs):
+        if emit_callback:
+            try:
+                emit_callback("pull_progress", **kwargs)
+            except Exception:
+                pass
+
+    try:
+        resp = requests.get(f"{host}/api/tags", timeout=10)
+        resp.raise_for_status()
+        existing = [m.get("name", "") for m in resp.json().get("models", [])]
+        if any(_model_name_matches(model, e) for e in existing):
+            return  # Already present
+    except Exception as e:
+        _log(f"[Ollama] Could not check model availability: {e} — will try anyway", "warn")
+        return
+
+    _log(f"[Ollama] Model '{model}' not on this server — pulling now...", "info")
+    _pull_progress(model=model, completed=0, total=0, status="starting")
+
+    try:
+        resp = requests.post(
+            f"{host}/api/pull",
+            json={"name": model},
+            stream=True,
+            timeout=(30, None),
+        )
+        resp.raise_for_status()
+
+        last_logged_pct = -1
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            try:
+                data = _json_module.loads(line)
+            except ValueError:
+                continue
+
+            status = data.get("status", "")
+            total = data.get("total", 0)
+            completed = data.get("completed", 0)
+
+            _pull_progress(model=model, completed=completed,
+                           total=total, status=status)
+
+            if total and completed:
+                pct = int(completed / total * 100)
+                if pct != last_logged_pct and pct % 10 == 0:
+                    _log(
+                        f"[Pull] {model}: {pct}% "
+                        f"({completed / 1e9:.1f} / {total / 1e9:.1f} GB)"
+                    )
+                    last_logged_pct = pct
+            elif status and "pulling" not in status.lower():
+                _log(f"[Pull] {model}: {status}")
+
+            if status == "success":
+                _log(f"[Ollama] Model '{model}' is ready.", "info")
+                _pull_progress(model=model, completed=1, total=1,
+                               status="success")
+                return
+
+    except Exception as e:
+        _log(f"[Ollama] Pull failed for '{model}': {e} — proceeding anyway", "warn")
+
+
+def check_coexist_models(host, gen_model, sum_model, emit_callback=None):
+    """Determine if both models can stay loaded at the same time.
+
+    Queries /api/ps after the generation model has been loaded to check
+    whether it is resident in VRAM (GPU) or system RAM (CPU-only).
+
+    - CPU mode (size_vram == 0): both models fit in RAM → return True
+    - GPU mode (size_vram > 0): VRAM is limited → return False (swap)
+
+    Args:
+        host: Ollama server URL.
+        gen_model: Generation model name (should already be loaded).
+        sum_model: Summary model name.
+        emit_callback: Optional callable(event_type, **kwargs).
+
+    Returns:
+        True if models can coexist, False if they should be swapped.
+    """
+    def _log(msg, level="info"):
+        print(f"  {msg}")
+        if emit_callback:
+            try:
+                emit_callback("log", message=msg, level=level)
+            except Exception:
+                pass
+
+    if gen_model == sum_model:
+        return True
+
+    try:
+        resp = requests.get(f"{host}/api/ps", timeout=10)
+        resp.raise_for_status()
+        for m in resp.json().get("models", []):
+            name = m.get("model", "") or m.get("name", "")
+            if not _model_name_matches(gen_model, name):
+                continue
+
+            size_vram = m.get("size_vram", 0)
+            size_total = m.get("size", 0)
+
+            if size_vram == 0:
+                size_gb = size_total / 1e9 if size_total else 0
+                _log(
+                    f"[Ollama] CPU mode ({size_gb:.1f} GB in RAM) — "
+                    f"both models will stay loaded between passes"
+                )
+                return True
+            else:
+                vram_gb = size_vram / 1e9
+                _log(
+                    f"[Ollama] GPU mode ({vram_gb:.1f} GB VRAM) — "
+                    f"models will swap between generation and summary passes"
+                )
+                return False
+
+        _log("[Ollama] Could not find loaded model in /api/ps — defaulting to swap mode", "warn")
+        return False
+
+    except Exception as e:
+        _log(f"[Ollama] Memory mode check failed: {e} — defaulting to swap mode", "warn")
+        return False
 
 
 class OllamaError(Exception):
@@ -133,25 +297,7 @@ class _OllamaWatchdog:
         return f"{m}m {s}s" if m else f"{s}s"
 
     def _model_name_matches(self, reported):
-        """Fuzzy model-name comparison to handle Ollama tag normalization.
-
-        Ollama may report 'gemma3:12b' as 'gemma3:12b', 'gemma3:12b-it',
-        or add a ':latest' suffix.  We match if:
-        - Exact match, OR
-        - Normalized (append :latest if no tag) match, OR
-        - Either name starts with the other (covers tag suffixes).
-        """
-        if reported == self._model:
-            return True
-        # Normalize: bare name -> name:latest
-        def _norm(n):
-            return n if ":" in n else n + ":latest"
-        if _norm(reported) == _norm(self._model):
-            return True
-        # Prefix match: 'gemma3:12b' matches 'gemma3:12b-it'
-        if reported.startswith(self._model) or self._model.startswith(reported):
-            return True
-        return False
+        return _model_name_matches(self._model, reported)
 
     def _is_model_active(self):
         """Poll /api/ps.  Returns True / False / None (unknown)."""
